@@ -2537,6 +2537,81 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_tools.cpp
     message(STATUS "Regression test enabled — target: test_mcp_host_tools")
 endif()
 
+# v0.1.133 Phase 3 MCP tools (git writes, Noter, settings, data, REST): the
+# bridge against a fake host, and the real MainWindow host against a temp
+# git repo, an isolated Noter folder and config, in-memory SQLite and a
+# loopback HTTP server.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge_control.cpp")
+    add_executable(test_mcp_bridge_control
+        test_mcp_bridge_control.cpp
+        src/mcp_bridge.cpp
+        src/path_denylist.cpp
+        src/singleinstance.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/diagram/npd_parser.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_mcp_bridge_control PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_bridge_control PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test_mcp_bridge_control PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent Qt5::Sql)
+    notepatra_add_qt_test(test_mcp_bridge_control)
+    set_tests_properties(test_mcp_bridge_control PROPERTIES
+        LABELS "unit;mcp;ipc" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_mcp_bridge_control")
+endif()
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_control.cpp")
+    set(MCP_HOST_CONTROL_SOURCES ${SOURCES})
+    list(FILTER MCP_HOST_CONTROL_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_mcp_host_control
+        test_mcp_host_control.cpp
+        ${MCP_HOST_CONTROL_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_mcp_host_control rust_core)
+    target_compile_definitions(test_mcp_host_control PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_mcp_host_control PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_mcp_host_control PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_mcp_host_control PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_mcp_host_control PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_mcp_host_control PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_mcp_host_control PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_mcp_host_control PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_mcp_host_control PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_mcp_host_control PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_mcp_host_control PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_mcp_host_control PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_mcp_host_control COMMAND $<TARGET_FILE:test_mcp_host_control>)
+    set_tests_properties(test_mcp_host_control PROPERTIES
+        LABELS "integration;mainwindow;mcp"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 300)
+    message(STATUS "Regression test enabled — target: test_mcp_host_control")
+endif()
+
 # D8 (win-open-ghost) — double-click occurrence highlight: doc-size
 # gate + match cap so a popular word can't hang the GUI thread.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_occurrence_highlight_cap.cpp")

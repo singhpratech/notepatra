@@ -270,11 +270,24 @@ int main(int argc, char *argv[]) {
     r = call("repair_json", {{"text", "{'a': 1,}"}});
     EXPECT("repair_json is the explicit repair",
            ok(r) && res(r).value("fixed").toString().contains("\"a\"") &&
-               !res(r).value("fixed").toString().contains(",}"));
+               !res(r).value("fixed").toString().contains(",}") &&
+               res(r).value("repaired").toBool());
     r = call("repair_json", {{"text", "[1,2"}});
     EXPECT("repair_json declines a truncated document",
            ok(r) && res(r).value("fixed").toString() == QLatin1String("[1,2") &&
-               !res(r).value("report").toString().isEmpty());
+               !res(r).value("report").toString().isEmpty() &&
+               !res(r).value("repaired").toBool(true));
+    r = call("format_text", {{"kind", "html"}, {"text", "<p>a</p>\n<p>b</p>\n"}, {"minify", true}});
+    EXPECT("format_html minify through the safe minifier",
+           ok(r) && res(r).value("text").toString().trimmed() == QLatin1String("<p>a</p><p>b</p>"));
+    r = call("format_text", {{"kind", "html"}, {"text", "<p>a</p>\n"}});
+    EXPECT("format_html formats", ok(r));
+    r = call("format_text", {{"kind", "html"}, {"text", "<div>\n  <p><b>x</p>\n</div>"}, {"indent", 2}});
+    EXPECT("format_html decline is an error with the reason",
+           !ok(r) && r.value("error").toString().contains("declined") &&
+               r.value("error").toString().contains("line 2"));
+    r = call("format_text", {{"kind", "html"}, {"text", "<div>\n  <p><b>x</p>\n</div>"}});
+    EXPECT("format_html (no options) decline is an error too", !ok(r));
 
     // ── Markdown menu items: same function, same output ──
     {

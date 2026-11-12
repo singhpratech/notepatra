@@ -206,6 +206,23 @@ struct McpEditorHost {
     // READ: pure computation over text (op = the tool name); never a buffer.
     std::function<QJsonObject(const QString &op, const QJsonObject &args,
                               QString *err)> computeText;
+
+    // ── v0.1.133 Phase 3: one entry per area, op = the tool name or an info
+    //    op the bridge needs to word a card. The bridge validates and gates;
+    //    the host runs the app's own code. Unset ⇒ clear error. ──
+    using Done = std::function<void(const QJsonObject &result, const QString &err)>;
+    using Op = std::function<QJsonObject(const QString &op, const QJsonObject &args,
+                                         QString *err)>;
+    using AsyncOp = std::function<void(const QString &op, const QJsonObject &args, Done done)>;
+    Op gitOp;           // context, list_hunks, list_conflicts, hunk_info and the git writes
+    AsyncOp gitAsync;   // git_fetch / git_pull / git_push (network, 60 s timeout)
+    Op noterOp;         // search_notes, note_info and the Noter writes
+    Op settingsOp;      // get_preferences, set_preference, set_workspace_folder
+    Op dataOp;          // connection_info, describe_table, connection CRUD, dialogs
+    AsyncOp dataAsync;  // test_connection, execute_sql (off the GUI thread, timeout)
+    Op restOp;          // parse_http_file, curl_to_request, request_to_curl, resolve
+    AsyncOp restAsync;  // rest_request (send, 30 s timeout)
+    Op miscOp;          // hex_dump, clear_recent_files
 };
 
 // Editor-side MCP bridge: a dedicated QLocalServer, deliberately separate from
@@ -241,6 +258,12 @@ public:
     // store or a write-only-dangerous target such as authorized_keys, a shell
     // rc file or .git/hooks); "" when fine. Canonicalizes parent and leaf.
     static QString writeDestinationRefusal(const QString &path);
+    // Refusal when `dir` must never become the workspace folder (filesystem
+    // root, home itself or an ancestor of it, credential/config stores,
+    // system directories); "" when fine. *canon gets the canonical path.
+    static QString workspaceFolderRefusal(const QString &dir, QString *canon = nullptr);
+    // The set_preference allow-list: [{key,type,min?,max?,values?}].
+    static QJsonArray preferenceSchema();
 
 protected:
     // Repositions the approval card when its host widget resizes.
@@ -272,7 +295,7 @@ private:
     void verbSetLanguage(QLocalSocket *client, int id, const QJsonObject &args);
     void verbCompareTabs(QLocalSocket *client, int id, const QJsonObject &args);
     void verbFormatText(QLocalSocket *client, int id, const QJsonObject &args);
-    void verbListNotes(QLocalSocket *client, int id);
+    void verbListNotes(QLocalSocket *client, int id, const QJsonObject &args);
     void verbReadNote(QLocalSocket *client, int id, const QJsonObject &args);
     // v0.1.118 WRITE tier — every verb below is human-approval-gated.
     void verbInsertText(QLocalSocket *client, int id, const QJsonObject &args);
@@ -334,6 +357,32 @@ private:
     QString describeTabEdit(const QString &verb, const QJsonObject &args, int idx,
                             QString *what, QString *preview) const;
 
+    // ── v0.1.133 Phase 3 ──
+    void verbGitWrite(QLocalSocket *client, int id, const QJsonObject &args,
+                      const QString &verb);                                            // READ/WRITE
+    void verbNoter(QLocalSocket *client, int id, const QJsonObject &args,
+                   const QString &verb);                                               // READ/WRITE
+    void verbSettings(QLocalSocket *client, int id, const QJsonObject &args,
+                      const QString &verb);                                            // READ/WRITE
+    void verbData(QLocalSocket *client, int id, const QJsonObject &args,
+                  const QString &verb);                                                // READ/ACT/WRITE
+    void verbRest(QLocalSocket *client, int id, const QJsonObject &args,
+                  const QString &verb);                                                // READ/WRITE
+    void verbMisc(QLocalSocket *client, int id, const QJsonObject &args,
+                  const QString &verb);                                                // READ/WRITE
+    // Repo-relative form of a client path, "" + *err when it escapes the
+    // repo, starts with '-' or names a secret file.
+    static QString gitRelPath(const QString &repoRoot, const QString &path, QString *err);
+    // Sends a host result/error pair; the shared tail of every op call.
+    void sendOp(QLocalSocket *client, int id, const QJsonObject &r, const QString &err);
+
+    // Extra card content for writes whose consequence needs more than a line.
+    struct CardOptions {
+        QString warning;          // shown in the error colour (data loss, no undo)
+        bool fullPreview = false; // preview in a scrollable box, never elided
+    };
+    using AsyncExec = std::function<void(McpEditorHost::Done)>;
+
     // One held write request: the response is sent only after the human
     // decides (or the timeout / a disconnect decides for them).
     struct PendingWrite {
@@ -341,9 +390,16 @@ private:
         int id = -1;
         QString description;
         QString preview;
+        CardOptions options;
         // Runs the mutation on Approve; a non-empty *err means failure.
         std::function<QJsonObject(QString *)> execute;
+        // Long mutations (network, database) answer later through Done.
+        AsyncExec executeAsync;
     };
+    void enqueueApprovalEx(QLocalSocket *client, int id, const QString &description,
+                           const QString &preview, const CardOptions &options,
+                           std::function<QJsonObject(QString *)> execute,
+                           AsyncExec executeAsync = AsyncExec());
 
     int resolveWriteTab(const QJsonObject &args, QString *err) const;
     // v0.1.126 (NP-11 / NP-13): the ONE place a request names a tab.

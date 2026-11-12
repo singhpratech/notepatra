@@ -4954,8 +4954,12 @@ private slots:
                            {{"mode", "passphrase"}, {"words", 5}}).value(QLatin1String("ok")).toBool());
         QCOMPARE(m_lastComputeArgs.value(QLatin1String("words")).toInt(), 5);
         // Format options: only what the formatter has.
-        QVERIFY(!callNoCard(s, 11, QStringLiteral("format_text"),
-                            {{"kind", "html"}, {"text", "<p/>"}, {"minify", true}})
+        QVERIFY(callNoCard(s, 11, QStringLiteral("format_text"),
+                           {{"kind", "html"}, {"text", "<p/>"}, {"minify", true}})
+                    .value(QLatin1String("ok")).toBool());
+        QVERIFY(m_lastComputeArgs.value(QLatin1String("minify")).toBool());
+        QVERIFY(!callNoCard(s, 13, QStringLiteral("format_text"),
+                            {{"kind", "sql"}, {"text", "select 1"}, {"minify", true}})
                      .value(QLatin1String("ok")).toBool());
         QVERIFY(callNoCard(s, 12, QStringLiteral("format_text"),
                            {{"kind", "sql"}, {"text", "select 1"}, {"keyword_case", "lower"}})

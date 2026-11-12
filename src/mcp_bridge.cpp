@@ -154,6 +154,7 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QFutureWatcher>
+#include <QHostAddress>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonValue>
@@ -161,6 +162,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QPointer>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -417,6 +419,116 @@ const QStringList &kEncodings() {
 }
 
 constexpr int kComputeMaxChars = 5 * 1024 * 1024;
+
+// v0.1.133 Phase 3 verb families (the sidecar's tool names, one each).
+const QSet<QString> &kGitVerbs() {
+    static const QSet<QString> s = {
+        QStringLiteral("list_hunks"),        QStringLiteral("list_conflicts"),
+        QStringLiteral("git_stage"),         QStringLiteral("git_unstage"),
+        QStringLiteral("git_commit"),        QStringLiteral("git_branch_create"),
+        QStringLiteral("git_checkout"),      QStringLiteral("git_stash"),
+        QStringLiteral("git_discard"),       QStringLiteral("git_fetch"),
+        QStringLiteral("git_pull"),          QStringLiteral("git_push"),
+        QStringLiteral("git_hunk"),          QStringLiteral("resolve_conflict")};
+    return s;
+}
+const QSet<QString> &kNoterVerbs() {
+    static const QSet<QString> s = {
+        QStringLiteral("search_notes"),      QStringLiteral("rename_note"),
+        QStringLiteral("trash_note"),        QStringLiteral("restore_note"),
+        QStringLiteral("delete_note_permanently"),
+        QStringLiteral("delete_reminder"),   QStringLiteral("snooze_reminder"),
+        QStringLiteral("dismiss_reminder"),  QStringLiteral("export_note")};
+    return s;
+}
+const QSet<QString> &kSettingsVerbs() {
+    static const QSet<QString> s = {QStringLiteral("get_preferences"),
+                                    QStringLiteral("set_preference"),
+                                    QStringLiteral("set_workspace_folder")};
+    return s;
+}
+const QSet<QString> &kDataVerbs() {
+    static const QSet<QString> s = {
+        QStringLiteral("describe_table"),    QStringLiteral("test_connection"),
+        QStringLiteral("execute_sql"),       QStringLiteral("add_connection"),
+        QStringLiteral("update_connection"), QStringLiteral("delete_connection"),
+        QStringLiteral("open_connections_dialog"),
+        QStringLiteral("open_schema_browser")};
+    return s;
+}
+const QSet<QString> &kRestVerbs() {
+    static const QSet<QString> s = {
+        QStringLiteral("parse_http_file"), QStringLiteral("curl_to_request"),
+        QStringLiteral("request_to_curl"), QStringLiteral("rest_request")};
+    return s;
+}
+
+// Phase 3 caps.
+constexpr int kMaxPathsPerCall = 100;
+constexpr int kCommitMessageMax = 10000;
+constexpr int kHexDumpMax = 64 * 1024;
+constexpr int kRestBodyMax = 10 * 1024 * 1024;
+
+// A JSON array of 1..kMaxPathsPerCall non-empty strings.
+QString pathsArg(const QJsonObject &a, QStringList *out) {
+    const QJsonValue v = a.value(QLatin1String("paths"));
+    if (!v.isArray() || v.toArray().isEmpty())
+        return QStringLiteral("paths must be a non-empty array of file paths");
+    const QJsonArray arr = v.toArray();
+    if (arr.size() > kMaxPathsPerCall)
+        return QStringLiteral("at most %1 paths per call").arg(kMaxPathsPerCall);
+    for (const QJsonValue &p : arr) {
+        if (!p.isString() || p.toString().isEmpty())
+            return QStringLiteral("paths must be a non-empty array of file paths");
+        if (!out->contains(p.toString())) out->append(p.toString());
+    }
+    return QString();
+}
+
+QString reqString(const QJsonObject &a, const char *k, QString *out) {
+    const QLatin1String key(k);
+    const QJsonValue v = a.value(key);
+    if (!v.isString() || v.toString().trimmed().isEmpty())
+        return QStringLiteral("missing %1").arg(key);
+    *out = v.toString();
+    return QString();
+}
+
+// sanitizeForCard per line: keeps the line breaks a multi-line preview needs.
+QString sanitizeMultiline(const QString &s) {
+    QStringList lines = s.split(QLatin1Char('\n'));
+    for (QString &l : lines)
+        l = sanitizeForCard(QString(l).replace(QLatin1Char('\t'), QLatin1String("    ")));
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString bulletList(const QStringList &items, int cap = 50) {
+    QStringList lines;
+    for (int i = 0; i < items.size() && i < cap; ++i)
+        lines << QStringLiteral("- ") + sanitizeForCard(items.at(i));
+    if (items.size() > cap)
+        lines << QStringLiteral("... and %1 more").arg(items.size() - cap);
+    return lines.join(QLatin1Char('\n'));
+}
+
+QStringList jsonStrings(const QJsonValue &v) {
+    QStringList out;
+    for (const QJsonValue &x : v.toArray()) out << x.toString();
+    return out;
+}
+
+// Git ref-name rules (git check-ref-format --branch), checked before a card.
+bool validBranchName(const QString &n) {
+    static const QRegularExpression ok(QStringLiteral("^[A-Za-z0-9._/+-]+$"));
+    if (n.isEmpty() || n.size() > 200 || !ok.match(n).hasMatch()) return false;
+    if (n.startsWith(QLatin1Char('-')) || n.startsWith(QLatin1Char('/')) ||
+        n.endsWith(QLatin1Char('/')) || n.endsWith(QLatin1Char('.')) ||
+        n.endsWith(QLatin1String(".lock")) || n.contains(QLatin1String("..")) ||
+        n.contains(QLatin1String("//")) || n.contains(QLatin1String("/.")) ||
+        n.startsWith(QLatin1Char('.')) || n == QLatin1String("HEAD"))
+        return false;
+    return true;
+}
 
 struct SearchHit {
     QString path;
@@ -880,7 +992,7 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
     else if (verb == QLatin1String("format_text"))
         verbFormatText(client, id, args);
     else if (verb == QLatin1String("list_notes"))
-        verbListNotes(client, id);
+        verbListNotes(client, id, args);
     else if (verb == QLatin1String("read_note"))
         verbReadNote(client, id, args);
     else if (verb == QLatin1String("insert_text"))
@@ -980,6 +1092,20 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
              verb == QLatin1String("generate_password") ||
              verb == QLatin1String("diff_text"))
         verbCompute(client, id, args, verb);
+    // ── v0.1.133 Phase 3 ──
+    else if (kGitVerbs().contains(verb))
+        verbGitWrite(client, id, args, verb);
+    else if (kNoterVerbs().contains(verb))
+        verbNoter(client, id, args, verb);
+    else if (kSettingsVerbs().contains(verb))
+        verbSettings(client, id, args, verb);
+    else if (kDataVerbs().contains(verb))
+        verbData(client, id, args, verb);
+    else if (kRestVerbs().contains(verb))
+        verbRest(client, id, args, verb);
+    else if (verb == QLatin1String("hex_dump") ||
+             verb == QLatin1String("clear_recent_files"))
+        verbMisc(client, id, args, verb);
     else
         sendError(client, id,
                   QStringLiteral("unknown verb: %1").arg(verb));
@@ -1675,15 +1801,16 @@ void McpBridge::verbFormatText(QLocalSocket *client, int id,
         int indent = 0;
         const bool json = kind == QLatin1String("json");
         const bool sql = kind == QLatin1String("sql");
-        if (args.contains(QLatin1String("minify")) && !json)
-            e = QStringLiteral("minify is only supported for json");
+        const bool html = kind == QLatin1String("html");
+        if (args.contains(QLatin1String("minify")) && !json && !html)
+            e = QStringLiteral("minify is only supported for json and html");
         else if (args.contains(QLatin1String("keyword_case")) && !sql)
             e = QStringLiteral("keyword_case is only supported for sql");
         if (e.isEmpty())
             e = optInt(args, "indent", sql ? 1 : 0, 8, json ? 4 : (sql ? 4 : 2),
                        false, &indent);
         a[QStringLiteral("indent")] = indent;
-        if (e.isEmpty() && json) {
+        if (e.isEmpty() && (json || html)) {
             bool minify = false;
             e = optBool(args, "minify", false, &minify);
             a[QStringLiteral("minify")] = minify;
@@ -1726,8 +1853,13 @@ void McpBridge::verbFormatText(QLocalSocket *client, int id,
 
 // Noter access — pure notes_storage/file reads with the SAME path + title
 // conventions as the Noter panel (no Noter UI is ever constructed here).
-void McpBridge::verbListNotes(QLocalSocket *client, int id) {
+void McpBridge::verbListNotes(QLocalSocket *client, int id, const QJsonObject &args) {
     QJsonArray notes;
+    bool withTrash = false;
+    if (const QString e = optBool(args, "include_trash", false, &withTrash); !e.isEmpty()) {
+        sendError(client, id, e);
+        return;
+    }
     const QString root = m_host.notesRoot ? m_host.notesRoot() : QString();
     // A denied root lists as empty; report it instead of an empty success.
     const QString blocked = NotesStorage::accessBlockedMessage(root);
@@ -1743,16 +1875,33 @@ void McpBridge::verbListNotes(QLocalSocket *client, int id) {
         const QStringList all = storage.listAllNotes(); // mtime desc
         for (const QString &path : all) {
             const QFileInfo fi(path);
-            // Exclude the Trash archive and .trashed- strays.
-            if (fi.absoluteFilePath().startsWith(trashPrefix)) continue;
-            if (fi.fileName().startsWith(QLatin1String(".trashed-"))) continue;
+            // Exclude the Trash archive and .trashed- strays (unless asked).
+            const bool trashed = fi.absoluteFilePath().startsWith(trashPrefix) ||
+                                 fi.fileName().startsWith(QLatin1String(".trashed-"));
+            if (trashed && !withTrash) continue;
             QJsonObject o;
+            if (withTrash) o[QStringLiteral("trashed")] = trashed;
             o[QStringLiteral("title")] = storage.displayTitleForFile(path);
             o[QStringLiteral("file")] =
                 QDir::toNativeSeparators(fi.absoluteFilePath());
             o[QStringLiteral("modified_iso")] =
                 fi.lastModified().toString(Qt::ISODate);
             notes.append(o);
+        }
+        // Trashed notes are dot-files (".trashed-<ts>-name.html"), which
+        // listAllNotes never sees; list them from the Trash folder itself.
+        if (withTrash) {
+            const QDir trash(QDir(root).absoluteFilePath(QStringLiteral("Trash")));
+            const QFileInfoList list = trash.entryInfoList(
+                {QStringLiteral(".trashed-*.html")}, QDir::Files | QDir::Hidden, QDir::Time);
+            for (const QFileInfo &fi : list) {
+                QJsonObject o;
+                o[QStringLiteral("trashed")] = true;
+                o[QStringLiteral("title")] = storage.displayTitleForFile(fi.absoluteFilePath());
+                o[QStringLiteral("file")] = QDir::toNativeSeparators(fi.absoluteFilePath());
+                o[QStringLiteral("modified_iso")] = fi.lastModified().toString(Qt::ISODate);
+                notes.append(o);
+            }
         }
     }
     QJsonObject result;
@@ -2348,6 +2497,8 @@ void McpBridge::verbListReminders(QLocalSocket *client, int id) {
                 bucket = QStringLiteral("This week");
             else bucket = QStringLiteral("Later");
             QJsonObject o;
+            if (r.contains(QLatin1String("id")))
+                o[QStringLiteral("id")] = r.value(QLatin1String("id")).toString();
             o[QStringLiteral("note_file")] =
                 r.value(QLatin1String("note_file")).toString();
             o[QStringLiteral("note_title")] =
@@ -4046,12 +4197,24 @@ void McpBridge::enqueueApproval(QLocalSocket *client, int id,
                                 const QString &description,
                                 const QString &preview,
                                 std::function<QJsonObject(QString *)> execute) {
+    enqueueApprovalEx(client, id, description, preview, CardOptions(),
+                      std::move(execute));
+}
+
+void McpBridge::enqueueApprovalEx(QLocalSocket *client, int id,
+                                  const QString &description,
+                                  const QString &preview,
+                                  const CardOptions &options,
+                                  std::function<QJsonObject(QString *)> execute,
+                                  AsyncExec executeAsync) {
     PendingWrite pw;
     pw.client = client;
     pw.id = id;
     pw.description = description;
     pw.preview = preview;
+    pw.options = options;
     pw.execute = std::move(execute);
+    pw.executeAsync = std::move(executeAsync);
     m_approvalQueue.append(pw);
     showNextApproval();
 }
@@ -4129,7 +4292,35 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
         .arg(textC.name()));
     lay->addWidget(hdr);
 
-    if (!pw.preview.isEmpty()) {
+    if (!pw.options.warning.isEmpty()) {
+        auto *warn = new QLabel(card);
+        warn->setObjectName(QStringLiteral("mcpApprovalWarning"));
+        warn->setTextFormat(Qt::PlainText);
+        warn->setWordWrap(true);
+        warn->setText(pw.options.warning);
+        warn->setStyleSheet(QStringLiteral(
+            "color:%1; background:transparent; font-weight:600;")
+            .arg(QColor(np.errorFg).name()));
+        lay->addWidget(warn);
+    }
+
+    if (!pw.preview.isEmpty() && pw.options.fullPreview) {
+        // Whole text, scrollable: nothing that could hide a second statement is cut.
+        auto *full = new QPlainTextEdit(card);
+        full->setObjectName(QStringLiteral("mcpApprovalPreviewFull"));
+        full->setReadOnly(true);
+        full->setFocusPolicy(Qt::NoFocus);
+        full->setPlainText(pw.preview);
+        full->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        const int lines = qBound(2, int(pw.preview.count(QLatin1Char('\n'))) + 1, 10);
+        full->setFixedHeight(full->fontMetrics().lineSpacing() * lines + 14);
+        full->setStyleSheet(QStringLiteral(
+            "QPlainTextEdit{color:%1; background:%2; border:1px solid %3; "
+            "border-radius:4px; font-family:'JetBrains Mono','Cascadia Code',"
+            "'Consolas',monospace; font-size:11px;}")
+            .arg(textC.name(), QColor(np.inputBg).name(), borderC.name()));
+        lay->addWidget(full);
+    } else if (!pw.preview.isEmpty()) {
         auto *prev = new QLabel(card);
         prev->setObjectName(QStringLiteral("mcpApprovalPreview"));
         prev->setTextFormat(Qt::PlainText);
@@ -4208,7 +4399,17 @@ void McpBridge::resolveActiveApproval(bool approved,
     m_approvalActive = false;
     dismissActiveCard();
     if (pw.client && pw.client->state() == QLocalSocket::ConnectedState) {
-        if (approved) {
+        if (approved && pw.executeAsync) {
+            // Answer when the work finishes; the next card need not wait.
+            QPointer<QLocalSocket> c = pw.client;
+            QPointer<McpBridge> self(this);
+            const int rid = pw.id;
+            pw.executeAsync([self, c, rid](const QJsonObject &r, const QString &e) {
+                if (!self || !c || c->state() != QLocalSocket::ConnectedState) return;
+                if (e.isEmpty()) self->sendResult(c, rid, r);
+                else self->sendError(c, rid, e);
+            });
+        } else if (approved) {
             QString err;
             const QJsonObject result =
                 pw.execute ? pw.execute(&err) : QJsonObject();
@@ -4266,4 +4467,1503 @@ bool McpBridge::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_cardParent && event->type() == QEvent::Resize)
         positionCard();
     return QObject::eventFilter(watched, event);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.133 Phase 3: git writes, Noter management, settings, data, REST.
+// Every verb validates here, asks the host for the facts its card needs,
+// and runs the app's own code only after Approve (writes).
+// ═══════════════════════════════════════════════════════════════════════
+
+void McpBridge::sendOp(QLocalSocket *client, int id, const QJsonObject &r,
+                       const QString &err) {
+    if (!err.isEmpty()) sendError(client, id, err);
+    else sendResult(client, id, r);
+}
+
+QString McpBridge::gitRelPath(const QString &repoRoot, const QString &path,
+                              QString *err) {
+    const QString p = QDir::fromNativeSeparators(path);
+    auto fail = [&](const QString &m) {
+        if (err) *err = m;
+        return QString();
+    };
+    if (p.isEmpty() || p.contains(QChar(0)))
+        return fail(QStringLiteral("empty path"));
+    if (p.startsWith(QLatin1Char('-')))
+        return fail(QStringLiteral("refusing path '%1': a path may not start with '-'")
+                        .arg(sanitizeForCard(p)));
+    const QString root = QDir::cleanPath(QDir::fromNativeSeparators(repoRoot));
+    QString rel;
+    if (QDir::isAbsolutePath(p)) {
+        const QString cp = QDir::cleanPath(p);
+        if (cp.startsWith(root + QLatin1Char('/'))) {
+            rel = cp.mid(root.size() + 1);
+        } else {
+            // A symlinked spelling of the repo (macOS /var vs /private/var).
+            const QString rootCanon = QFileInfo(root).canonicalFilePath();
+            const QString parentCanon =
+                QFileInfo(QFileInfo(cp).absolutePath()).canonicalFilePath();
+            const QString full = parentCanon + QLatin1Char('/') + QFileInfo(cp).fileName();
+            if (rootCanon.isEmpty() || parentCanon.isEmpty() ||
+                !full.startsWith(rootCanon + QLatin1Char('/')))
+                return fail(QStringLiteral("path is outside the workspace repository: %1")
+                                .arg(QDir::toNativeSeparators(p)));
+            rel = full.mid(rootCanon.size() + 1);
+        }
+    } else {
+        rel = QDir::cleanPath(p);
+    }
+    if (rel.isEmpty() || rel == QLatin1String(".") || rel == QLatin1String("..") ||
+        rel.startsWith(QLatin1String("../")))
+        return fail(QStringLiteral("path is outside the workspace repository: %1")
+                        .arg(QDir::toNativeSeparators(p)));
+    if (rel.startsWith(QLatin1Char('-')))
+        return fail(QStringLiteral("refusing path '%1': a path may not start with '-'")
+                        .arg(sanitizeForCard(rel)));
+    if (rel == QLatin1String(".git") || rel.startsWith(QLatin1String(".git/")))
+        return fail(QStringLiteral("refusing a path inside .git"));
+    const QString abs = root + QLatin1Char('/') + rel;
+    // Same deny-list as git_diff's redaction (isSecretRepoPath).
+    if (PathDenylist::isSecretPath(QLatin1Char('/') + rel) || PathDenylist::isSecretPath(abs))
+        return fail(QStringLiteral(
+                        "refusing %1: it matches the credential deny-list (SSH/GPG/AWS "
+                        "keys, .env, keystores, Terraform state)")
+                        .arg(sanitizeForCard(rel)));
+    // A symlink inside the repo must not lead out of it or onto a secret.
+    const QFileInfo fi(abs);
+    if (fi.exists() || fi.isSymLink()) {
+        const QString real = fi.canonicalFilePath();
+        const QString rootCanon = QFileInfo(root).canonicalFilePath();
+        if (!real.isEmpty() &&
+            ((!rootCanon.isEmpty() && real != rootCanon &&
+              !real.startsWith(rootCanon + QLatin1Char('/'))) ||
+             PathDenylist::isSecretPath(real)))
+            return fail(QStringLiteral("refusing %1: it leads outside the repository or "
+                                       "onto a credential file")
+                            .arg(sanitizeForCard(rel)));
+    }
+    return rel;
+}
+
+void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &args,
+                             const QString &verb) {
+    if (!m_host.gitOp) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    const QJsonObject ctx = m_host.gitOp(QStringLiteral("context"), QJsonObject(), &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    const QString root = ctx.value(QLatin1String("repo_root")).toString();
+    const QString branch = ctx.value(QLatin1String("branch")).toString();
+    const QString shownRepo = sanitizeForCard(QDir::toNativeSeparators(root));
+    const QStringList staged = jsonStrings(ctx.value(QLatin1String("staged")));
+    const QStringList modified = jsonStrings(ctx.value(QLatin1String("modified")));
+    const QStringList untracked = jsonStrings(ctx.value(QLatin1String("untracked")));
+    const QStringList conflicts = jsonStrings(ctx.value(QLatin1String("conflicts")));
+    auto run = [this, verb](const QJsonObject &a) {
+        return [this, verb, a](QString *e) { return m_host.gitOp(verb, a, e); };
+    };
+
+    // ── READ ──
+    if (verb == QLatin1String("list_hunks") || verb == QLatin1String("list_conflicts")) {
+        QJsonObject a;
+        if (args.contains(QLatin1String("path")) || verb == QLatin1String("list_hunks")) {
+            QString p;
+            if (!(err = reqString(args, "path", &p)).isEmpty()) {
+                sendError(client, id, err);
+                return;
+            }
+            const QString rel = gitRelPath(root, p, &err);
+            if (rel.isEmpty()) {
+                sendError(client, id, err);
+                return;
+            }
+            a[QStringLiteral("path")] = rel;
+        }
+        const QJsonObject r = m_host.gitOp(verb, a, &err);
+        sendOp(client, id, r, err);
+        return;
+    }
+
+    // ── WRITE: paths ──
+    if (verb == QLatin1String("git_stage") || verb == QLatin1String("git_unstage") ||
+        verb == QLatin1String("git_discard")) {
+        QStringList in, rels;
+        if (!(err = pathsArg(args, &in)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        for (const QString &p : in) {
+            const QString rel = gitRelPath(root, p, &err);
+            if (rel.isEmpty()) {
+                sendError(client, id, err);
+                return;
+            }
+            if (verb == QLatin1String("git_stage") && !modified.contains(rel) &&
+                !untracked.contains(rel) && !conflicts.contains(rel)) {
+                sendError(client, id, QStringLiteral("nothing to stage for %1 (no changes "
+                                                     "in the working tree)").arg(rel));
+                return;
+            }
+            if (verb == QLatin1String("git_unstage") && !staged.contains(rel)) {
+                sendError(client, id, QStringLiteral("%1 is not staged").arg(rel));
+                return;
+            }
+            if (verb == QLatin1String("git_discard")) {
+                if (untracked.contains(rel)) {
+                    sendError(client, id, QStringLiteral(
+                        "%1 is untracked: git_discard never deletes untracked files")
+                                              .arg(rel));
+                    return;
+                }
+                if (!modified.contains(rel)) {
+                    sendError(client, id, QStringLiteral(
+                        "%1 has no uncommitted working-tree changes to discard").arg(rel));
+                    return;
+                }
+            }
+            if (!rels.contains(rel)) rels << rel;
+        }
+        QJsonObject a{{QStringLiteral("paths"), QJsonArray::fromStringList(rels)}};
+        CardOptions o;
+        o.fullPreview = true;
+        QString desc;
+        if (verb == QLatin1String("git_stage"))
+            desc = QStringLiteral("git add in %1: stage %2 file(s)").arg(shownRepo).arg(rels.size());
+        else if (verb == QLatin1String("git_unstage"))
+            desc = QStringLiteral("git reset in %1: unstage %2 file(s) (the working copy is "
+                                  "kept)").arg(shownRepo).arg(rels.size());
+        else {
+            desc = QStringLiteral("git checkout -- in %1: discard the uncommitted changes in "
+                                  "%2 file(s)").arg(shownRepo).arg(rels.size());
+            o.warning = QStringLiteral(
+                "Data loss: the working-tree changes in these files are thrown away and "
+                "cannot be recovered. Each file goes back to its staged (or last committed) "
+                "content; staged changes are kept and untracked files are never touched.");
+        }
+        enqueueApprovalEx(client, id, desc, bulletList(rels), o, run(a));
+        return;
+    }
+
+    if (verb == QLatin1String("git_commit")) {
+        QString msg;
+        if (!(err = reqString(args, "message", &msg)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        if (msg.size() > kCommitMessageMax) {
+            sendError(client, id, QStringLiteral("message too long (max %1 characters)")
+                                      .arg(kCommitMessageMax));
+            return;
+        }
+        if (staged.isEmpty()) {
+            sendError(client, id, QStringLiteral(
+                "nothing is staged: stage files with git_stage first (git_commit never "
+                "commits unstaged changes)"));
+            return;
+        }
+        CardOptions o;
+        o.fullPreview = true;
+        QStringList secret;
+        for (const QString &s : staged)
+            if (PathDenylist::isSecretPath(QLatin1Char('/') + s)) secret << s;
+        if (!secret.isEmpty())
+            o.warning = QStringLiteral("Staged files on the credential deny-list: %1")
+                            .arg(secret.join(QStringLiteral(", ")));
+        const QString desc =
+            QStringLiteral("git commit on branch '%1' in %2: %3 staged file(s); hooks run")
+                .arg(sanitizeForCard(branch), shownRepo).arg(staged.size());
+        const QString preview = QStringLiteral("Message:\n%1\n\nStaged files:\n%2")
+                                    .arg(sanitizeMultiline(msg), bulletList(staged));
+        enqueueApprovalEx(client, id, desc, preview, o,
+                          run(QJsonObject{{QStringLiteral("message"), msg},
+                                          {QStringLiteral("expect_staged"),
+                                           QJsonArray::fromStringList(staged)}}));
+        return;
+    }
+
+    if (verb == QLatin1String("git_branch_create") || verb == QLatin1String("git_checkout")) {
+        QString name;
+        if (!(err = reqString(args, "name", &name)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        if (!validBranchName(name)) {
+            sendError(client, id, QStringLiteral("invalid branch name: %1").arg(sanitizeForCard(name)));
+            return;
+        }
+        const QStringList branches = jsonStrings(ctx.value(QLatin1String("branches")));
+        bool sw = false;
+        if (verb == QLatin1String("git_branch_create")) {
+            if (!(err = optBool(args, "switch", false, &sw)).isEmpty()) {
+                sendError(client, id, err);
+                return;
+            }
+            if (branches.contains(name)) {
+                sendError(client, id, QStringLiteral("branch '%1' already exists").arg(name));
+                return;
+            }
+            const QString desc =
+                QStringLiteral("create branch '%1' at the current commit of '%2' in %3%4")
+                    .arg(name, sanitizeForCard(branch), shownRepo,
+                         sw ? QStringLiteral(" and switch to it") : QString());
+            enqueueApprovalEx(client, id, desc, QString(), CardOptions(),
+                              run(QJsonObject{{QStringLiteral("name"), name},
+                                              {QStringLiteral("switch"), sw}}));
+            return;
+        }
+        if (!branches.contains(name)) {
+            sendError(client, id, QStringLiteral("no local branch named '%1'").arg(name));
+            return;
+        }
+        if (name == branch) {
+            sendError(client, id, QStringLiteral("already on branch '%1'").arg(name));
+            return;
+        }
+        const QString desc =
+            QStringLiteral("switch branch in %1: '%2' -> '%3' (git refuses if it would "
+                           "overwrite local changes; open files reload from disk)")
+                .arg(shownRepo, sanitizeForCard(branch), name);
+        enqueueApprovalEx(client, id, desc, QString(), CardOptions(),
+                          run(QJsonObject{{QStringLiteral("name"), name}}));
+        return;
+    }
+
+    if (verb == QLatin1String("git_stash")) {
+        QString action;
+        if (!(err = optEnum(args, "action",
+                            {QStringLiteral("push"), QStringLiteral("pop"),
+                             QStringLiteral("apply")},
+                            QString(), &action)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QString msg = args.value(QLatin1String("message")).toString();
+        if (args.contains(QLatin1String("message")) &&
+            (action != QLatin1String("push") || !args.value(QLatin1String("message")).isString())) {
+            sendError(client, id, QStringLiteral("message is only for action push"));
+            return;
+        }
+        const int stashes = ctx.value(QLatin1String("stash_count")).toInt();
+        QString desc;
+        if (action == QLatin1String("push")) {
+            const int n = staged.size() + modified.size() + untracked.size();
+            if (n == 0) {
+                sendError(client, id, QStringLiteral("nothing to stash: the working tree is clean"));
+                return;
+            }
+            desc = QStringLiteral("git stash push -u in %1: set aside the changes in %2 "
+                                  "file(s), untracked ones included%3")
+                       .arg(shownRepo).arg(n)
+                       .arg(msg.isEmpty() ? QString()
+                                          : QStringLiteral(" ('%1')").arg(
+                                                elideForCard(sanitizeForCard(msg), kApprovalDescChars)));
+        } else {
+            if (stashes == 0) {
+                sendError(client, id, QStringLiteral("there is no stash to %1").arg(action));
+                return;
+            }
+            desc = QStringLiteral("git stash %1 in %2: re-apply the latest stash "
+                                  "(stash@{0})%3")
+                       .arg(action, shownRepo,
+                            action == QLatin1String("pop")
+                                ? QStringLiteral(" and drop it if it applies cleanly")
+                                : QStringLiteral(" and keep it"));
+        }
+        QJsonObject a{{QStringLiteral("action"), action}};
+        if (!msg.isEmpty()) a[QStringLiteral("message")] = msg;
+        enqueueApprovalEx(client, id, desc, QString(), CardOptions(), run(a));
+        return;
+    }
+
+    if (verb == QLatin1String("git_fetch") || verb == QLatin1String("git_pull") ||
+        verb == QLatin1String("git_push")) {
+        if (!args.isEmpty()) {
+            sendError(client, id, QStringLiteral("%1 takes no arguments: it always uses the "
+                                                 "current branch and its upstream").arg(verb));
+            return;
+        }
+        if (!m_host.gitAsync) {
+            sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+            return;
+        }
+        const QString upstream = ctx.value(QLatin1String("upstream")).toString();
+        const QString remote = ctx.value(QLatin1String("upstream_remote")).toString();
+        if (branch.isEmpty() || branch.startsWith(QLatin1Char('('))) {
+            sendError(client, id, QStringLiteral("not on a branch (detached HEAD)"));
+            return;
+        }
+        if (upstream.isEmpty() || remote.isEmpty()) {
+            sendError(client, id, QStringLiteral(
+                "branch '%1' has no upstream configured; set one in a terminal "
+                "(git push -u) first").arg(branch));
+            return;
+        }
+        QString desc;
+        if (verb == QLatin1String("git_fetch"))
+            desc = QStringLiteral("git fetch from remote '%1' in %2 (network)")
+                       .arg(sanitizeForCard(remote), shownRepo);
+        else if (verb == QLatin1String("git_pull"))
+            desc = QStringLiteral("git pull --ff-only: fast-forward '%1' to '%2' in %3 "
+                                  "(network; refused if the branches diverged)")
+                       .arg(sanitizeForCard(branch), sanitizeForCard(upstream), shownRepo);
+        else
+            desc = QStringLiteral("git push: send '%1' to '%2' in %3 (network; never forced)")
+                       .arg(sanitizeForCard(branch), sanitizeForCard(upstream), shownRepo);
+        const QJsonObject a{{QStringLiteral("branch"), branch},
+                            {QStringLiteral("upstream"), upstream}};
+        enqueueApprovalEx(client, id, desc, QString(), CardOptions(), nullptr,
+                          [this, verb, a](McpEditorHost::Done done) {
+                              m_host.gitAsync(verb, a, done);
+                          });
+        return;
+    }
+
+    if (verb == QLatin1String("git_hunk")) {
+        QString p, action;
+        int idx = 0;
+        if (!(err = reqString(args, "path", &p)).isEmpty() ||
+            !(err = optInt(args, "hunk_index", 0, 100000, 0, true, &idx)).isEmpty() ||
+            !(err = optEnum(args, "action",
+                            {QStringLiteral("stage"), QStringLiteral("revert")}, QString(),
+                            &action)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QString rel = gitRelPath(root, p, &err);
+        if (rel.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QJsonObject info =
+            m_host.gitOp(QStringLiteral("list_hunks"), {{QStringLiteral("path"), rel}}, &err);
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QJsonArray hunks = info.value(QLatin1String("hunks")).toArray();
+        if (idx >= hunks.size()) {
+            sendError(client, id, QStringLiteral("%1 has %2 hunk(s); hunk_index %3 does not "
+                                                 "exist (list_hunks shows them)")
+                                      .arg(rel).arg(hunks.size()).arg(idx));
+            return;
+        }
+        const QJsonObject h = hunks.at(idx).toObject();
+        CardOptions o;
+        o.fullPreview = true;
+        QString desc;
+        if (action == QLatin1String("stage")) {
+            desc = QStringLiteral("stage hunk %1 of %2 (%3) into the git index")
+                       .arg(idx).arg(sanitizeForCard(rel),
+                                     h.value(QLatin1String("header")).toString());
+        } else {
+            desc = QStringLiteral("revert hunk %1 of %2 (%3) in the working copy")
+                       .arg(idx).arg(sanitizeForCard(rel),
+                                     h.value(QLatin1String("header")).toString());
+            o.warning = QStringLiteral("Data loss: the lines this hunk added or changed are "
+                                       "removed from the file and cannot be recovered.");
+        }
+        enqueueApprovalEx(client, id, desc,
+                          sanitizeMultiline(h.value(QLatin1String("diff")).toString()), o,
+                          run(QJsonObject{{QStringLiteral("path"), rel},
+                                          {QStringLiteral("hunk_index"), idx},
+                                          {QStringLiteral("action"), action},
+                                          {QStringLiteral("expect_header"),
+                                           h.value(QLatin1String("header"))}}));
+        return;
+    }
+
+    if (verb == QLatin1String("resolve_conflict")) {
+        QString p, take;
+        int region = 0;
+        if (!(err = reqString(args, "path", &p)).isEmpty() ||
+            !(err = optInt(args, "region", 0, 100000, 0, true, &region)).isEmpty() ||
+            !(err = optEnum(args, "take",
+                            {QStringLiteral("ours"), QStringLiteral("theirs"),
+                             QStringLiteral("both")},
+                            QString(), &take)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QString rel = gitRelPath(root, p, &err);
+        if (rel.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        if (const QString deny = writeDestinationRefusal(root + QLatin1Char('/') + rel);
+            !deny.isEmpty()) {
+            sendError(client, id, deny);
+            return;
+        }
+        const QJsonObject info = m_host.gitOp(QStringLiteral("list_conflicts"),
+                                              {{QStringLiteral("path"), rel}}, &err);
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QJsonArray regions = info.value(QLatin1String("regions")).toArray();
+        if (region >= regions.size()) {
+            sendError(client, id, QStringLiteral("%1 has %2 conflict region(s); region %3 "
+                                                 "does not exist (list_conflicts shows them)")
+                                      .arg(rel).arg(regions.size()).arg(region));
+            return;
+        }
+        const QJsonObject rg = regions.at(region).toObject();
+        QString repl;
+        if (take != QLatin1String("theirs")) repl += rg.value(QLatin1String("ours")).toString();
+        if (take != QLatin1String("ours")) repl += rg.value(QLatin1String("theirs")).toString();
+        CardOptions o;
+        o.fullPreview = true;
+        const QString desc =
+            QStringLiteral("resolve conflict %1 in %2 (lines %3-%4) taking %5, then save the "
+                           "file")
+                .arg(region).arg(sanitizeForCard(rel))
+                .arg(rg.value(QLatin1String("start_line")).toInt())
+                .arg(rg.value(QLatin1String("end_line")).toInt())
+                .arg(take == QLatin1String("both") ? QStringLiteral("both sides (ours, then theirs)")
+                                                   : take);
+        enqueueApprovalEx(client, id, desc,
+                          repl.isEmpty() ? QStringLiteral("(the region becomes empty)")
+                                         : sanitizeMultiline(repl),
+                          o,
+                          run(QJsonObject{{QStringLiteral("path"), rel},
+                                          {QStringLiteral("region"), region},
+                                          {QStringLiteral("take"), take},
+                                          {QStringLiteral("expect_start"),
+                                           rg.value(QLatin1String("start_line"))}}));
+        return;
+    }
+    sendError(client, id, QStringLiteral("unknown verb: %1").arg(verb));
+}
+
+void McpBridge::verbNoter(QLocalSocket *client, int id, const QJsonObject &args,
+                          const QString &verb) {
+    if (!m_host.noterOp) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    auto run = [this, verb](const QJsonObject &a) {
+        return [this, verb, a](QString *e) { return m_host.noterOp(verb, a, e); };
+    };
+
+    if (verb == QLatin1String("search_notes")) {
+        QString q;
+        int max = 0;
+        if (!(err = reqString(args, "query", &q)).isEmpty() ||
+            !(err = optInt(args, "max_results", 1, 100, 20, false, &max)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QString root = m_host.notesRoot ? m_host.notesRoot() : QString();
+        if (const QString blocked = NotesStorage::accessBlockedMessage(root); !blocked.isEmpty()) {
+            sendError(client, id, blocked);
+            return;
+        }
+        const QJsonObject r = m_host.noterOp(verb, {{QStringLiteral("query"), q},
+                                                    {QStringLiteral("max_results"), max}},
+                                             &err);
+        sendOp(client, id, r, err);
+        return;
+    }
+
+    // ── reminders (id from list_reminders) ──
+    if (verb == QLatin1String("delete_reminder") || verb == QLatin1String("snooze_reminder") ||
+        verb == QLatin1String("dismiss_reminder")) {
+        QString rid;
+        int minutes = 10;
+        if (!(err = reqString(args, "id", &rid)).isEmpty() ||
+            (verb == QLatin1String("snooze_reminder") &&
+             !(err = optInt(args, "minutes", 1, 10080, 10, false, &minutes)).isEmpty())) {
+            sendError(client, id, err);
+            return;
+        }
+        if (verb != QLatin1String("snooze_reminder") && args.contains(QLatin1String("minutes"))) {
+            sendError(client, id, QStringLiteral("minutes is only for snooze_reminder"));
+            return;
+        }
+        const QJsonObject info =
+            m_host.noterOp(QStringLiteral("reminder_info"), {{QStringLiteral("id"), rid}}, &err);
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QString title =
+            elideForCard(sanitizeForCard(info.value(QLatin1String("note_title")).toString()),
+                         kApprovalDescChars);
+        const QDateTime due = QDateTime::fromString(
+            info.value(QLatin1String("due_iso")).toString(), Qt::ISODate).toLocalTime();
+        const QString dueText = due.isValid()
+            ? due.toString(QStringLiteral("yyyy-MM-dd HH:mm")) : QStringLiteral("unknown");
+        QString desc;
+        QJsonObject a{{QStringLiteral("id"), rid}};
+        if (verb == QLatin1String("delete_reminder")) {
+            desc = QStringLiteral("delete the reminder on note '%1' (due %2)").arg(title, dueText);
+        } else if (verb == QLatin1String("dismiss_reminder")) {
+            desc = QStringLiteral("dismiss the reminder on note '%1' (due %2); it will not "
+                                  "fire again").arg(title, dueText);
+        } else {
+            const QDateTime until = QDateTime::currentDateTime().addSecs(qint64(minutes) * 60);
+            desc = QStringLiteral("snooze the reminder on note '%1' for %2 minute(s), until %3")
+                       .arg(title).arg(minutes)
+                       .arg(until.toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+            a[QStringLiteral("minutes")] = minutes;
+        }
+        enqueueApprovalEx(client, id, desc, QString(), CardOptions(), run(a));
+        return;
+    }
+
+    // ── notes (file from list_notes / search_notes) ──
+    const QString fileCanon = resolveNotePath(args, &err);
+    if (fileCanon.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    const QString root = m_host.notesRoot ? m_host.notesRoot() : QString();
+    const QString rootCanon = QFileInfo(root).canonicalFilePath();
+    const bool inTrash =
+        fileCanon.startsWith(rootCanon + QStringLiteral("/Trash/"));
+    const QString title =
+        elideForCard(sanitizeForCard(noteTitleForCard(root, fileCanon)), kApprovalDescChars);
+    QJsonObject a{{QStringLiteral("file"), fileCanon}};
+    const bool trashVerb = verb == QLatin1String("restore_note") ||
+                           verb == QLatin1String("delete_note_permanently");
+    if (trashVerb && !inTrash) {
+        sendError(client, id, QStringLiteral("'%1' is not in the Noter Trash; %2 only works on "
+                                             "trashed notes (trash_note first)").arg(title, verb));
+        return;
+    }
+    if (!trashVerb && inTrash) {
+        sendError(client, id, QStringLiteral("'%1' is in the Noter Trash; restore_note it "
+                                             "first").arg(title));
+        return;
+    }
+
+    if (verb == QLatin1String("rename_note")) {
+        QString nt;
+        if (!(err = reqString(args, "new_title", &nt)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        nt = nt.trimmed();
+        if (nt.size() > 200) {
+            sendError(client, id, QStringLiteral("new_title is too long (max 200 characters)"));
+            return;
+        }
+        a[QStringLiteral("new_title")] = nt;
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("rename note '%1' to '%2' (the file is renamed to "
+                                         "match)").arg(title, sanitizeForCard(nt)),
+                          QString(), CardOptions(), run(a));
+        return;
+    }
+    if (verb == QLatin1String("trash_note")) {
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("move note '%1' to the Noter Trash (restore_note "
+                                         "brings it back)").arg(title),
+                          QString(), CardOptions(), run(a));
+        return;
+    }
+    if (verb == QLatin1String("restore_note")) {
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("restore note '%1' from the Noter Trash to the "
+                                         "Inbox").arg(title),
+                          QString(), CardOptions(), run(a));
+        return;
+    }
+    if (verb == QLatin1String("delete_note_permanently")) {
+        CardOptions o;
+        o.warning = QStringLiteral("This cannot be undone: the note and its backup copies "
+                                   "are deleted from disk.");
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("permanently delete note '%1' from the Noter "
+                                         "Trash").arg(title),
+                          QString(), o, run(a));
+        return;
+    }
+    if (verb == QLatin1String("export_note")) {
+        QString format;
+        if (!(err = optEnum(args, "format",
+                            {QStringLiteral("markdown"), QStringLiteral("pdf")}, QString(),
+                            &format)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QJsonObject caps =
+            m_host.noterOp(QStringLiteral("export_formats"), QJsonObject(), &err);
+        const QStringList formats = jsonStrings(caps.value(QLatin1String("formats")));
+        if (!formats.contains(format)) {
+            sendError(client, id, QStringLiteral(
+                "export format '%1' is not available in this build (available: %2)")
+                                      .arg(format, formats.join(QStringLiteral(", "))));
+            return;
+        }
+        const QString path = QDir::cleanPath(
+            QDir::fromNativeSeparators(args.value(QLatin1String("path")).toString()));
+        if (path.isEmpty() || path == QLatin1String(".")) {
+            sendError(client, id, QStringLiteral("missing path"));
+            return;
+        }
+        if (!QFileInfo(path).isAbsolute()) {
+            sendError(client, id, QStringLiteral("path must be absolute"));
+            return;
+        }
+        if (!QFileInfo(QFileInfo(path).absolutePath()).isDir()) {
+            sendError(client, id, QStringLiteral("parent directory does not exist: %1")
+                                      .arg(QDir::toNativeSeparators(QFileInfo(path).absolutePath())));
+            return;
+        }
+        if (QFileInfo(path).isDir()) {
+            sendError(client, id, QStringLiteral("path is a directory"));
+            return;
+        }
+        if (const QString deny = writeDestinationRefusal(path); !deny.isEmpty()) {
+            sendError(client, id, deny);
+            return;
+        }
+        const QString shown = sanitizeForCard(QDir::toNativeSeparators(path));
+        const QString dest = QFileInfo(path).isFile()
+                                 ? QStringLiteral("OVERWRITE existing file: ") + shown
+                                 : shown;
+        a[QStringLiteral("format")] = format;
+        a[QStringLiteral("path")] = path;
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("export note '%1' as %2 to %3%4")
+                              .arg(title,
+                                   format == QLatin1String("pdf") ? QStringLiteral("PDF")
+                                                                  : QStringLiteral("Markdown"),
+                                   dest,
+                                   format == QLatin1String("markdown")
+                                       ? QStringLiteral(" (images go to a .assets folder "
+                                                        "next to it)")
+                                       : QString()),
+                          QString(), CardOptions(), run(a));
+        return;
+    }
+    sendError(client, id, QStringLiteral("unknown verb: %1").arg(verb));
+}
+
+// The ONE allow-list of preferences MCP may read or write. Editor and view
+// settings only: nothing that holds a credential, a URL, a plugin path, an
+// update or network setting, recent files or Noter state.
+QJsonArray McpBridge::preferenceSchema() {
+    auto b = [](const char *k, const char *d) {
+        return QJsonObject{{QStringLiteral("key"), QLatin1String(k)},
+                           {QStringLiteral("type"), QStringLiteral("boolean")},
+                           {QStringLiteral("description"), QLatin1String(d)}};
+    };
+    auto i = [](const char *k, int lo, int hi, const char *d) {
+        return QJsonObject{{QStringLiteral("key"), QLatin1String(k)},
+                           {QStringLiteral("type"), QStringLiteral("integer")},
+                           {QStringLiteral("min"), lo},
+                           {QStringLiteral("max"), hi},
+                           {QStringLiteral("description"), QLatin1String(d)}};
+    };
+    auto e = [](const char *k, const QStringList &v, const char *d) {
+        return QJsonObject{{QStringLiteral("key"), QLatin1String(k)},
+                           {QStringLiteral("type"), QStringLiteral("enum")},
+                           {QStringLiteral("values"), QJsonArray::fromStringList(v)},
+                           {QStringLiteral("description"), QLatin1String(d)}};
+    };
+    static const QJsonArray s = {
+        i("font_size", 6, 48, "Editor font size in points"),
+        QJsonObject{{QStringLiteral("key"), QStringLiteral("font_family")},
+                    {QStringLiteral("type"), QStringLiteral("string")},
+                    {QStringLiteral("description"),
+                     QStringLiteral("Editor font family (must be installed)")}},
+        i("tab_width", 1, 16, "Columns per tab stop"),
+        b("use_spaces", "Insert spaces instead of a tab character"),
+        b("auto_indent", "Keep the indentation of the previous line"),
+        b("word_wrap", "Wrap long lines"),
+        b("show_line_numbers", "Line-number margin"),
+        b("show_indent_guides", "Indentation guides"),
+        b("highlight_current_line", "Highlight the caret line"),
+        b("show_edge", "Long-line edge marker"),
+        i("edge_column", 20, 500, "Column of the long-line edge marker"),
+        i("caret_width", 1, 3, "Caret width in pixels"),
+        b("smooth_font", "Anti-aliased font rendering"),
+        e("fold_style", {QStringLiteral("BoxedTree"), QStringLiteral("CircleTree"),
+                         QStringLiteral("Plain"), QStringLiteral("Boxed"),
+                         QStringLiteral("Circle"), QStringLiteral("None")},
+          "Fold margin style"),
+        b("show_bookmark_margin", "Bookmark margin"),
+        b("show_document_rulers", "Document rulers"),
+        b("show_crosshair", "Crosshair cursor guides"),
+        b("auto_complete", "Word auto-completion"),
+        i("auto_complete_threshold", 1, 10, "Characters typed before completion shows"),
+        e("default_eol", {QStringLiteral("Unix"), QStringLiteral("Windows"),
+                          QStringLiteral("Mac")},
+          "Line ending for new documents"),
+        i("autosave_interval_sec", 1, 300, "Session autosave interval in seconds"),
+        e("theme", {QStringLiteral("System"), QStringLiteral("Light"),
+                    QStringLiteral("Dark"), QStringLiteral("Monokai")},
+          "Colour theme"),
+        b("hide_toolbar", "Hide the toolbar"),
+        b("tabs_closable", "Close button on each tab"),
+        b("double_click_to_close_tab", "Double-click a tab to close it"),
+        b("show_welcome_on_startup", "Show the Welcome tab when nothing is restored")};
+    return s;
+}
+
+QString McpBridge::workspaceFolderRefusal(const QString &dir, QString *canon) {
+    const QString in = QDir::fromNativeSeparators(dir);
+    if (in.isEmpty()) return QStringLiteral("missing path");
+    if (!QDir::isAbsolutePath(in)) return QStringLiteral("path must be absolute");
+    const QFileInfo fi(in);
+    if (!fi.isDir()) return QStringLiteral("not an existing folder: %1")
+                                .arg(QDir::toNativeSeparators(in));
+    const QString c = fi.canonicalFilePath();
+    if (c.isEmpty()) return QStringLiteral("cannot resolve %1").arg(QDir::toNativeSeparators(in));
+    if (canon) *canon = c;
+    auto refuse = [&](const QString &why) {
+        return QStringLiteral("refusing to make %1 the workspace folder: %2")
+            .arg(QDir::toNativeSeparators(c), why);
+    };
+    if (QDir(c).isRoot()) return refuse(QStringLiteral("it is the filesystem root"));
+    const QString home = QFileInfo(QDir::homePath()).canonicalFilePath();
+    if (!home.isEmpty()) {
+        if (c == home) return refuse(QStringLiteral("it is your home folder; pick a project folder"));
+        if (home.startsWith(c + QLatin1Char('/')))
+            return refuse(QStringLiteral("it contains your home folder"));
+        static const char *kHomeDeny[] = {
+            ".ssh", ".gnupg", ".config", ".aws", ".azure", ".kube", ".docker",
+            ".password-store", ".local/share/keyrings", ".mozilla", ".thunderbird",
+            "Library/Keychains", "Library/Application Support", "Library/Cookies",
+            "AppData", ".npmrc", ".pki", ".cert"};
+        for (const char *d : kHomeDeny) {
+            const QString p = home + QLatin1Char('/') + QLatin1String(d);
+            if (c == p || c.startsWith(p + QLatin1Char('/')))
+                return refuse(QStringLiteral("~/%1 holds credentials or app settings")
+                                  .arg(QLatin1String(d)));
+        }
+    }
+    static const char *kSystem[] = {"/etc", "/proc", "/sys", "/dev", "/boot", "/root",
+                                    "/var", "/private", "/usr", "/bin", "/sbin", "/lib",
+                                    "/System", "/Library", "C:/Windows", "C:/ProgramData"};
+    for (const char *d : kSystem) {
+        const QString p = QLatin1String(d);
+        if (c.compare(p, Qt::CaseInsensitive) == 0 ||
+            c.startsWith(p + QLatin1Char('/'), Qt::CaseInsensitive)) {
+            // A temp folder under /var or /private is a normal project place.
+            const QString tmp = QFileInfo(QDir::tempPath()).canonicalFilePath();
+            if (!tmp.isEmpty() && (c == tmp || c.startsWith(tmp + QLatin1Char('/')))) break;
+            return refuse(QStringLiteral("it is a system folder"));
+        }
+    }
+    if (PathDenylist::isSecretPath(c) || PathDenylist::isSecretPath(c + QStringLiteral("/x")))
+        return refuse(QStringLiteral("it is on the credential deny-list"));
+    return QString();
+}
+
+void McpBridge::verbSettings(QLocalSocket *client, int id, const QJsonObject &args,
+                             const QString &verb) {
+    if (!m_host.settingsOp) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    if (verb == QLatin1String("get_preferences")) {
+        QJsonObject r = m_host.settingsOp(verb, QJsonObject(), &err);
+        if (err.isEmpty()) {
+            // Only allow-listed keys leave the bridge, whatever the host sent.
+            const QJsonObject all = r.value(QLatin1String("preferences")).toObject();
+            QJsonObject prefs;
+            for (const QJsonValue &k : preferenceSchema()) {
+                const QString key = k.toObject().value(QLatin1String("key")).toString();
+                if (all.contains(key)) prefs[key] = all.value(key);
+            }
+            r = QJsonObject{{QStringLiteral("preferences"), prefs},
+                            {QStringLiteral("keys"), preferenceSchema()}};
+        }
+        sendOp(client, id, r, err);
+        return;
+    }
+    if (verb == QLatin1String("set_preference")) {
+        const QString key = args.value(QLatin1String("key")).toString();
+        QJsonObject spec;
+        QStringList allowed;
+        for (const QJsonValue &k : preferenceSchema()) {
+            allowed << k.toObject().value(QLatin1String("key")).toString();
+            if (allowed.last() == key) spec = k.toObject();
+        }
+        if (spec.isEmpty()) {
+            sendError(client, id, QStringLiteral("unknown or protected preference key '%1'; "
+                                                 "settable keys: %2")
+                                      .arg(sanitizeForCard(key).left(64),
+                                           allowed.join(QStringLiteral(", "))));
+            return;
+        }
+        const QString type = spec.value(QLatin1String("type")).toString();
+        const QJsonValue v = args.value(QLatin1String("value"));
+        QJsonValue value;
+        if (type == QLatin1String("boolean")) {
+            if (!v.isBool()) err = QStringLiteral("%1 must be a boolean").arg(key);
+            value = v;
+        } else if (type == QLatin1String("integer")) {
+            const int lo = spec.value(QLatin1String("min")).toInt();
+            const int hi = spec.value(QLatin1String("max")).toInt();
+            const double d = v.toDouble(-1e18);
+            if (!v.isDouble() || d != double(qint64(d)) || d < lo || d > hi)
+                err = QStringLiteral("%1 must be an integer from %2 to %3").arg(key).arg(lo).arg(hi);
+            value = int(d);
+        } else if (type == QLatin1String("enum")) {
+            const QStringList vals = jsonStrings(spec.value(QLatin1String("values")));
+            QString hit;
+            for (const QString &x : vals)
+                if (v.isString() && x.compare(v.toString(), Qt::CaseInsensitive) == 0) hit = x;
+            if (hit.isEmpty())
+                err = QStringLiteral("%1 must be one of %2").arg(key, vals.join(QLatin1Char('|')));
+            value = hit;
+        } else {
+            if (!v.isString() || v.toString().trimmed().isEmpty() || v.toString().size() > 100)
+                err = QStringLiteral("%1 must be a non-empty string").arg(key);
+            value = v.toString().trimmed();
+        }
+        if (err.isEmpty() && key == QLatin1String("font_family")) {
+            const QJsonObject chk = m_host.settingsOp(QStringLiteral("check_font"),
+                                                      {{QStringLiteral("value"), value}}, &err);
+            Q_UNUSED(chk);
+        }
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const QJsonObject cur = m_host.settingsOp(QStringLiteral("get_preferences"),
+                                                  QJsonObject(), &err)
+                                    .value(QLatin1String("preferences")).toObject();
+        auto show = [](const QJsonValue &x) {
+            return x.isBool() ? QString::fromLatin1(x.toBool() ? "true" : "false")
+                 : x.isDouble() ? QString::number(x.toInt())
+                                : sanitizeForCard(x.toString());
+        };
+        if (cur.value(key) == value) {
+            sendResult(client, id, {{QStringLiteral("key"), key},
+                                    {QStringLiteral("value"), value},
+                                    {QStringLiteral("changed"), false}});
+            return;
+        }
+        const QString desc = QStringLiteral("change preference %1: %2 -> %3 (applied to every "
+                                            "open editor and saved)")
+                                 .arg(key, show(cur.value(key)), show(value));
+        enqueueApprovalEx(client, id, desc, QString(), CardOptions(),
+                          [this, key, value](QString *e) {
+                              return m_host.settingsOp(
+                                  QStringLiteral("set_preference"),
+                                  {{QStringLiteral("key"), key}, {QStringLiteral("value"), value}},
+                                  e);
+                          });
+        return;
+    }
+    if (verb == QLatin1String("set_workspace_folder")) {
+        QString canon;
+        if (const QString r = workspaceFolderRefusal(args.value(QLatin1String("path")).toString(),
+                                                     &canon);
+            !r.isEmpty()) {
+            sendError(client, id, r);
+            return;
+        }
+        const QString cur = m_host.workspaceRoot ? m_host.workspaceRoot() : QString();
+        const QString desc =
+            QStringLiteral("set the workspace folder to %1 (was: %2). Read tools such as "
+                           "search_project and the git tools then see the files under it.")
+                .arg(sanitizeForCard(QDir::toNativeSeparators(canon)),
+                     cur.isEmpty() ? QStringLiteral("none")
+                                   : sanitizeForCard(QDir::toNativeSeparators(cur)));
+        enqueueApprovalEx(client, id, desc, QString(), CardOptions(), [this, canon](QString *e) {
+            return m_host.settingsOp(QStringLiteral("set_workspace_folder"),
+                                     {{QStringLiteral("path"), canon}}, e);
+        });
+        return;
+    }
+    sendError(client, id, QStringLiteral("unknown verb: %1").arg(verb));
+}
+
+void McpBridge::verbData(QLocalSocket *client, int id, const QJsonObject &args,
+                         const QString &verb) {
+    if (!m_host.dataOp) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    if (verb == QLatin1String("open_connections_dialog") ||
+        verb == QLatin1String("open_schema_browser")) {
+        const QJsonObject r = m_host.dataOp(verb, QJsonObject(), &err);
+        sendOp(client, id, r, err);
+        return;
+    }
+    QString name;
+    if (!(err = reqString(args, "connection_name", &name)).isEmpty() &&
+        !(verb == QLatin1String("add_connection") || verb == QLatin1String("update_connection") ||
+          verb == QLatin1String("delete_connection"))) {
+        sendError(client, id, err);
+        return;
+    }
+    // Connection tools name the connection "name" (the record's own field).
+    if (verb == QLatin1String("add_connection") || verb == QLatin1String("update_connection") ||
+        verb == QLatin1String("delete_connection")) {
+        if (!(err = reqString(args, "name", &name)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+    }
+    const QJsonObject info = m_host.dataOp(QStringLiteral("connection_info"),
+                                           {{QStringLiteral("connection_name"), name}}, &err);
+    const bool exists = err.isEmpty();
+    auto describe = [](const QJsonObject &c) {
+        QString s = QStringLiteral("driver %1, database %2")
+                        .arg(c.value(QLatin1String("driver")).toString(),
+                             sanitizeForCard(c.value(QLatin1String("database")).toString()));
+        const QString host = c.value(QLatin1String("host")).toString();
+        if (!host.isEmpty()) {
+            s += QStringLiteral(", host %1").arg(sanitizeForCard(host));
+            if (c.value(QLatin1String("port")).toInt() > 0)
+                s += QStringLiteral(":%1").arg(c.value(QLatin1String("port")).toInt());
+        }
+        return s;
+    };
+
+    if (verb == QLatin1String("describe_table") || verb == QLatin1String("test_connection")) {
+        if (!exists) {
+            sendError(client, id, err);
+            return;
+        }
+        if (verb == QLatin1String("describe_table")) {
+            QString table;
+            if (!(err = reqString(args, "table", &table)).isEmpty()) {
+                sendError(client, id, err);
+                return;
+            }
+            if (table.size() > 256 || table != sanitizeForCard(table)) {
+                sendError(client, id, QStringLiteral("invalid table name"));
+                return;
+            }
+            const QJsonObject r = m_host.dataOp(verb, {{QStringLiteral("connection_name"), name},
+                                                       {QStringLiteral("table"), table}},
+                                                &err);
+            sendOp(client, id, r, err);
+            return;
+        }
+        if (!m_host.dataAsync) {
+            sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+            return;
+        }
+        QPointer<QLocalSocket> c(client);
+        QPointer<McpBridge> self(this);
+        m_host.dataAsync(verb, {{QStringLiteral("connection_name"), name}},
+                         [self, c, id](const QJsonObject &r, const QString &e) {
+                             if (self && c && c->state() == QLocalSocket::ConnectedState)
+                                 self->sendOp(c, id, r, e);
+                         });
+        return;
+    }
+
+    if (verb == QLatin1String("execute_sql")) {
+        if (!exists) {
+            sendError(client, id, err);
+            return;
+        }
+        if (!m_host.dataAsync) {
+            sendError(client, id, QStringLiteral("execute_sql not supported by host"));
+            return;
+        }
+        QString sql;
+        if (!(err = reqString(args, "sql", &sql)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        // The app's own gate classifies; approval never overrides a hard refusal.
+        const QJsonObject v = m_host.dataOp(QStringLiteral("classify_sql"),
+                                            {{QStringLiteral("connection_name"), name},
+                                             {QStringLiteral("sql"), sql}},
+                                            &err);
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        const int count = v.value(QLatin1String("statement_count")).toInt();
+        if (!v.value(QLatin1String("single_statement")).toBool()) {
+            sendError(client, id, QStringLiteral(
+                "execute_sql runs exactly one statement; this text has %1 (stacked "
+                "statements are refused)").arg(qMax(count, 2)));
+            return;
+        }
+        if (v.value(QLatin1String("hard_fail")).toBool()) {
+            sendError(client, id, QStringLiteral("refused by the SQL gate (approval cannot "
+                                                 "override this): %1")
+                                      .arg(v.value(QLatin1String("reason")).toString()));
+            return;
+        }
+        if (!v.value(QLatin1String("mutation")).toBool()) {
+            sendError(client, id, QStringLiteral(
+                "this statement does not change data; run it with run_query instead "
+                "(execute_sql is only for statements that modify the database)%1")
+                                      .arg(v.value(QLatin1String("read_only")).toBool()
+                                               ? QString()
+                                               : QStringLiteral(": ") +
+                                                     v.value(QLatin1String("reason")).toString()));
+            return;
+        }
+        CardOptions o;
+        o.fullPreview = true;
+        o.warning = QStringLiteral("This changes data in the database. Notepatra cannot undo "
+                                   "it.");
+        const QString desc = QStringLiteral("run SQL on connection '%1' (%2): 1 statement")
+                                 .arg(sanitizeForCard(name), describe(info));
+        const QJsonObject a{{QStringLiteral("connection_name"), name},
+                            {QStringLiteral("sql"), sql}};
+        enqueueApprovalEx(client, id, desc, sanitizeMultiline(sql), o, nullptr,
+                          [this, a](McpEditorHost::Done done) {
+                              m_host.dataAsync(QStringLiteral("execute_sql"), a, done);
+                          });
+        return;
+    }
+
+    // ── connection CRUD: never a password, token or options string ──
+    static const QStringList kDrivers = {QStringLiteral("QSQLITE"), QStringLiteral("QPSQL"),
+                                         QStringLiteral("QMYSQL"), QStringLiteral("QODBC"),
+                                         QStringLiteral("DUCKDB")};
+    static const QStringList kFields = {QStringLiteral("name"),     QStringLiteral("new_name"),
+                                        QStringLiteral("driver"),   QStringLiteral("host"),
+                                        QStringLiteral("port"),     QStringLiteral("database"),
+                                        QStringLiteral("username")};
+    for (auto it = args.begin(); it != args.end(); ++it) {
+        if (!kFields.contains(it.key())) {
+            sendError(client, id, QStringLiteral(
+                "unexpected field '%1': passwords, tokens and connection options are never "
+                "taken over MCP; the user enters them in Manage Connections")
+                                      .arg(sanitizeForCard(it.key()).left(40)));
+            return;
+        }
+        if (it.key() != QLatin1String("port") && !it.value().isString()) {
+            sendError(client, id, QStringLiteral("%1 must be a string").arg(it.key()));
+            return;
+        }
+    }
+    if (verb == QLatin1String("delete_connection")) {
+        if (!exists) {
+            sendError(client, id, err);
+            return;
+        }
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("delete the saved database connection '%1' (%2). "
+                                         "The database itself is not touched.")
+                              .arg(sanitizeForCard(name), describe(info)),
+                          QString(), CardOptions(), [this, name](QString *e) {
+                              return m_host.dataOp(QStringLiteral("delete_connection"),
+                                                   {{QStringLiteral("name"), name}}, e);
+                          });
+        return;
+    }
+    if (verb == QLatin1String("add_connection") && exists) {
+        sendError(client, id, QStringLiteral("a connection named '%1' already exists").arg(name));
+        return;
+    }
+    if (verb == QLatin1String("update_connection") && !exists) {
+        sendError(client, id, err);
+        return;
+    }
+    if (verb == QLatin1String("add_connection") && args.contains(QLatin1String("new_name"))) {
+        sendError(client, id, QStringLiteral("new_name is only for update_connection"));
+        return;
+    }
+    // The record as it will be saved.
+    QJsonObject rec = exists ? info : QJsonObject();
+    rec[QStringLiteral("name")] = name;
+    for (const QString &k : {QStringLiteral("driver"), QStringLiteral("host"),
+                             QStringLiteral("database"), QStringLiteral("username")})
+        if (args.contains(k)) rec[k] = args.value(k).toString().trimmed();
+    if (args.contains(QLatin1String("port"))) {
+        int port = 0;
+        if (!(err = optInt(args, "port", 0, 65535, 0, true, &port)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        rec[QStringLiteral("port")] = port;
+    }
+    if (args.contains(QLatin1String("new_name"))) {
+        const QString nn = args.value(QLatin1String("new_name")).toString().trimmed();
+        if (nn.isEmpty()) {
+            sendError(client, id, QStringLiteral("new_name must not be empty"));
+            return;
+        }
+        QString e2;
+        m_host.dataOp(QStringLiteral("connection_info"), {{QStringLiteral("connection_name"), nn}},
+                      &e2);
+        if (e2.isEmpty() && nn != name) {
+            sendError(client, id, QStringLiteral("a connection named '%1' already exists").arg(nn));
+            return;
+        }
+        rec[QStringLiteral("name")] = nn;
+    }
+    const QString driver = rec.value(QLatin1String("driver")).toString().toUpper();
+    rec[QStringLiteral("driver")] = driver;
+    if (name.trimmed() != name || name.size() > 100 || name != sanitizeForCard(name) ||
+        rec.value(QLatin1String("name")).toString().size() > 100) {
+        sendError(client, id, QStringLiteral("name must be 1-100 printable characters without "
+                                             "leading or trailing spaces"));
+        return;
+    }
+    if (!kDrivers.contains(driver)) {
+        sendError(client, id, QStringLiteral("driver must be one of %1")
+                                  .arg(kDrivers.join(QLatin1Char('|'))));
+        return;
+    }
+    const QString db = rec.value(QLatin1String("database")).toString();
+    if (db.isEmpty()) {
+        sendError(client, id, QStringLiteral("missing database"));
+        return;
+    }
+    const bool fileDriver = driver == QLatin1String("QSQLITE") || driver == QLatin1String("DUCKDB");
+    if (fileDriver && db != QLatin1String(":memory:")) {
+        if (!QDir::isAbsolutePath(QDir::fromNativeSeparators(db))) {
+            sendError(client, id, QStringLiteral("database must be an absolute file path (or "
+                                                 ":memory:) for %1").arg(driver));
+            return;
+        }
+        if (const QString deny = writeDestinationRefusal(db); !deny.isEmpty()) {
+            sendError(client, id, deny);
+            return;
+        }
+    }
+    QStringList changes;
+    for (const QString &k : {QStringLiteral("name"), QStringLiteral("driver"),
+                             QStringLiteral("host"), QStringLiteral("port"),
+                             QStringLiteral("database"), QStringLiteral("username")}) {
+        const QJsonValue before = info.value(k), after = rec.value(k);
+        if (exists && before == after) continue;
+        if (!exists && (after.isUndefined() || after.toString() == QString() ||
+                        (k == QLatin1String("port") && after.toInt() == 0)))
+            continue;
+        const QString a = after.isDouble() ? QString::number(after.toInt())
+                                           : sanitizeForCard(after.toString());
+        changes << (exists ? QStringLiteral("%1: %2 -> %3")
+                                 .arg(k, before.isDouble() ? QString::number(before.toInt())
+                                                           : sanitizeForCard(before.toString()),
+                                      a)
+                           : QStringLiteral("%1: %2").arg(k, a));
+    }
+    if (exists && changes.isEmpty()) {
+        sendError(client, id, QStringLiteral("nothing to change"));
+        return;
+    }
+    CardOptions o;
+    const bool serverChanged =
+        exists && (info.value(QLatin1String("driver")) != rec.value(QLatin1String("driver")) ||
+                   info.value(QLatin1String("host")) != rec.value(QLatin1String("host")) ||
+                   info.value(QLatin1String("port")) != rec.value(QLatin1String("port")) ||
+                   info.value(QLatin1String("username")) != rec.value(QLatin1String("username")));
+    const bool hadSecret = info.value(QLatin1String("has_password")).toBool() ||
+                           info.value(QLatin1String("has_options")).toBool();
+    if (serverChanged && hadSecret)
+        o.warning = QStringLiteral("The saved password and connection options are cleared "
+                                   "because the server or account changes; the user re-enters "
+                                   "them in Manage Connections.");
+    rec[QStringLiteral("clear_secret")] = serverChanged;
+    rec[QStringLiteral("original_name")] = name;
+    const QString desc =
+        verb == QLatin1String("add_connection")
+            ? QStringLiteral("add the database connection '%1' (no password is stored; the "
+                             "user enters it in Manage Connections)").arg(sanitizeForCard(name))
+            : QStringLiteral("update the database connection '%1'").arg(sanitizeForCard(name));
+    enqueueApprovalEx(client, id, desc, changes.join(QLatin1Char('\n')), o,
+                      [this, verb, rec](QString *e) { return m_host.dataOp(verb, rec, e); });
+}
+
+namespace {
+// What the card says about a request's host, without a DNS lookup.
+QString hostKind(const QString &host) {
+    const QString h = host.toLower();
+    if (h == QLatin1String("localhost") || h.endsWith(QLatin1String(".localhost")))
+        return QStringLiteral("loopback: this machine");
+    QHostAddress a;
+    if (!a.setAddress(h)) return QStringLiteral("resolved by DNS when sent");
+    if (a.isLoopback()) return QStringLiteral("loopback: this machine");
+    if (a.isLinkLocal()) return QStringLiteral("link-local network address");
+    const quint32 v4 = a.protocol() == QAbstractSocket::IPv4Protocol ? a.toIPv4Address() : 0;
+    const bool priv4 = (v4 >> 24) == 10 || (v4 >> 20) == 0xAC1 || (v4 >> 16) == 0xC0A8 ||
+                       (v4 >> 22) == 0x191; // 10/8, 172.16/12, 192.168/16, 100.64/10
+    if (priv4 || a.isUniqueLocalUnicast() || a.isSiteLocal())
+        return QStringLiteral("private network address");
+    return QStringLiteral("public address");
+}
+
+bool validHeaderName(const QString &n) {
+    static const QRegularExpression re(QStringLiteral("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"));
+    return re.match(n).hasMatch();
+}
+} // namespace
+
+void McpBridge::verbRest(QLocalSocket *client, int id, const QJsonObject &args,
+                         const QString &verb) {
+    if (!m_host.restOp) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    static const QStringList kMethods = {
+        QStringLiteral("GET"),    QStringLiteral("POST"),   QStringLiteral("PUT"),
+        QStringLiteral("PATCH"),  QStringLiteral("DELETE"), QStringLiteral("HEAD"),
+        QStringLiteral("OPTIONS")};
+    // {name: value} → [{name,value}], validated.
+    auto headersArg = [&](QJsonArray *out) -> QString {
+        if (!args.contains(QLatin1String("headers"))) return QString();
+        const QJsonValue hv = args.value(QLatin1String("headers"));
+        if (!hv.isObject()) return QStringLiteral("headers must be an object of name: value strings");
+        const QJsonObject ho = hv.toObject();
+        for (auto it = ho.begin(); it != ho.end(); ++it) {
+            if (!validHeaderName(it.key()))
+                return QStringLiteral("invalid header name: %1").arg(sanitizeForCard(it.key()).left(60));
+            if (!it.value().isString() || it.value().toString().contains(QLatin1Char('\n')) ||
+                it.value().toString().contains(QLatin1Char('\r')))
+                return QStringLiteral("header %1 must be a single-line string").arg(it.key());
+            out->append(QJsonObject{{QStringLiteral("name"), it.key()},
+                                    {QStringLiteral("value"), it.value().toString()}});
+        }
+        return QString();
+    };
+
+    if (verb == QLatin1String("parse_http_file") || verb == QLatin1String("curl_to_request")) {
+        QString text;
+        int tab = -1;
+        if (verb == QLatin1String("curl_to_request")) {
+            if (!(err = reqString(args, "text", &text)).isEmpty()) {
+                sendError(client, id, err);
+                return;
+            }
+        } else if (!textOrTab(args, QString(), &text, &tab, &err)) {
+            sendError(client, id, err);
+            return;
+        }
+        if (text.size() > kComputeMaxChars) {
+            sendError(client, id, QStringLiteral("text too large"));
+            return;
+        }
+        QJsonObject r = m_host.restOp(verb, {{QStringLiteral("text"), text}}, &err);
+        if (err.isEmpty() && tab >= 0) {
+            r[QStringLiteral("tab_index")] = tab;
+            if (const qint64 tid = tabIdOf(tab); tid >= 0) r[QStringLiteral("tab_id")] = tid;
+        }
+        sendOp(client, id, r, err);
+        return;
+    }
+
+    QJsonObject req;
+    const bool fromTab = args.contains(QLatin1String("tab_id")) ||
+                         args.contains(QLatin1String("tab_index"));
+    if (verb == QLatin1String("request_to_curl") || !fromTab) {
+        QString method, url;
+        QJsonArray headers;
+        if (!(err = optEnum(args, "method", kMethods, QString(), &method)).isEmpty() ||
+            !(err = reqString(args, "url", &url)).isEmpty() ||
+            !(err = headersArg(&headers)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        if (args.contains(QLatin1String("body")) && !args.value(QLatin1String("body")).isString()) {
+            sendError(client, id, QStringLiteral("body must be a string"));
+            return;
+        }
+        if (fromTab || args.contains(QLatin1String("line"))) {
+            sendError(client, id, QStringLiteral("give either method+url (and headers/body) or "
+                                                 "a .http tab and line, not both"));
+            return;
+        }
+        req = {{QStringLiteral("method"), method}, {QStringLiteral("url"), url},
+               {QStringLiteral("headers"), headers},
+               {QStringLiteral("body"), args.value(QLatin1String("body")).toString()}};
+        if (verb == QLatin1String("request_to_curl")) {
+            sendOp(client, id, m_host.restOp(verb, req, &err), err);
+            return;
+        }
+    } else {
+        for (const char *k : {"method", "url", "headers", "body"})
+            if (args.contains(QLatin1String(k))) {
+                sendError(client, id, QStringLiteral("give either method+url (and "
+                                                     "headers/body) or a .http tab and line, "
+                                                     "not both"));
+                return;
+            }
+        int line = 0;
+        QString text;
+        int tab = -1;
+        if (!(err = optInt(args, "line", 1, INT_MAX, 1, true, &line)).isEmpty() ||
+            !textOrTab(args, QString(), &text, &tab, &err)) {
+            sendError(client, id, err);
+            return;
+        }
+        req = {{QStringLiteral("text"), text}, {QStringLiteral("line"), line - 1},
+               {QStringLiteral("file_path"), m_host.tabPath ? m_host.tabPath(tab) : QString()}};
+    }
+    if (req.value(QLatin1String("body")).toString().size() > kRestBodyMax) {
+        sendError(client, id, QStringLiteral("body too large (max 10 MB)"));
+        return;
+    }
+    // Variables resolved exactly as the REST panel resolves them at send time.
+    const QJsonObject res = m_host.restOp(QStringLiteral("resolve_request"), req, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    const QUrl url(res.value(QLatin1String("url")).toString(), QUrl::StrictMode);
+    const QString scheme = url.scheme().toLower();
+    if (scheme != QLatin1String("http") && scheme != QLatin1String("https")) {
+        sendError(client, id, QStringLiteral("refusing to send: only http:// and https:// URLs "
+                                             "are allowed (got '%1')")
+                                  .arg(sanitizeForCard(scheme.isEmpty() ? url.toString() : scheme)
+                                           .left(60)));
+        return;
+    }
+    if (!url.isValid() || url.host().isEmpty()) {
+        sendError(client, id, QStringLiteral("invalid URL: %1")
+                                  .arg(sanitizeForCard(url.toString()).left(200)));
+        return;
+    }
+    QStringList names;
+    for (const QJsonValue &h : res.value(QLatin1String("headers")).toArray()) {
+        const QString n = h.toObject().value(QLatin1String("name")).toString();
+        const QString v = h.toObject().value(QLatin1String("value")).toString();
+        if (!validHeaderName(n) || v.contains(QLatin1Char('\n')) || v.contains(QLatin1Char('\r'))) {
+            sendError(client, id, QStringLiteral("invalid header after variable expansion: %1")
+                                      .arg(sanitizeForCard(n).left(60)));
+            return;
+        }
+        names << n;
+    }
+    const QString method = res.value(QLatin1String("method")).toString();
+    const int bodyBytes = res.value(QLatin1String("body")).toString().toUtf8().size();
+    const QString port = url.port() > 0 ? QStringLiteral(":%1").arg(url.port()) : QString();
+    const QString desc =
+        QStringLiteral("send HTTP %1 to %2://%3%4%5")
+            .arg(method, scheme, sanitizeForCard(url.host()), port,
+                 sanitizeForCard(url.path().isEmpty() ? QStringLiteral("/") : url.path()));
+    QStringList preview;
+    preview << QStringLiteral("Host: %1 (%2)").arg(sanitizeForCard(url.host()), hostKind(url.host()));
+    if (url.hasQuery())
+        preview << QStringLiteral("Query string: %1 characters (not shown)").arg(url.query().size());
+    preview << QStringLiteral("Headers: %1").arg(names.isEmpty() ? QStringLiteral("none")
+                                                                 : names.join(QStringLiteral(", ")));
+    preview << QStringLiteral("Body: %1 bytes").arg(bodyBytes);
+    preview << QStringLiteral("Redirects are not followed; 30 s timeout; recorded in the REST "
+                              "history with secrets redacted.");
+    enqueueApprovalEx(client, id, desc, preview.join(QLatin1Char('\n')), CardOptions(), nullptr,
+                      [this, req](McpEditorHost::Done done) {
+                          if (!m_host.restAsync) {
+                              done(QJsonObject(), QStringLiteral("rest_request not supported by host"));
+                              return;
+                          }
+                          m_host.restAsync(QStringLiteral("rest_request"), req, done);
+                      });
+}
+
+void McpBridge::verbMisc(QLocalSocket *client, int id, const QJsonObject &args,
+                         const QString &verb) {
+    if (!m_host.miscOp) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    if (verb == QLatin1String("clear_recent_files")) {
+        if (!args.isEmpty()) {
+            sendError(client, id, QStringLiteral("clear_recent_files takes no arguments"));
+            return;
+        }
+        const int n = m_host.recentFiles ? m_host.recentFiles().size() : 0;
+        if (n == 0) {
+            sendResult(client, id, {{QStringLiteral("cleared"), 0}});
+            return;
+        }
+        enqueueApprovalEx(client, id,
+                          QStringLiteral("clear the recent files list (%1 entries; the files "
+                                         "themselves are not touched)").arg(n),
+                          QString(), CardOptions(), [this](QString *e) {
+                              return m_host.miscOp(QStringLiteral("clear_recent_files"),
+                                                   QJsonObject(), e);
+                          });
+        return;
+    }
+    // hex_dump: a tab's file (or its text when untitled), or a workspace path.
+    int offset = 0, length = 0;
+    if (!(err = optInt(args, "offset", 0, INT_MAX, 0, false, &offset)).isEmpty() ||
+        !(err = optInt(args, "length", 1, kHexDumpMax, 4096, false, &length)).isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    const bool hasTab = args.contains(QLatin1String("tab_id")) ||
+                        args.contains(QLatin1String("tab_index"));
+    if (hasTab == args.contains(QLatin1String("path"))) {
+        sendError(client, id, QStringLiteral("provide a tab (tab_id / tab_index) or path"));
+        return;
+    }
+    QJsonObject a{{QStringLiteral("offset"), offset}, {QStringLiteral("length"), length}};
+    if (hasTab) {
+        const int idx = resolveTab(args, "tab_index", false, &err);
+        if (idx < 0) {
+            sendError(client, id, err);
+            return;
+        }
+        const QString p = m_host.tabPath ? m_host.tabPath(idx) : QString();
+        if (!p.isEmpty()) {
+            if (const QString deny = credentialRefusal(p); !deny.isEmpty()) {
+                sendError(client, id, deny);
+                return;
+            }
+            a[QStringLiteral("path")] = p;
+            a[QStringLiteral("confine")] = false; // the user opened this file
+        } else {
+            QString text;
+            if (!tabTextFor(idx, &text, &err)) {
+                sendError(client, id, err);
+                return;
+            }
+            a[QStringLiteral("text")] = text;
+        }
+    } else {
+        QString p;
+        if (!(err = reqString(args, "path", &p)).isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        if (const QString deny = credentialRefusal(p); !deny.isEmpty()) {
+            sendError(client, id, deny);
+            return;
+        }
+        a[QStringLiteral("path")] = p;
+        a[QStringLiteral("confine")] = true;
+    }
+    const QJsonObject raw = m_host.miscOp(QStringLiteral("hex_bytes"), a, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    const QByteArray bytes =
+        QByteArray::fromBase64(raw.value(QLatin1String("base64")).toString().toLatin1());
+    QStringList lines;
+    for (int i = 0; i < bytes.size(); i += 16) {
+        QString hex, ascii;
+        for (int j = 0; j < 16; ++j) {
+            if (i + j < bytes.size()) {
+                const uchar c = uchar(bytes.at(i + j));
+                hex += QStringLiteral("%1 ").arg(c, 2, 16, QLatin1Char('0'));
+                ascii += (c >= 0x20 && c < 0x7F) ? QChar(c) : QChar('.');
+            } else {
+                hex += QStringLiteral("   ");
+            }
+            if (j == 7) hex += QLatin1Char(' ');
+        }
+        lines << QStringLiteral("%1  %2 |%3|").arg(offset + i, 8, 16, QLatin1Char('0'))
+                     .arg(hex, ascii);
+    }
+    QJsonObject r{{QStringLiteral("offset"), offset},
+                  {QStringLiteral("length"), bytes.size()},
+                  {QStringLiteral("total_size"), raw.value(QLatin1String("total_size"))},
+                  {QStringLiteral("source"), raw.value(QLatin1String("source"))},
+                  {QStringLiteral("hex"), lines.join(QLatin1Char('\n'))}};
+    r[QStringLiteral("truncated")] =
+        qint64(offset) + bytes.size() < qint64(raw.value(QLatin1String("total_size")).toDouble());
+    sendResult(client, id, r);
 }

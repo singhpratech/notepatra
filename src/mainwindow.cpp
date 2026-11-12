@@ -2086,8 +2086,15 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 }
                 else if (kind == QLatin1String("sql"))
                     out = RustCore::formatSql(text);
-                else if (kind == QLatin1String("html"))
-                    out = RustCore::formatHtml(text);
+                else if (kind == QLatin1String("html")) {
+                    QString msg;
+                    out = RustCore::formatHtml(text, 2, &msg);
+                    if (!msg.isEmpty()) {
+                        if (errorOut)
+                            *errorOut = QStringLiteral("HTML formatter declined: %1").arg(msg);
+                        return QString();
+                    }
+                }
             } catch (const std::exception &e) {
                 if (errorOut)
                     *errorOut = QString::fromUtf8(e.what());
@@ -2210,6 +2217,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
             for (const TodoRow &r : rows) {
                 if (!r.reminderAt.isValid()) continue;
                 QJsonObject o;
+                o[QStringLiteral("id")] = r.id; // delete/snooze/dismiss_reminder
                 o[QStringLiteral("note_file")] =
                     QDir::toNativeSeparators(r.sourceFile);
                 o[QStringLiteral("note_title")] =
@@ -2320,7 +2328,6 @@ MainWindow::MainWindow(bool standaloneNoSession)
             DbConnections::Record rec;
             QString engine;
             if (!csvPath.isEmpty()) {
-#ifdef NOTEPATRA_HAVE_DUCKDB
                 // Confine csv_path to the workspace root the git verbs use
                 // (FileExplorer::rootPath), via the SAME resolveSafePath helper:
                 // canonicalize + symlink-escape rejection + credential deny-list.
@@ -2340,6 +2347,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
                     if (err) *err = QStringLiteral("csv_path is not an allowed file");
                     return QJsonObject();
                 }
+#ifdef NOTEPATRA_HAVE_DUCKDB
                 rec.driver = QStringLiteral("DUCKDB");
                 rec.database = csvCanon;
                 // Engine-level filesystem sandbox — the AUTHORITATIVE control
@@ -2354,10 +2362,9 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 rec.sandboxFilesystem = true;
                 engine = QStringLiteral("duckdb");
 #else
-                if (err)
-                    *err = QStringLiteral(
-                        "CSV queries require the Full edition (DuckDB)");
-                return QJsonObject();
+                // v0.1.133: Lite answers from an in-memory SQLite copy (table
+                // `data`, also `csv`); the read-only gate above already ran.
+                return mcpQueryCsvSqlite(csvCanon, sql, err);
 #endif
             } else {
                 rec.driver = QStringLiteral("QSQLITE");
@@ -3269,14 +3276,26 @@ MainWindow::MainWindow(bool standaloneNoSession)
                         text, indent,
                         a.value(QLatin1String("keyword_case")).toString() != QLatin1String("lower"));
                 } else {
-                    out = RustCore::formatHtml(text, indent);
+                    // Declines (text unchanged + message) when it cannot prove the DOM safe.
+                    QString msg;
+                    out = a.value(QLatin1String("minify")).toBool()
+                              ? RustCore::minifyHtml(text, &msg)
+                              : RustCore::formatHtml(text, indent, &msg);
+                    if (!msg.isEmpty()) {
+                        *err = QStringLiteral("HTML formatter declined: %1").arg(msg);
+                        return r;
+                    }
                 }
                 if (out.isEmpty()) *err = QStringLiteral("formatter returned empty output");
                 r[QStringLiteral("text")] = out;
             } else if (op == QLatin1String("repair_json")) {
                 // JSON Tools > Fix + Format, as data: explicit opt-in only.
-                r[QStringLiteral("fixed")] = RustCore::fixJson(text);
+                const QString fixed = RustCore::fixJson(text);
+                r[QStringLiteral("fixed")] = fixed;
                 r[QStringLiteral("report")] = RustCore::fixJsonReport(text);
+                // True only for a real repair that now parses; a decline is false.
+                r[QStringLiteral("repaired")] =
+                    fixed != text && RustCore::jsonParseError(fixed).isEmpty();
             } else if (op == QLatin1String("markdown_convert")) {
                 const QString out =
                     markdownConvert(a.value(QLatin1String("op")).toString(), text);
@@ -3336,6 +3355,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
             }
             return r;
         };
+        installMcpControlHost(host); // v0.1.133 Phase 3 verbs
         new McpBridge(std::move(host), this);
     }
 }
@@ -4855,6 +4875,7 @@ void MainWindow::buildMenus() {
         m_tabs->setCurrentIndex(idx);
         return rest;
     };
+    m_newRestTab = newRestTab;
     connect(restAct, &QAction::triggered, this, [E, newRestTab]() {
         Editor *src = E();
         const QString sel = src && src->hasSelectedText() ? src->selectedText() : QString();
