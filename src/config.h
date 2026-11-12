@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QDirIterator>
+#include <QSaveFile>
 
 /**
  * Persistent config — saves ALL settings to ~/.config/notepatra/config.json
@@ -270,6 +271,7 @@ public:
 
     void load() {
         QString path = configPath();
+        restrictToOwner(path);  // tighten a config written by an older build
         QFile f(path);
         if (!f.open(QIODevice::ReadOnly)) return;
         QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
@@ -441,9 +443,26 @@ public:
         for (int v : previewPaneSizes) paneSizes.append(v);
         o["previewPaneSizes"] = paneSizes;
 
-        QFile f(configPath());
-        if (f.open(QIODevice::WriteOnly))
-            f.write(QJsonDocument(o).toJson());
+        QSaveFile f(configPath());
+        if (!f.open(QIODevice::WriteOnly)) return;
+#ifndef Q_OS_WIN
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);  // holds API keys
+#endif
+        f.write(QJsonDocument(o).toJson());
+        f.commit();
+    }
+
+    // Owner-only (0600) on Unix; Windows ACLs are left alone.
+    static void restrictToOwner(const QString &path) {
+#ifndef Q_OS_WIN
+        const QFileDevice::Permissions loose =
+            QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup |
+            QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+        if (QFileInfo::exists(path) && (QFile::permissions(path) & loose))
+            QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+#else
+        Q_UNUSED(path);
+#endif
     }
 
     void addRecent(const QString &path) {

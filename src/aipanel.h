@@ -196,6 +196,8 @@ public:
 
 private:
     void sendPrompt(const QString &action);
+    // Stop button handler: ends the live reply (partial text kept) and resets run state.
+    void stopActiveRun();
     // v0.1.110 — single source of truth for the chrome header label: shows the
     // active intent AND the Coding segment (Compose/Agent), so the user can
     // always read their effective posture ("AI · CODING · AGENT" in red when

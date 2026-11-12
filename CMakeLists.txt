@@ -3471,6 +3471,93 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen_panel.
     message(STATUS "Regression test enabled — target: test_passwordgen_panel")
 endif()
 
+# ── v0.1.133 chat + privacy regressions ──
+# test_ai_chat_privacy: real AIPanel vs a fake local Ollama (no-model notice
+# keeps history, send-while-streaming keeps the partial, cloud-free Settings
+# gate, quick actions honour Auto-attach, Data mode from a CSV).
+# test_openai_param_retry: rejected max_tokens/temperature 400 → one re-send.
+# test_config_permissions: config.json (API keys) is owner-only on Unix.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_privacy.cpp")
+    set(AI_CHAT_PRIVACY_SOURCES ${SOURCES})
+    list(FILTER AI_CHAT_PRIVACY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_ai_chat_privacy
+        test_ai_chat_privacy.cpp
+        ${AI_CHAT_PRIVACY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_ai_chat_privacy rust_core)
+    target_compile_definitions(test_ai_chat_privacy PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_ai_chat_privacy PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_ai_chat_privacy PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_ai_chat_privacy PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_ai_chat_privacy PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_ai_chat_privacy PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_ai_chat_privacy PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_ai_chat_privacy PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_ai_chat_privacy PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_ai_chat_privacy PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_ai_chat_privacy PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_ai_chat_privacy PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    notepatra_add_qt_test(test_ai_chat_privacy)
+    set_tests_properties(test_ai_chat_privacy PROPERTIES
+        LABELS "unit;ai;privacy" TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_ai_chat_privacy")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_openai_param_retry.cpp")
+    add_executable(test_openai_param_retry
+        test_openai_param_retry.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+        src/network_policy.cpp
+    )
+    target_include_directories(test_openai_param_retry PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_openai_param_retry PRIVATE Qt5::Core Qt5::Network Qt5::Sql)
+    notepatra_add_qt_test(test_openai_param_retry)
+    set_tests_properties(test_openai_param_retry PROPERTIES
+        LABELS "unit;ai;openai" TIMEOUT 90)
+    message(STATUS "Regression test enabled — target: test_openai_param_retry")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_config_permissions.cpp")
+    add_executable(test_config_permissions test_config_permissions.cpp)
+    target_include_directories(test_config_permissions PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_config_permissions PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_config_permissions)
+    set_tests_properties(test_config_permissions PROPERTIES
+        LABELS "unit;config;security" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_config_permissions")
+endif()
+
 # ── Install ──
 if(APPLE)
     install(TARGETS ${EXE_NAME} BUNDLE DESTINATION .)

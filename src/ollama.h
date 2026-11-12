@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QObject>
 #include <QString>
 
@@ -167,6 +168,10 @@ private:
     // the friendly hint surfaces no matter which path catches the failure.
     QString friendlyTransportMessage(const QString &raw) const;
     QString friendlyTransportMessage(const QNetworkReply *reply) const;
+    // OpenAI-compat: drop/rename request params this backend+model rejected
+    // with HTTP 400 (remembered for the session; no model-name matching).
+    void applyOpenAiParamFixes(QJsonObject &body) const;
+    bool retryWithoutRejectedParam();
 
     QNetworkAccessManager *m_nam;
     QNetworkReply *m_reply = nullptr;
@@ -203,6 +208,11 @@ private:
     qint64 m_startMs = 0;
     int m_promptTokens = -1;
     int m_evalTokens = -1;
+
+    // Last OpenAI-compat request, kept so a rejected-param 400 can be re-sent.
+    QNetworkRequest m_openAiRequest;
+    QJsonObject m_openAiBody;
+    int m_openAiParamRetries = 0;  // param-fix bits already retried for this request
 };
 
 #endif

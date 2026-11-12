@@ -923,6 +923,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // dialog, and forget either key independently. Pre-v0.1.55 this
     // button was a small popup menu against a single shared aiApiKey;
     // now it owns the whole cloud-config story.
+#ifndef NOTEPATRA_NO_CLOUD
+    // The dialog is cloud-provider only (keys + live Test request).
     auto *gearBtn = new QPushButton("⚙ Settings");
     gearBtn->setFixedHeight(26);
     gearBtn->setToolTip("AI Settings — manage OpenRouter / OpenAI keys");
@@ -937,6 +939,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             refreshCloudConfigBanner();
         });
     modelRow->addWidget(gearBtn);
+#endif
 
     // Reset session — moved here in v0.1.48 from the bottom of the row so
     // the top-bar shape is just [backend | model ↻ ⚙ Reset]. Mode toggles
@@ -2528,30 +2531,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // finished/error signal fires after that. So the streaming card would
     // stay active with the live-stats timer still ticking. Hook the stop
     // button to also end the bubble cleanly + stop the timer.
-    connect(m_stopBtn, &QPushButton::clicked, this, [this]() {
-        // hardening: safe to invoke even if the reply already finished
-        // (m_inAssistantBubble is false by then). Also guard m_stopBtn
-        // pointer in case the slot fires during teardown.
-        if (m_stopBtn) m_stopBtn->setEnabled(false);
-        // hardening: also flush any half-built agent state so the next
-        // turn doesn't carry stale tool-result fragments from the aborted run.
-        m_pendingToolResults = QJsonArray();
-        m_toolCallsThisTurn = 0;
-        m_toolCallsTotal = 0;
-        m_toolsActiveThisTurn = false;
-        // v0.1.112 — Stop also drops the perseveration/force-finalize state.
-        m_repeatGuard.reset();
-        m_pendingSystemNudge.clear();
-        m_lastToolErrorText.clear();
-        m_turnToolActions.clear();
-        // v0.1.111 — Stop means "cancel this run": neutralise any open write-
-        // approval card so clicking Approve on it AFTER Stop can't still write
-        // to disk, and reset the gate counters so the next turn isn't stranded.
-        cancelPendingWriteApprovals(QStringLiteral("run-stopped"));
-        if (m_inAssistantBubble) {
-            endAssistantBubble();
-        }
-    });
+    connect(m_stopBtn, &QPushButton::clicked, this, &AIPanel::stopActiveRun);
     connect(insertBtn, &QPushButton::clicked, this, [this]() {
         if (!m_lastResponse.isEmpty()) emit insertText(m_lastResponse);
     });
@@ -3325,6 +3305,31 @@ void AIPanel::showContextPopover() {
     refreshContextChips();  // reflect any exclude changes back on the chip
 }
 
+void AIPanel::stopActiveRun() {
+    // hardening: safe to invoke even if the reply already finished
+    // (m_inAssistantBubble is false by then). Also guard m_stopBtn
+    // pointer in case the slot fires during teardown.
+    if (m_stopBtn) m_stopBtn->setEnabled(false);
+    // hardening: also flush any half-built agent state so the next
+    // turn doesn't carry stale tool-result fragments from the aborted run.
+    m_pendingToolResults = QJsonArray();
+    m_toolCallsThisTurn = 0;
+    m_toolCallsTotal = 0;
+    m_toolsActiveThisTurn = false;
+    // v0.1.112 — Stop also drops the perseveration/force-finalize state.
+    m_repeatGuard.reset();
+    m_pendingSystemNudge.clear();
+    m_lastToolErrorText.clear();
+    m_turnToolActions.clear();
+    // v0.1.111 — Stop means "cancel this run": neutralise any open write-
+    // approval card so clicking Approve on it AFTER Stop can't still write
+    // to disk, and reset the gate counters so the next turn isn't stranded.
+    cancelPendingWriteApprovals(QStringLiteral("run-stopped"));
+    if (m_inAssistantBubble) {
+        endAssistantBubble();
+    }
+}
+
 void AIPanel::sendPrompt(const QString &action) {
     // hardening: bail early if core widgets were never built or m_ollama is null.
     // sendPrompt can be reached via QButtonGroup activation that fires before
@@ -3363,7 +3368,6 @@ void AIPanel::sendPrompt(const QString &action) {
             model = typed;
     }
     if (model.startsWith("(") || !m_modelCombo->isEnabled()) {
-        clearChat();
         setStatus("No Ollama model selected", true);
         appendErrorBubble(
             "No Ollama model selected.\n\n"
@@ -3379,7 +3383,13 @@ void AIPanel::sendPrompt(const QString &action) {
             "4. Click the refresh button above");
         return;
     }
-    m_ollama->setModel(model);
+
+    // Workspace-relative path of the open tab when it is a CSV (a Data-mode source).
+    QString openCsvRel;
+    if (!m_workspaceRoot.isEmpty() && CsvAnalyst::looksLikeCsv(m_currentFilePath)) {
+        const QString rel = QDir(m_workspaceRoot).relativeFilePath(m_currentFilePath);
+        if (!rel.startsWith(QLatin1String(".."))) openCsvRel = rel;
+    }
 
     // v0.1.61 — pre-send capability + context guard. Refuse politely BEFORE
     // dispatching when the selected model can't do what's needed (no tool
@@ -3403,13 +3413,14 @@ void AIPanel::sendPrompt(const QString &action) {
                 "Chat mode.");
             return;
         }
-        if (dataNow && DbConnections::loadAll().isEmpty()) {
+        const bool csvSource = CsvAnalyst::looksLikeCsv(m_pendingFilePath)
+                               || !openCsvRel.isEmpty();
+        if (dataNow && !csvSource && DbConnections::loadAll().isEmpty()) {
             appendErrorBubble(
-                "Data Mode needs at least one database connection (SQLite, "
-                "PostgreSQL, MySQL, SQL Server, or DuckDB). Click "
-                "Manage Connections… in the Data row above to add one, "
-                "then ask again. If you just have a CSV / Parquet file, add "
-                "it as a DuckDB connection pointing at the file path.");
+                "Data Mode needs something to analyse. Open or attach a CSV / "
+                "TSV file (paperclip button next to the input), or click Manage "
+                "Connections… in the Data row above to add a database "
+                "connection, then ask again.");
             return;
         }
 
@@ -3422,7 +3433,23 @@ void AIPanel::sendPrompt(const QString &action) {
         // (folder for Coding, connection for Data) above are kept because
         // those are about workspace state, not model identity.
     }
-    (void)model;  // formerly used by the removed model-capability gate above.
+    // Quick actions send only the selection unless the AI may see the whole file.
+    if (action != QLatin1String("custom") && !m_contextIsSelection
+        && !(isCodingMode() && Config::instance().aiShareOpenFile
+             && !m_currentFileText.isEmpty())) {
+        appendErrorBubble(
+            "Select the code you want this action to work on, then try again. "
+            "The AI can't see the rest of your file unless you switch to Coding "
+            "mode and turn on Auto-attach open file.");
+        return;
+    }
+
+    // Sending mid-reply ends the current reply like Stop, keeping its partial text.
+    if (m_inAssistantBubble) {
+        m_ollama->cancel();
+        stopActiveRun();
+    }
+    m_ollama->setModel(model);
 
     // Build the system prompt via the layered builder in ai_systemprompt.cpp.
     // The builder composes: identity + anti-tool-call + mode-specific +
@@ -3496,6 +3523,12 @@ void AIPanel::sendPrompt(const QString &action) {
                 "the real query. Multi-DB joins are not supported — query "
                 "each connection separately and combine in prose.\n";
             projectCtx = projectCtx.isEmpty() ? attached : projectCtx + attached;
+        }
+        if (!openCsvRel.isEmpty()) {
+            const QString csvCtx = QStringLiteral(
+                "\n\n## Open CSV file\nThe user has `%1` open. Query it with "
+                "`csv_query` using file_path `%1`.\n").arg(openCsvRel);
+            projectCtx = projectCtx.isEmpty() ? csvCtx : projectCtx + csvCtx;
         }
 
         systemPrompt = AiSystemPrompt::buildWithProjectContext(
@@ -3666,7 +3699,7 @@ void AIPanel::sendPrompt(const QString &action) {
     // to see the file in the first place. The aiCanSeeFile / codingModeOn
     // / shareFileToggle locals are defined earlier in this function (the
     // unified file-access policy).
-    QString contextForActions = m_context;
+    QString contextForActions = m_contextIsSelection ? m_context : QString();
     if (contextForActions.isEmpty() && aiCanSeeFile && !m_currentFileText.isEmpty()) {
         contextForActions = m_currentFileText;
     }
@@ -7586,6 +7619,7 @@ private:
 }  // namespace
 
 void AIPanel::openAiSettingsDialog() {
+#ifndef NOTEPATRA_NO_CLOUD  // cloud-free build: no cloud keys, no Test request
     QDialog dlg(this);
     dlg.setWindowTitle("AI Settings — Cloud Providers");
     dlg.setMinimumWidth(640);
@@ -7635,6 +7669,7 @@ void AIPanel::openAiSettingsDialog() {
     root->addWidget(btnBox);
 
     dlg.exec();
+#endif
 }
 
 // v0.1.61 (Item 8) — handler for the bottom 3-segment toggle.
@@ -8065,10 +8100,16 @@ void AIPanel::updateInputAvailability() {
             // accurate but didn't help a first-time user who had no idea
             // where to find a model in the first place. Each state gives
             // a concrete next action with the exact command to run.
+#ifndef NOTEPATRA_NO_CLOUD
             QString why = QStringLiteral(
                 "Please select a model to start chatting. "
                 "Pick one from the dropdown above — Ollama runs locally on your machine, "
                 "or click ⚙ to add an API key for OpenRouter / OpenAI / Azure / Ollama Cloud.");
+#else
+            QString why = QStringLiteral(
+                "Please select a model to start chatting. "
+                "Pick one from the dropdown above — Ollama runs locally on your machine.");
+#endif
             if (m_modelCombo) {
                 const QString text = m_modelCombo->currentText().trimmed();
                 if (text.contains("offline", Qt::CaseInsensitive))
