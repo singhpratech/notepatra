@@ -4,17 +4,33 @@
 //!
 //! Oracle: html5ever (dev-dependency only, never linked into the shipped
 //! static library) parses input and output as a browser would; the two DOMs
-//! must be identical except for whitespace-only differences that the
-//! rendering collapses next to block-level elements (see `normalize`).
+//! must be identical except for whitespace-only text that the rendering
+//! collapses next to block-level elements (see `dump_children`). Inside
+//! `pre`, `textarea`, `script`, `style`, `title`, SVG/MathML and template
+//! contents the comparison is exact.
 //!
-//! Case counts: `NP_HTML_FUZZ_CASES` (default 20000 per generator family),
-//! seed: `NP_HTML_FUZZ_SEED` (default fixed), threads: `NP_HTML_FUZZ_THREADS`
-//! (default 4). Long run:
+//! Every case also checks: no panic; a decline returns the input unchanged
+//! with a line/column message; no non-whitespace byte changes; format and
+//! minify are idempotent; minify(format(x)) == minify(x).
+//!
+//! Generator families (seeded, deterministic): 0 clean-ish documents,
+//! 1 the same with one corruption, 2 token soup, 3 documents heavy in
+//! templates/tables/formatting tags (half of them corrupted).
+//!
+//! Environment: `NP_HTML_FUZZ_CASES` (cases per family, default 50000),
+//! `NP_HTML_FUZZ_SEED`, `NP_HTML_FUZZ_THREADS` (default 4),
+//! `NP_HTML_FUZZ_REASONS=1` (print the most common decline messages),
+//! `NP_HTML_FMT_DUMP=<dir>` (write the formatted docs/*.html there).
+//! Long run (about 12 million cases per seed, roughly 90 s on 6 threads):
 //!
 //! ```text
-//! NP_HTML_FUZZ_CASES=2000000 NP_HTML_FUZZ_THREADS=6 \
-//!   cargo test --release html_fmt::fuzz -- --nocapture --test-threads=1
+//! for s in 1 2 3 4 5 6 7 8; do NP_HTML_FUZZ_SEED=$s NP_HTML_FUZZ_CASES=3000000 \
+//!   NP_HTML_FUZZ_THREADS=6 cargo test --release html_fmt::fuzz::fuzz_gen \
+//!   -- --nocapture --test-threads=1; done
 //! ```
+//!
+//! A failure prints the seed, the minimized input and the first DOM line
+//! that differs.
 
 use super::*;
 use html5ever::interface::{ElementFlags, NodeOrText, QuirksMode, TreeSink};
@@ -1393,7 +1409,7 @@ fn run_fuzz(cases: u64, seed: u64, threads: usize) -> Stats {
 
 #[test]
 fn fuzz_generated_documents() {
-    let cases = env_u64("NP_HTML_FUZZ_CASES", 20_000);
+    let cases = env_u64("NP_HTML_FUZZ_CASES", 50_000);
     let seed = env_u64("NP_HTML_FUZZ_SEED", 0x5EED_0001);
     let threads = env_u64("NP_HTML_FUZZ_THREADS", 4) as usize;
     let st = run_fuzz(cases, seed, threads);
@@ -1548,6 +1564,10 @@ fn docs_html_corpus() {
             panic!("{}: {}", name, e);
         }
         let o = format_html_report(&doc, 2);
+        // NP_HTML_FMT_DUMP=<dir>: write the formatted copies there for review.
+        if let Ok(dir) = std::env::var("NP_HTML_FMT_DUMP") {
+            std::fs::write(std::path::Path::new(&dir).join(&name), &o.text).unwrap();
+        }
         eprintln!(
             "docs/{:<16} {}",
             name,
@@ -1666,7 +1686,7 @@ fn pathological_inputs_are_fast_and_safe() {
 #[test]
 fn random_bytes_never_panic() {
     let mut r = Rng::new(env_u64("NP_HTML_FUZZ_SEED", 0x5EED_0001) ^ 0xB17E);
-    let n = env_u64("NP_HTML_FUZZ_CASES", 20_000) / 4;
+    let n = env_u64("NP_HTML_FUZZ_CASES", 50_000) / 4;
     let mut st = Stats::default();
     for _ in 0..n {
         let len = r.below(200);
@@ -1820,7 +1840,7 @@ fn decline_reason_histogram() {
         return;
     }
     let mut counts: std::collections::BTreeMap<String, u64> = Default::default();
-    let n = env_u64("NP_HTML_FUZZ_CASES", 20_000);
+    let n = env_u64("NP_HTML_FUZZ_CASES", 50_000);
     for k in 0..n {
         let mut r = Rng::new(k);
         let doc = gen_doc(&mut r);
