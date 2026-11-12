@@ -215,24 +215,46 @@ QString elideForCard(const QString &s, int cap) {
     return s.left(cap) + QChar(0x2026);
 }
 
-// Strip Unicode bidirectional / format controls and C0/C1 control codepoints
-// from a string before it is SHOWN on an approval card, so a crafted path
-// can't visually disguise its real destination (e.g. an embedded RLO that
-// reverses the tail). Used for display text ONLY — the executed path is the
-// exact validated absolute path and is never passed through this.
+// Every character the SQL gate (and PostgreSQL, SQL Server, ...) treats as
+// the end of a line: a `--` comment stops at any of them.
+bool isCardLineBreak(ushort u) {
+    return u == 0x0A || u == 0x0D || u == 0x0B || u == 0x0C || u == 0x85 ||
+           u == 0x2028 || u == 0x2029;
+}
+
+// The visible stand-in for a character that would otherwise be invisible.
+QString cardEscape(ushort u) {
+    switch (u) {
+    case 0x09: return QStringLiteral("\\t");
+    case 0x0A: return QStringLiteral("\\n");
+    case 0x0B: return QStringLiteral("\\v");
+    case 0x0C: return QStringLiteral("\\f");
+    case 0x0D: return QStringLiteral("\\r");
+    default: break;
+    }
+    if (u <= 0xFF) return QStringLiteral("\\x%1").arg(u, 2, 16, QLatin1Char('0'));
+    return QStringLiteral("\\u%1").arg(u, 4, 16, QLatin1Char('0'));
+}
+
+// Make every control and format character VISIBLE before a string is shown
+// on an approval card, so crafted text can't disguise what runs: a bare CR
+// that would end a SQL comment shows as \r, an RLO that reverses a path's
+// tail shows as ‮. Nothing is deleted (deleting a CR is what made
+// "-- note\rOR 1=1" read as one commented-out line). Used for display text
+// ONLY; the executed value is never passed through this.
 QString sanitizeForCard(const QString &s) {
     QString out;
     out.reserve(s.size());
     for (const QChar ch : s) {
         const ushort u = ch.unicode();
-        // C0 controls (0x00–0x1F) and DEL + C1 controls (0x7F–0x9F).
-        if (u <= 0x1F || (u >= 0x7F && u <= 0x9F)) continue;
-        // Bidi/format controls: LRM/RLM (200E/200F), LRE/RLE/PDF/LRO/RLO
-        // (202A–202E), isolates LRI/RLI/FSI/PDI (2066–2069).
-        if (u == 0x200E || u == 0x200F
-            || (u >= 0x202A && u <= 0x202E)
-            || (u >= 0x2066 && u <= 0x2069)) continue;
-        out.append(ch);
+        // C0 controls, DEL + C1 controls, the Unicode line/paragraph
+        // separators, and every format character (bidi overrides and
+        // isolates, zero-width characters, BOM, soft hyphen).
+        if (u <= 0x1F || (u >= 0x7F && u <= 0x9F) || isCardLineBreak(u) ||
+            ch.category() == QChar::Other_Format)
+            out += cardEscape(u);
+        else
+            out.append(ch);
     }
     return out;
 }
@@ -494,12 +516,59 @@ QString reqString(const QJsonObject &a, const char *k, QString *out) {
     return QString();
 }
 
-// sanitizeForCard per line: keeps the line breaks a multi-line preview needs.
+// sanitizeForCard per line. EVERY line terminator the SQL gate knows (CR,
+// LF, CRLF, VT, FF, NEL, LS, PS) becomes a real line break on the card, so
+// what looks like a new line is one, and what looks like one line is one.
 QString sanitizeMultiline(const QString &s) {
-    QStringList lines = s.split(QLatin1Char('\n'));
+    QStringList lines;
+    QString cur;
+    for (int i = 0; i < s.size(); ++i) {
+        const ushort u = s.at(i).unicode();
+        if (isCardLineBreak(u)) {
+            lines << cur;
+            cur.clear();
+            if (u == 0x0D && i + 1 < s.size() && s.at(i + 1).unicode() == 0x0A) ++i; // CRLF
+            continue;
+        }
+        cur.append(s.at(i));
+    }
+    lines << cur;
     for (QString &l : lines)
         l = sanitizeForCard(QString(l).replace(QLatin1Char('\t'), QLatin1String("    ")));
     return lines.join(QLatin1Char('\n'));
+}
+
+// The whole of a client-supplied text for a scrollable card preview. Small
+// texts are shown entire; a huge one shows its size, its first and last
+// lines and an explicit marker for what is left out (bracketed, on its own
+// line, so it cannot pass for content).
+constexpr int kFullPreviewMaxChars = 200 * 1024;
+constexpr int kFullPreviewEdgeLines = 200;
+// *note (when the text is cut) says so in words for the card's warning
+// line, which the client cannot write into.
+QString fullTextPreview(const QString &text, QString *note = nullptr) {
+    const QString clean = sanitizeMultiline(text);
+    if (clean.size() <= kFullPreviewMaxChars) return clean;
+    const QStringList lines = clean.split(QLatin1Char('\n'));
+    if (lines.size() <= 2 * kFullPreviewEdgeLines) {
+        // Few, very long lines: cut by characters instead.
+        const int edge = kFullPreviewMaxChars / 2;
+        const int hidden = clean.size() - 2 * edge;
+        if (note)
+            *note = QStringLiteral("The text is %1 characters long; the preview leaves out %2 "
+                                   "characters in the middle.").arg(clean.size()).arg(hidden);
+        return clean.left(edge) +
+               QStringLiteral("\n[... %1 characters not shown ...]\n").arg(hidden) +
+               clean.right(edge);
+    }
+    const int hidden = lines.size() - 2 * kFullPreviewEdgeLines;
+    if (note)
+        *note = QStringLiteral("The text is %1 lines (%2 characters) long; the preview leaves "
+                               "out %3 lines in the middle.")
+                    .arg(lines.size()).arg(clean.size()).arg(hidden);
+    return lines.mid(0, kFullPreviewEdgeLines).join(QLatin1Char('\n')) +
+           QStringLiteral("\n[... %1 lines not shown ...]\n").arg(hidden) +
+           lines.mid(lines.size() - kFullPreviewEdgeLines).join(QLatin1Char('\n'));
 }
 
 QString bulletList(const QStringList &items, int cap = 50) {
@@ -2173,8 +2242,12 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
               .arg(text.size()).arg(tabLabel(idx)).arg(line).arg(col)
         : QStringLiteral("insert %1 chars into '%2' at the cursor")
               .arg(text.size()).arg(tabLabel(idx));
-    enqueueTabApproval(client, id, idx, desc,
-                       elideForCard(text, kApprovalPreviewChars),
+    // R17: the whole inserted text, scrollable; never cut to a teaser.
+    CardOptions o;
+    o.fullPreview = true;
+    const QString preview = text.isEmpty() ? QStringLiteral("(empty text)")
+                                           : fullTextPreview(text, &o.warning);
+    enqueueTabApproval(client, id, idx, desc, preview,
                        [this, line, col, text](int live, QString *execErr) {
         if (!m_host.insertText(live, line, col, text)) {
             // v0.1.121 (issue #6): name the tab and the likely cause.
@@ -2185,7 +2258,7 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
             return QJsonObject();
         }
         return QJsonObject();
-    });
+    }, o);
 }
 
 void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
@@ -2222,10 +2295,12 @@ void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
     const QString desc =
         QStringLiteral("replace the selection in '%1' with %2 chars")
             .arg(tabLabel(idx)).arg(text.size());
+    CardOptions o;
+    o.fullPreview = true;
     enqueueTabApproval(client, id, idx, desc,
                        text.isEmpty()
                            ? QStringLiteral("(delete the selection)")
-                           : elideForCard(text, kApprovalPreviewChars),
+                           : fullTextPreview(text, &o.warning),
                        [this, text](int live, QString *execErr) {
         // Re-checked at execute time: the selection may have vanished while
         // the card was waiting for a click.
@@ -2234,7 +2309,7 @@ void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
             return QJsonObject();
         }
         return QJsonObject();
-    });
+    }, o);
 }
 
 void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
@@ -2325,10 +2400,14 @@ void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
             .arg(all ? QStringLiteral("every") : QStringLiteral("the first"),
                  elideForCard(find, kApprovalDescChars),
                  elideForCard(replace, kApprovalDescChars), tabLabel(idx));
-    const QString preview =
-        elideForCard(find, kApprovalPreviewChars / 2) +
-        QStringLiteral("\n-> ") +
-        elideForCard(replace, kApprovalPreviewChars / 2);
+    CardOptions o;
+    o.fullPreview = true;
+    QString findNote, replNote;
+    const QString preview = QStringLiteral("Find:\n") + fullTextPreview(find, &findNote) +
+                            QStringLiteral("\n\nReplace with:\n") +
+                            (replace.isEmpty() ? QStringLiteral("(nothing: the match is deleted)")
+                                               : fullTextPreview(replace, &replNote));
+    o.warning = (findNote + QLatin1Char(' ') + replNote).trimmed();
     enqueueTabApproval(client, id, idx, desc, preview,
                        [this, find, replace, all, pinned,
                         fingerprint](int live, QString *execErr) {
@@ -2358,7 +2437,7 @@ void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
         QJsonObject r;
         r[QStringLiteral("count")] = count;
         return r;
-    });
+    }, o);
 }
 
 void McpBridge::verbSaveTab(QLocalSocket *client, int id,
@@ -2730,8 +2809,11 @@ void McpBridge::verbCreateNote(QLocalSocket *client, int id,
     const QString desc = QStringLiteral("create note '%1' (%2 chars)")
                              .arg(elideForCard(title, kApprovalDescChars))
                              .arg(body.size());
-    enqueueApproval(client, id, desc,
-                    elideForCard(body, kApprovalPreviewChars),
+    CardOptions o;
+    o.fullPreview = true;
+    const QString preview = body.isEmpty() ? QStringLiteral("(empty body)")
+                                           : fullTextPreview(body, &o.warning);
+    enqueueApprovalEx(client, id, desc, preview, o,
                     [this, title, body](QString *execErr) {
         QString e;
         const QString path = m_host.createNote(title, body, &e);
@@ -2773,8 +2855,10 @@ void McpBridge::verbAppendNote(QLocalSocket *client, int id,
     const QString desc = QStringLiteral("append %1 chars to '%2'")
                              .arg(text.size())
                              .arg(elideForCard(title, kApprovalDescChars));
-    enqueueApproval(client, id, desc,
-                    elideForCard(text, kApprovalPreviewChars),
+    CardOptions o;
+    o.fullPreview = true;
+    const QString preview = fullTextPreview(text, &o.warning);
+    enqueueApprovalEx(client, id, desc, preview, o,
                     [this, fileCanon, text](QString *execErr) {
         QString e;
         if (!m_host.appendNote(fileCanon, text, &e)) {
@@ -3040,8 +3124,11 @@ void McpBridge::verbSetDiagramSource(QLocalSocket *client, int id,
                        "(the canvas re-renders)")
             .arg(elideForCard(tabLabel(idx), kApprovalDescChars))
             .arg(source.size());
-    enqueueTabApproval(client, id, idx, desc,
-                       elideForCard(source, kApprovalPreviewChars),
+    CardOptions o;
+    o.fullPreview = true;
+    const QString preview = source.isEmpty() ? QStringLiteral("(empty source)")
+                                             : fullTextPreview(source, &o.warning);
+    enqueueTabApproval(client, id, idx, desc, preview,
                        [this, source](int live, QString *execErr) {
         // Re-checked at execute time: the tab may have changed while pending.
         if (!m_host.setDiagramSource(live, source)) {
@@ -3052,7 +3139,7 @@ void McpBridge::verbSetDiagramSource(QLocalSocket *client, int id,
         QJsonObject r = npdValidationJson(source);
         r[QStringLiteral("ok")] = true;
         return r;
-    });
+    }, o);
 }
 
 void McpBridge::verbOpenNoter(QLocalSocket *client, int id) {
@@ -3274,7 +3361,10 @@ void McpBridge::verbExportQueryResults(QLocalSocket *client, int id,
     const QString desc =
         QStringLiteral("export query results from '%1' to %2")
             .arg(elideForCard(name, kApprovalDescChars), shownDest);
-    enqueueApproval(client, id, desc, elideForCard(sql, kApprovalPreviewChars),
+    CardOptions o;
+    o.fullPreview = true;
+    const QString preview = fullTextPreview(sql, &o.warning);
+    enqueueApprovalEx(client, id, desc, preview, o,
                     [this, name, sql, maxRows, path, format](QString *execErr) {
         QString e;
         const QJsonObject r = m_host.runNamedQuery(name, sql, maxRows, &e);
@@ -4097,7 +4187,23 @@ void McpBridge::applyEditEx(QLocalSocket *client, int id,
                         what)
                    .arg(targets.first().count);
     }
-    enqueueApproval(client, id, desc, elideForCard(lines.join(QLatin1Char('\n')), 1200),
+    // R17: the whole pattern and replacement, scrollable (the line above
+    // only names them).
+    CardOptions o;
+    o.fullPreview = true;
+    QString findNote, replNote;
+    const QString repl = opts.value(QLatin1String("replace")).toString();
+    QString preview =
+        QStringLiteral("Find:\n") +
+        fullTextPreview(opts.value(QLatin1String("find")).toString(), &findNote) +
+        QStringLiteral("\n\nReplace with:\n") +
+        (repl.isEmpty() ? QStringLiteral("(nothing: each match is deleted)")
+                        : fullTextPreview(repl, &replNote));
+    o.warning = (findNote + QLatin1Char(' ') + replNote).trimmed();
+    if (!lines.isEmpty())
+        preview += QStringLiteral("\n\nMatches per tab:\n") +
+                   elideForCard(lines.join(QLatin1Char('\n')), 4000);
+    enqueueApprovalEx(client, id, desc, preview, o,
                     [this, targets, opts, dry, allOpen](QString *execErr) {
         // Every target must still exist and still hold exactly the matches
         // the card counted, or nothing is changed at all.
@@ -4174,9 +4280,17 @@ void McpBridge::enqueueTabApproval(QLocalSocket *client, int id, int idx,
                                    const QString &description,
                                    const QString &preview,
                                    std::function<QJsonObject(int, QString *)> run) {
+    enqueueTabApproval(client, id, idx, description, preview, std::move(run), CardOptions());
+}
+
+void McpBridge::enqueueTabApproval(QLocalSocket *client, int id, int idx,
+                                   const QString &description,
+                                   const QString &preview,
+                                   std::function<QJsonObject(int, QString *)> run,
+                                   const CardOptions &options) {
     const qint64 tid = tabIdOf(idx);
     const QString title = tabLabel(idx);
-    enqueueApproval(client, id, description, preview,
+    enqueueApprovalEx(client, id, description, preview, options,
                     [this, tid, idx, title, run](QString *execErr) {
         const int live = liveTabIndex(tid, idx, title, execErr);
         if (live < 0) return QJsonObject();
@@ -4285,8 +4399,11 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
     hdr->setObjectName(QStringLiteral("mcpApprovalDesc"));
     hdr->setTextFormat(Qt::PlainText);
     hdr->setWordWrap(true);
+    // Defense in depth: every string on the card goes through the same
+    // line-break + control-character rendering (idempotent on text the verb
+    // already sanitised).
     hdr->setText(QStringLiteral("AI tool (MCP) requests: %1")
-                     .arg(pw.description));
+                     .arg(sanitizeMultiline(pw.description)));
     hdr->setStyleSheet(QStringLiteral(
         "color:%1; background:transparent; font-weight:600;")
         .arg(textC.name()));
@@ -4297,7 +4414,7 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
         warn->setObjectName(QStringLiteral("mcpApprovalWarning"));
         warn->setTextFormat(Qt::PlainText);
         warn->setWordWrap(true);
-        warn->setText(pw.options.warning);
+        warn->setText(sanitizeMultiline(pw.options.warning));
         warn->setStyleSheet(QStringLiteral(
             "color:%1; background:transparent; font-weight:600;")
             .arg(QColor(np.errorFg).name()));
@@ -4310,7 +4427,7 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
         full->setObjectName(QStringLiteral("mcpApprovalPreviewFull"));
         full->setReadOnly(true);
         full->setFocusPolicy(Qt::NoFocus);
-        full->setPlainText(pw.preview);
+        full->setPlainText(sanitizeMultiline(pw.preview));
         full->setLineWrapMode(QPlainTextEdit::WidgetWidth);
         const int lines = qBound(2, int(pw.preview.count(QLatin1Char('\n'))) + 1, 10);
         full->setFixedHeight(full->fontMetrics().lineSpacing() * lines + 14);
@@ -4325,7 +4442,7 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
         prev->setObjectName(QStringLiteral("mcpApprovalPreview"));
         prev->setTextFormat(Qt::PlainText);
         prev->setWordWrap(true);
-        prev->setText(pw.preview);
+        prev->setText(sanitizeMultiline(pw.preview));
         prev->setStyleSheet(QStringLiteral(
             "color:%1; background:transparent; font-family:'JetBrains Mono',"
             "'Cascadia Code','Consolas',monospace; font-size:11px;")
@@ -4783,7 +4900,11 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
         }
         QJsonObject a{{QStringLiteral("action"), action}};
         if (!msg.isEmpty()) a[QStringLiteral("message")] = msg;
-        enqueueApprovalEx(client, id, desc, QString(), CardOptions(), run(a));
+        CardOptions so;
+        so.fullPreview = true;
+        const QString preview =
+            msg.isEmpty() ? QString() : QStringLiteral("Message:\n") + fullTextPreview(msg, &so.warning);
+        enqueueApprovalEx(client, id, desc, preview, so, run(a));
         return;
     }
 

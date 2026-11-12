@@ -465,6 +465,10 @@ private:
     void enqueueTabApproval(QLocalSocket *client, int id, int idx,
                             const QString &description, const QString &preview,
                             std::function<QJsonObject(int, QString *)> run);
+    void enqueueTabApproval(QLocalSocket *client, int id, int idx,
+                            const QString &description, const QString &preview,
+                            std::function<QJsonObject(int, QString *)> run,
+                            const CardOptions &options);
     // Live index of the tab captured as (tid, idx, title); -1 + *err if gone.
     int liveTabIndex(qint64 tid, int idx, const QString &title,
                      QString *err) const;
