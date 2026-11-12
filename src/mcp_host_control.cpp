@@ -492,6 +492,12 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
             if (NotesPanel *p = findNoterPanel()) p->refreshFromDisk();
         };
         if (op == QLatin1String("search_notes")) {
+            // No Noter folder yet: nothing to find, and a read never creates it.
+            if (!QFileInfo(root).isDir()) {
+                out[QStringLiteral("results")] = QJsonArray();
+                out[QStringLiteral("truncated")] = false;
+                return out;
+            }
             NotesStorage storage(root);
             const QString q = a.value(QLatin1String("query")).toString().toLower();
             const QStringList terms = q.split(QRegularExpression(QStringLiteral("\\s+")),
@@ -534,6 +540,14 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
             return out;
         }
         if (op.contains(QLatin1String("reminder"))) {
+            // A lookup (even for a bogus id on a card that is then denied)
+            // must not create the Noter DB or mark Noter as in use: someone
+            // who never used Noter has no reminders.
+            if (!m_noterTodos && Config::instance().noterInUse != 1) {
+                *err = QStringLiteral("no reminder with id %1 (list_reminders shows the ids)")
+                           .arg(a.value(QLatin1String("id")).toString());
+                return out;
+            }
             ensureNoterReminderService();
             if (!m_noterTodos) {
                 *err = QStringLiteral("reminder store unavailable");

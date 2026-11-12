@@ -1101,10 +1101,12 @@ QWidget *NotesPanel::buildSidebar() {
             });
         } else if (action == QLatin1String("trash")) {
             if (kind == QLatin1String("meeting")) {
-                trashNote(payload);
+                QString terr;
+                const bool moved = !trashNote(payload, &terr).isEmpty();
                 if (auto *mw = window())
                     if (auto *sb = mw->findChild<QStatusBar *>())
-                        sb->showMessage(tr("Meeting moved to Trash — recover it under Trash"), 4000);
+                        sb->showMessage(moved ? tr("Meeting moved to Trash — recover it under Trash")
+                                              : terr, 4000);
             } else if (kind == QLatin1String("todo")) {
                 if (m_todos) m_todos->trashRow(payload);
                 refreshSidebar();
@@ -1800,6 +1802,9 @@ QString NotesPanel::renameNote(const QString &payload, const QString &newTitle,
         refreshSidebar();
         return payload;
     }
+    // Unsaved typing in the open note is written under its current name
+    // first, so the rename (files, backups, draft) carries all of it.
+    if (payload == m_currentPath && m_dirty) saveCurrentNote();
     // The open note's title lives in the live document: rewrite it there.
     const bool openHere = payload == m_currentPath && !m_currentIsChecklist;
     QString e;
@@ -1857,6 +1862,18 @@ bool NotesPanel::deleteNoteFiles(const QString &trashedPath) {
 
 QString NotesPanel::trashNote(const QString &payload, QString *err) {
     if (payload == m_currentPath) {
+        // Up to 5 s of typing since the last autosave belongs in the note
+        // that goes to Trash (and comes back with Restore): write it first.
+        // If that write fails, nothing is moved and the edits stay open.
+        if (m_dirty) saveCurrentNote();
+        if (m_dirty && m_lastSaveFailed) {
+            if (err)
+                *err = tr("The open note's unsaved edits could not be saved (%1); nothing "
+                          "was moved to Trash")
+                           .arg(m_lastSaveError.isEmpty() ? tr("disk write failed")
+                                                          : m_lastSaveError);
+            return QString();
+        }
         // The open note leaves the editor first, so the 5 s autosave can
         // never write it back to the path it just left.
         m_dirty = false; showEmptyPage(); m_currentPath.clear();

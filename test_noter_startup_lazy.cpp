@@ -12,7 +12,8 @@
 //   2. fresh profile, Noter DB on disk   -> still no DB opened (pre-fix: opened)
 //   3. noterInUse=1, DB with overdue row -> service running, catch-up ran
 //   4. noterInUse=-1 (upgrade), DB       -> service running, flag recorded 1
-//   5. noterInUse=-1 (upgrade), no data  -> flag recorded 0, nothing created
+//   5. noterInUse=-1 (upgrade), no data  -> flag stays -1 (a miss is never saved),
+//                                           nothing created; 5b: no second probe
 // Phases 2-5 need the Documents location inside the temp HOME; where Qt
 // ignores the HOME override (Windows, some macOS setups) they are skipped.
 
@@ -173,8 +174,24 @@ int main(int argc, char *argv[]) {
         const Started s = runStartup(2200, false);
         EXPECT("no Noter data: no reminder engine", !s.engine);
         EXPECT("no Noter data: no NotesTodos", !s.todos);
-        EXPECT("upgrade probe recorded noterInUse = 0", cfg.noterInUse == 0);
+        // R14: a miss may be a blocked or not-yet-synced Documents folder;
+        // it is never saved as "Noter unused".
+        EXPECT("a negative probe is not recorded (stays unknown, -1)", cfg.noterInUse == -1);
         EXPECT("Noter directory NOT created", !QFileInfo::exists(noterRoot));
+    }
+
+    std::printf("-- 5b. still unknown later in the same launch: no second probe\n");
+    QDir().mkpath(QFileInfo(noteFile).path());
+    {
+        QFile nf(noteFile);
+        EXPECT("re-seeded note file", nf.open(QIODevice::WriteOnly) && nf.write("<h1>Again</h1>\n") > 0);
+    }
+    EXPECT("re-seeded reminder DB", seedOverdueReminder(dbPath, noteFile));
+    cfg.noterInUse = -1;
+    {
+        const Started s = runStartup(2200, false);
+        EXPECT("probed at most once per launch: no engine started", !s.engine);
+        EXPECT("flag still unknown", cfg.noterInUse == -1);
     }
 
     std::printf("-- 6. persistence of the flag\n");
@@ -184,9 +201,9 @@ int main(int argc, char *argv[]) {
         if (f.open(QIODevice::ReadOnly))
             o = QJsonDocument::fromJson(f.readAll()).object();
         f.close();
-        EXPECT("probe result persisted to config.json",
-               o.contains(QStringLiteral("noterInUse")) &&
-                   o.value(QStringLiteral("noterInUse")).toInt() == 0);
+        EXPECT("a negative probe never reached config.json as 0",
+               !o.contains(QStringLiteral("noterInUse")) ||
+                   o.value(QStringLiteral("noterInUse")).toInt() != 0);
         o.remove(QStringLiteral("noterInUse"));
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             f.write(QJsonDocument(o).toJson());

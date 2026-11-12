@@ -1826,12 +1826,19 @@ MainWindow::MainWindow(bool standaloneNoSession)
     // permission prompt and blocks the GUI thread until it is answered. Runs
     // from the event loop after the window is shown, so the window paints
     // and the MCP bridge greets before any blocking open. Profiles older
-    // than the flag (-1) probe the DB path once and record the answer.
+    // than the flag (-1) probe the DB path, at most once per launch, and
+    // record only a FOUND DB: a miss may be a Documents folder that is
+    // blocked or not yet synced this launch, and saving it as 0 would turn
+    // an existing user's reminders off until they next open Noter.
     QTimer::singleShot(1500, this, [this]() {
         auto &cfg = Config::instance();
-        if (cfg.noterInUse < 0) {
-            cfg.noterInUse = QFileInfo::exists(NotesPanel::todosDbPath()) ? 1 : 0;
-            cfg.save();
+        static bool probedThisLaunch = false;
+        if (cfg.noterInUse < 0 && !probedThisLaunch) {
+            probedThisLaunch = true;
+            if (QFileInfo::exists(NotesPanel::todosDbPath())) {
+                cfg.noterInUse = 1;
+                cfg.save();
+            }
         }
         if (cfg.noterInUse == 1)
             ensureNoterReminderService();
