@@ -400,6 +400,230 @@ static const Hard kApprovable[] = {
     {"QSQLITE", "INSERT INTO t (a) VALUES (1)", ""},
 };
 
+// ── SQL Server (QODBC) approved writes ─────────────────────────────────
+// The strict batch scan flagged a write's OWN keywords (UPDATE ... SET), so no
+// T-SQL write could be approved. One ordinary write must now get a card; a
+// second statement riding along without ';' must stay a hard refusal.
+static const char *const kApprovableStrict[] = {
+    "UPDATE t SET a = 1 WHERE id = 2",
+    "UPDATE [dbo].[Orders] SET [Status] = N'shipped' WHERE [OrderId] = 42",
+    "UPDATE dbo.t SET [select] = 1, [update] = 2 WHERE [delete] = 3 AND [set] = 4",
+    "UPDATE t SET note = 'DROP TABLE users; EXEC xp_cmdshell ''x''' WHERE id = 1",
+    "UPDATE t SET a = 1 -- then DROP TABLE users\nWHERE id = 1",
+    "UPDATE t SET a = 1 /* DELETE FROM u; SET NOCOUNT ON */ WHERE id = 1",
+    "UPDATE t SET t.a = s.b FROM dbo.t AS t INNER JOIN dbo.s AS s ON s.id = t.id WHERE s.flag = 1",
+    "UPDATE t SET a = s.b FROM t LEFT OUTER JOIN s ON s.id = t.id AND s.kind = 'update'",
+    "UPDATE TOP (10) t SET a = 0",
+    "UPDATE t WITH (ROWLOCK) SET a = 1 WHERE id = 1",
+    "UPDATE t WITH (UPDLOCK) SET a = 1 WHERE id = 1",
+    "UPDATE t SET a = 1 OUTPUT inserted.a, deleted.a WHERE id = 1",
+    "UPDATE t SET a = 1 OUTPUT inserted.* INTO dbo.audit (a) WHERE id = 1",
+    "UPDATE t SET a = CASE WHEN b = 1 THEN 2 ELSE 3 END WHERE id IN (SELECT id FROM u)",
+    "UPDATE t SET a = (SELECT MAX(b) FROM u WHERE u.id = t.id)",
+    "UPDATE t SET a = NEXT VALUE FOR dbo.seq WHERE id = 1",
+    "UPDATE t SET a = 1.5, b = .5 WHERE c = 2.",
+    "UPDATE t SET a = 1 OPTION (MAXDOP 1)",
+    "UPDATE t SET a = 1 OPTION (USE HINT ('FORCE_LEGACY_CARDINALITY_ESTIMATION'))",
+    "UPDATE t SET a = s.x FROM t CROSS APPLY (SELECT TOP (1) x FROM u WHERE u.id = t.id) s",
+    "UPDATE t SET a = 1 WHERE b > ALL (SELECT c FROM u) AND NOT EXISTS (SELECT 1 FROM v)",
+    "UPDATE t SET a = 1 + (SELECT COUNT(*) FROM u), b = ISNULL((SELECT MAX(c) FROM u), 0)",
+    "update t\r\nset a = 1\xE2\x80\xA8where id = 2",
+    "DELETE FROM t WHERE id = 1",
+    "DELETE FROM t WHERE id IN (SELECT id FROM u WHERE u.expired = 1)",
+    "DELETE t FROM t INNER JOIN u ON u.id = t.id WHERE u.flag = 0",
+    "DELETE TOP (100) FROM dbo.logs WHERE created < '2020-01-01'",
+    "DELETE FROM t OUTPUT deleted.* WHERE id = 1",
+    "DELETE FROM t WITH (TABLOCK) WHERE id = 1",
+    "DELETE dbo.t WHERE EXISTS (SELECT 1 FROM u WHERE u.id = t.id)",
+    "INSERT INTO t (a, b) VALUES (1, 'x')",
+    "INSERT INTO [dbo].[t] ([select], [from]) VALUES (1, N'insert into u values (2)')",
+    "INSERT INTO t (a) VALUES (1), (2), (3)",
+    "INSERT t (a) VALUES (NEXT VALUE FOR dbo.seq)",
+    "INSERT INTO t (a, b) SELECT a, b FROM s WHERE s.c = 1",
+    "INSERT INTO t SELECT a FROM s UNION ALL SELECT a FROM u",
+    "INSERT INTO t SELECT a FROM s EXCEPT SELECT a FROM u ORDER BY a",
+    "INSERT INTO t (a) OUTPUT inserted.id INTO dbo.log (id) VALUES (1)",
+    "INSERT INTO t (a) OUTPUT inserted.id SELECT a FROM s",
+    "INSERT INTO t DEFAULT VALUES",
+    "INSERT INTO t WITH (TABLOCK) (a) SELECT a FROM s",
+    "INSERT TOP (5) INTO t (a) SELECT a FROM s",
+    "INSERT INTO #tmp (a) SELECT a FROM t",
+    "WITH c AS (SELECT id FROM u WHERE flag = 1) UPDATE t SET a = 1 WHERE id IN (SELECT id FROM c)",
+    "WITH c AS (SELECT id FROM u) DELETE FROM t WHERE id IN (SELECT id FROM c)",
+    "WITH c (x) AS (SELECT 1), d AS (SELECT 2 y) INSERT INTO t (a) SELECT x FROM c",
+    "MERGE INTO dbo.t AS tgt USING dbo.s AS src ON tgt.id = src.id "
+        "WHEN MATCHED THEN UPDATE SET tgt.a = src.a "
+        "WHEN NOT MATCHED THEN INSERT (id, a) VALUES (src.id, src.a);",
+    "MERGE t USING (SELECT id, a FROM s) AS src ON t.id = src.id "
+        "WHEN MATCHED AND src.a IS NULL THEN DELETE "
+        "WHEN MATCHED THEN UPDATE SET a = src.a "
+        "WHEN NOT MATCHED BY TARGET THEN INSERT (id, a) VALUES (src.id, src.a) "
+        "WHEN NOT MATCHED BY SOURCE THEN DELETE "
+        "OUTPUT $action, inserted.*;",
+    "MERGE t WITH (HOLDLOCK) USING s ON t.id = s.id "
+        "WHEN MATCHED THEN UPDATE SET a = CASE WHEN s.a > 0 THEN s.a ELSE 0 END;",
+    "MERGE TOP (10) INTO t USING s ON t.id = s.id WHEN NOT MATCHED THEN INSERT DEFAULT VALUES;",
+    "SELECT a, b INTO dbo.backup_t FROM t WHERE c = 1",
+    "CREATE TABLE dbo.t2 (id int IDENTITY(1,1) PRIMARY KEY, [name] nvarchar(50) NOT NULL DEFAULT N'x')",
+    "CREATE TABLE c (id int, pid int REFERENCES p(id) ON DELETE CASCADE ON UPDATE NO ACTION)",
+    "CREATE TABLE c (id int, pid int, CONSTRAINT fk FOREIGN KEY (pid) REFERENCES p (id) "
+        "ON DELETE SET NULL ON UPDATE SET DEFAULT)",
+    "CREATE UNIQUE NONCLUSTERED INDEX ix_t_a ON dbo.t (a) INCLUDE (b) WHERE a IS NOT NULL",
+    "CREATE INDEX ix ON t (a) WITH (ONLINE = ON)",
+    "CREATE VIEW dbo.v AS SELECT a FROM t UNION ALL SELECT a FROM u",
+    "CREATE OR ALTER VIEW v WITH SCHEMABINDING AS SELECT a FROM dbo.t",
+    "CREATE VIEW v (x) AS WITH c AS (SELECT 1 a) SELECT a FROM c",
+    "ALTER TABLE t ADD c int NULL",
+    "ALTER TABLE dbo.t ALTER COLUMN c bigint NOT NULL",
+    "ALTER TABLE t DROP COLUMN IF EXISTS c",
+    "ALTER TABLE [dbo].[t] DROP CONSTRAINT fk_old",
+    "ALTER TABLE t WITH CHECK ADD CONSTRAINT fk FOREIGN KEY (pid) REFERENCES p (id) "
+        "ON DELETE CASCADE",
+    "DROP TABLE IF EXISTS dbo.t_old",
+    "DROP TABLE t1, t2",
+    "DROP INDEX ix_a ON dbo.t",
+    "DROP VIEW IF EXISTS dbo.v",
+    "TRUNCATE TABLE dbo.staging",
+};
+
+// Each row is ONE approvable write with a second statement after it, no ';'.
+static const char *const kHardStrict[] = {
+    "UPDATE t SET a=1 DROP TABLE users",
+    "DELETE FROM t WHERE id=1 EXEC xp_cmdshell 'x'",
+    "INSERT INTO t VALUES (1) DELETE FROM u",
+    "UPDATE t SET a=1 SET IDENTITY_INSERT u ON",
+    "UPDATE t SET a=1 WHERE b=2 UPDATE u SET c=3",
+    "UPDATE t SET a=1 WAITFOR DELAY '0:0:10'",
+    "DELETE FROM t WHERE id=1 WAITFOR DELAY '0:0:10'",
+    "UPDATE t SET a=1 DECLARE @x int",
+    "INSERT INTO t VALUES (1) DECLARE @x int",
+    "UPDATE t SET a=1 /* c */ DROP TABLE users",
+    "UPDATE t SET a=1 -- c\nDROP TABLE users",
+    "UPDATE t SET a=1\rDROP TABLE users",
+    "UPDATE t SET a=1\r\nEXEC sp_who",
+    "UPDATE t SET a=1\xE2\x80\xA8" "DROP TABLE users",
+    "DELETE FROM t\xE2\x80\xA8" "EXEC xp_cmdshell 'x'",
+    "UPDATE t WITH (TABLOCK) SET a=1 DROP TABLE users",
+    "UPDATE t WITH (UPDLOCK) SET a=1 EXEC xp_cmdshell 'calc'",
+    "DELETE FROM t WITH (HOLDLOCK) WHERE id=1 SET NOCOUNT ON",
+    "UPDATE t SET a = NEXT VALUE FOR s EXEC xp_cmdshell 'x'",
+    "INSERT INTO t VALUES (NEXT VALUE FOR s) DROP TABLE users",
+    "INSERT INTO t EXEC sp_who",
+    "INSERT INTO t (a) EXECUTE ('SELECT 1')",
+    "UPDATE t SET a=1 SET NOCOUNT ON",
+    "UPDATE t SET a=1 USE master",
+    "UPDATE t SET a=1 GO",
+    "UPDATE t SET a=1 GO DROP TABLE users",
+    "UPDATE t SET a=1 BEGIN TRAN",
+    "UPDATE t SET a=1 IF 1=1 SELECT 1",
+    "UPDATE t SET a=1 WHILE 1=1 SELECT 1",
+    "UPDATE t SET a=1 KILL 55",
+    "UPDATE t SET a=1 DBCC FREEPROCCACHE",
+    "UPDATE t SET a=1 BACKUP DATABASE d TO DISK = 'x'",
+    "UPDATE t SET a=1 RESTORE DATABASE d FROM DISK = 'x'",
+    "UPDATE t SET a=1 GRANT CONTROL ON t TO u",
+    "UPDATE t SET a=1 REVOKE SELECT ON t FROM u",
+    "UPDATE t SET a=1 DENY SELECT ON t TO u",
+    "UPDATE t SET a=1 END CONVERSATION @h",
+    "UPDATE t SET a=1 RECEIVE * FROM q",
+    "UPDATE t SET a=1 SEND ON CONVERSATION @h (N'x')",
+    "UPDATE t SET a=1 master..xp_cmdshell 'x'",
+    "UPDATE t SET a=1 sp_executesql N'DROP TABLE t'",
+    "UPDATE t SET a=1 TRUNCATE TABLE users",
+    "UPDATE t SET a=1 PRINT 'x'",
+    "UPDATE t SET a=1 SELECT * INTO stolen FROM secrets",
+    "UPDATE t SET a=1 SELECT * FROM secrets",
+    "UPDATE t SET a = 1. DROP TABLE users",
+    "UPDATE t SET a = 1 WHERE b = 'x'. DROP TABLE users",
+    "UPDATE t SET a = 1 FROM t AS x DROP TABLE users",
+    "UPDATE t SET a = (SELECT b INTO z FROM u)",
+    "UPDATE t SET a = 1 {call dbo.wipe}",
+    "UPDATE t SET a = 1 {?= call dbo.wipe}",
+    "UPDATE STATISTICS SET IDENTITY_INSERT u ON",
+    "UPDATE t SET a = 1 OUTPUT inserted.a INTO log SELECT * FROM secrets",
+    "DELETE FROM t WHERE id = 1 IF EXISTS (SELECT 1 FROM u) DROP TABLE u",
+    "INSERT INTO t SELECT 1 SELECT * INTO x FROM y",
+    "INSERT INTO t VALUES (1) SELECT * INTO x FROM y",
+    "INSERT INTO t DEFAULT VALUES SELECT 1",
+    "INSERT INTO t (SELECT 1) SELECT * INTO x FROM y",
+    "INSERT INTO t VALUES (1) UNION SELECT 2",
+    "SELECT a INTO x FROM t SELECT b INTO y FROM u",
+    "SELECT a INTO x FROM t DROP TABLE users",
+    "WITH c AS (SELECT 1 x) UPDATE t SET a = 1 WITH d AS (SELECT 2 y) DELETE FROM u",
+    "MERGE t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = 1 DELETE FROM u;",
+    "MERGE t USING s ON t.id = s.id WHEN MATCHED THEN DELETE INSERT INTO u VALUES (1);",
+    "MERGE t USING s ON t.id = s.id WHEN NOT MATCHED THEN INSERT (a) VALUES (1) "
+        "UPDATE u SET c = 3;",
+    "MERGE t USING s ON 1=1 WHEN MATCHED THEN UPDATE SET a = CASE WHEN 1=1 THEN 2 END "
+        "DROP TABLE u;",
+    "MERGE t USING s ON 1=1 WHEN MATCHED THEN UPDATE SET a = 1 SET NOCOUNT ON;",
+    "MERGE t USING s ON 1=1 WHEN NOT MATCHED THEN DELETE;",
+    "MERGE t USING s ON 1=1 WHEN MATCHED THEN INSERT VALUES (1);",
+    "MERGE t USING s ON 1=1 WHEN MATCHED THEN UPDATE SET a = 1 EXEC sp_who;",
+    "CREATE TABLE z (a int) DROP TABLE users",
+    "CREATE TABLE c (pid int REFERENCES p(id) ON DELETE CASCADE) DELETE FROM users",
+    "CREATE TABLE c (id int) ON [PRIMARY] DELETE FROM u",
+    "CREATE TABLE c (id int REFERENCES p(id)) ON DELETE FROM u",
+    "CREATE INDEX ix ON t (a) DROP TABLE users",
+    "CREATE VIEW v AS SELECT 1 a DELETE FROM users",
+    "CREATE VIEW v AS DELETE FROM users",
+    "ALTER TABLE t ADD c int DROP TABLE users",
+    "ALTER TABLE t DROP COLUMN c DROP TABLE users",
+    "ALTER TABLE t ALTER COLUMN c int ALTER TABLE u ADD d int",
+    "ALTER TABLE t ADD CONSTRAINT f FOREIGN KEY (a) REFERENCES p(id) ON DELETE CASCADE "
+        "DELETE FROM u",
+    "ALTER TABLE t SET (LOCK_ESCALATION = AUTO)",
+    "DROP TABLE t DROP TABLE users",
+    "DROP TABLE t IF 1=1 DROP TABLE users",
+    "TRUNCATE TABLE t TRUNCATE TABLE users",
+    "UPDATE t SET a = 1 ADD SIGNATURE TO dbo.p BY CERTIFICATE c",
+    // adversarial pass: SQL Server ends a number where a letter begins
+    "UPDATE t SET a = 1DROP TABLE users",
+    "DELETE FROM t WHERE id = 1EXEC xp_cmdshell 'x'",
+    "DELETE FROM t WHERE id = 2SET NOCOUNT ON",
+    "UPDATE t SET a = 0xUPDATE u SET c = 3",
+    "UPDATE t SET a = 1e5WAITFOR DELAY '0:0:10'",
+    "UPDATE t SET a = 1END CONVERSATION @h",
+    "INSERT INTO t VALUES (1)1SELECT * INTO x FROM y",
+    "UPDATE t SET a = $1. DROP TABLE users",
+    "UPDATE t SET a = 1.EDROP TABLE users",
+    "UPDATE t SET a = 1.e EXEC sp_who",
+    "INSERT INTO t VALUES (1.)SELECT * INTO x FROM y",
+    "UPDATE t SET a = 1 (SELECT * FROM secrets)",
+    "DELETE FROM t WHERE id = 'x' (SELECT name FROM sys.sql_logins)",
+    "INSERT INTO t VALUES (1) (SELECT 2)",
+    "UPDATE t SET a = 1 USE HINT (SELECT 1)",
+    "UPDATE t SET a = 1 OUTPUT inserted.a (SELECT b INTO x FROM y)",
+};
+
+// Generated pairs: approvable heads x separators x second statements.
+static const char *const kHeads[] = {
+    "UPDATE t SET a = 1 WHERE id = 2",
+    "DELETE FROM t WHERE id = 1",
+    "INSERT INTO t (a) VALUES (1)",
+    "INSERT INTO t (a) SELECT a FROM s",
+    "UPDATE t WITH (UPDLOCK) SET a = NEXT VALUE FOR s",
+    "MERGE t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = s.a",
+    "WITH c AS (SELECT 1 x) DELETE FROM t WHERE id IN (SELECT x FROM c)",
+    "SELECT a INTO x FROM t",
+    "CREATE TABLE z (a int)",
+    "ALTER TABLE t ALTER COLUMN c int",
+    "DROP TABLE IF EXISTS t",
+};
+static const char *const kSeps[] = {" ", "\n", "\r", "\r\n", "\t", "\xE2\x80\xA8", "\xC2\x85",
+                                    " /* c */ ", " -- c\n", "/**/"};
+static const char *const kSeconds[] = {
+    "DROP TABLE users", "EXEC xp_cmdshell 'x'", "EXECUTE sp_who", "DELETE FROM u",
+    "INSERT INTO u VALUES (1)", "UPDATE u SET c = 3", "MERGE u USING s ON 1=1 WHEN MATCHED THEN DELETE",
+    "SET IDENTITY_INSERT u ON", "SET NOCOUNT ON", "WAITFOR DELAY '0:0:10'", "DECLARE @x int",
+    "USE master", "GO", "BEGIN TRAN", "IF 1=1 SELECT 1", "WHILE 1=1 SELECT 1", "KILL 55",
+    "DBCC FREEPROCCACHE", "BACKUP LOG d TO DISK = 'x'", "RESTORE DATABASE d FROM DISK = 'x'",
+    "GRANT SELECT ON t TO u", "REVOKE SELECT ON t FROM u", "DENY SELECT ON t TO u",
+    "END CONVERSATION @h", "RECEIVE * FROM q", "TRUNCATE TABLE u", "CREATE TABLE y (a int)",
+    "ALTER TABLE u ADD d int", "SELECT * INTO y FROM u", "xp_cmdshell 'x'", "sp_executesql N'x'",
+    "SHUTDOWN", "RECONFIGURE", "CHECKPOINT", "OPEN c", "CLOSE c", "RAISERROR('x', 16, 1)",
+};
+
 static const Accept kAccept[] = {
     // 1 — ordinary comments still pass
     {"1", Std,    "SELECT /* a comment */ 1 FROM t /* another */"},
@@ -595,6 +819,81 @@ int main(int argc, char **argv) {
         std::printf("  [%s] %-7s %s  (hardFail=%d mutation=%d reason=\"%s\")\n",
                     ok ? "PASS" : "FAIL", h.driver, shown(h.sql).toUtf8().constData(), v.hardFail,
                     v.mutation, (v.hardFail ? v.hardReason : v.reason).toUtf8().constData());
+    }
+
+    std::printf("== APPROVABLE-STRICT: one T-SQL write on QODBC gets a card ==\n");
+    int approvableRows = 0;
+    for (const char *sql : kApprovableStrict) {
+        ++approvableRows;
+        const QString q = QString::fromUtf8(sql);
+        const SqlVerdict v = classifyApprovedWrite(q, QStringLiteral("QODBC"));
+        const bool ok = !v.hardFail && v.singleStatement && v.mutation && !v.readOnly;
+        ok ? ++g_pass : ++g_fail;
+        std::printf("  [%s] %s  (hardFail=%d single=%d mutation=%d reason=\"%s\")\n",
+                    ok ? "PASS" : "FAIL", shown(sql).toUtf8().constData(), v.hardFail,
+                    v.singleStatement, v.mutation,
+                    (v.hardFail ? v.hardReason : v.reason).toUtf8().constData());
+        // The no-card read path (run_query) is unchanged: never read-only there.
+        const SqlVerdict r1 = classifySql(q, true, true);
+        const SqlVerdict r2 = classifySql(q, false, true);
+        const bool readOk = !r1.readOnly && !r2.readOnly && r1.mutation;
+        readOk ? ++g_pass : ++g_fail;
+        if (!readOk)
+            std::printf("  [FAIL] read path: strict classifySql calls it read-only: %s\n",
+                        shown(sql).toUtf8().constData());
+    }
+    if (approvableRows < 25) {
+        ++g_fail;
+        std::printf("  [FAIL] only %d APPROVABLE-STRICT rows\n", approvableRows);
+    }
+
+    std::printf("== HARD-STRICT: a second statement after one write is refused ==\n");
+    int hardRows = 0;
+    for (const char *sql : kHardStrict) {
+        ++hardRows;
+        const SqlVerdict v = classifyApprovedWrite(QString::fromUtf8(sql), QStringLiteral("QODBC"));
+        const bool ok = v.hardFail && !v.readOnly && !v.hardReason.isEmpty();
+        ok ? ++g_pass : ++g_fail;
+        std::printf("  [%s] %s  (hardFail=%d hardReason=\"%s\")\n", ok ? "PASS" : "FAIL",
+                    shown(sql).toUtf8().constData(), v.hardFail,
+                    v.hardReason.toUtf8().constData());
+    }
+    if (hardRows < 40) {
+        ++g_fail;
+        std::printf("  [FAIL] only %d HARD-STRICT rows\n", hardRows);
+    }
+    {
+        // Every head on its own is approvable (the pairs below are not vacuous) ...
+        int headsOk = 0;
+        for (const char *head : kHeads) {
+            const SqlVerdict v = classifyApprovedWrite(QString::fromUtf8(head), QStringLiteral("QODBC"));
+            if (!v.hardFail && v.singleStatement && v.mutation) ++headsOk;
+            else std::printf("  [FAIL] head is not approvable alone: %s (%s)\n", head,
+                             (v.hardFail ? v.hardReason : v.reason).toUtf8().constData());
+        }
+        const int nHeads = int(sizeof(kHeads) / sizeof(kHeads[0]));
+        headsOk == nHeads ? ++g_pass : ++g_fail;
+        std::printf("  [%s] %d/%d generated heads are approvable on their own\n",
+                    headsOk == nHeads ? "PASS" : "FAIL", headsOk, nHeads);
+        // ... and none of them followed by a second statement is.
+        int pairs = 0, pairFails = 0;
+        for (const char *head : kHeads)
+            for (const char *sep : kSeps)
+                for (const char *second : kSeconds) {
+                    const QString sql = QString::fromUtf8(head) + QString::fromUtf8(sep)
+                                      + QString::fromUtf8(second);
+                    const SqlVerdict v = classifyApprovedWrite(sql, QStringLiteral("QODBC"));
+                    ++pairs;
+                    if (!v.hardFail) {
+                        ++pairFails;
+                        if (pairFails <= 20)
+                            std::printf("  [FAIL] pair approvable: %s\n",
+                                        shown(sql.toUtf8().constData()).toUtf8().constData());
+                    }
+                }
+        pairFails == 0 ? ++g_pass : ++g_fail;
+        std::printf("  [%s] %d generated head + second-statement pairs all hard-fail (%d not)\n",
+                    pairFails == 0 ? "PASS" : "FAIL", pairs, pairFails);
     }
 
     // EXPLAIN bodies are classified recursively: a long EXPLAIN EXPLAIN ... chain

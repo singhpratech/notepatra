@@ -140,6 +140,15 @@ bool driverRunsUnterminatedBatches(const QString &driver);
 // plus hardFail for statements that reach files, the network, code or session
 // state (COPY, ATTACH, LOAD/INSTALL, CALL/EXECUTE, SET, transaction control,
 // CREATE FUNCTION/EXTENSION/..., ALTER SYSTEM): no approval card runs those.
+// On a driver that runs unterminated batches (QODBC), ONE ordinary write keeps
+// its own keywords in their grammatical slots: the leading verb (after an
+// optional WITH ctes) of INSERT / UPDATE / DELETE / MERGE, CREATE TABLE|INDEX|
+// VIEW, ALTER TABLE, DROP TABLE|INDEX|VIEW, TRUNCATE TABLE; UPDATE's SET; MERGE's
+// WHEN ... THEN UPDATE SET / DELETE / INSERT; ALTER TABLE's ALTER COLUMN / DROP
+// COLUMN|CONSTRAINT; REFERENCES ... ON DELETE|UPDATE actions; DROP ... IF EXISTS.
+// SELECT ... INTO stays approvable as one statement. Every other statement word
+// (a second verb, SET as a statement, EXEC, DECLARE, IF, GO, a second SELECT,
+// a parenthesised query, an ODBC {call}, ...) is a hard refusal.
 SqlVerdict classifyApprovedWrite(const QString &sql, const QString &driver);
 
 // Convenience wrappers over classifySql.
