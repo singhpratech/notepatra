@@ -22,4 +22,11 @@ namespace PathDenylist {
 // path SEGMENTS so a project directory legitimately named "ssh" is not caught.
 bool isSecretPath(const QString &absPath);
 
+// True when writing `absPath` could plant code that runs later without the
+// user opening it: shell rc/profile files, autostart / LaunchAgents / the
+// Windows Startup folder, cron spools, .git/hooks/*, .gitconfig. Reading
+// these is harmless, so this list guards WRITES only; callers that write
+// must check isSecretPath too.
+bool isWriteDangerous(const QString &absPath);
+
 } // namespace PathDenylist

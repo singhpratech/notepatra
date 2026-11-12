@@ -16,6 +16,7 @@
 
 class QEvent;
 class QFrame;
+class QLabel;
 class QLocalServer;
 class QLocalSocket;
 class QTimer;
@@ -184,6 +185,27 @@ struct McpEditorHost {
     // WRITE: off-screen render + write chart bytes to path; false + *err on failure/Lite.
     std::function<bool(const QJsonObject &spec, const QString &path,
                        const QString &format, int scale, QString *err)> exportChart;
+
+    // ── v0.1.133. Optional like everything above: unset ⇒ clear error. ──
+    // READ: lowercase export formats DiagramView can produce in this build.
+    std::function<QStringList()> diagramExportFormats;
+    // READ: extra get_status fields for tab i: {eol,line_count,length,
+    // selection:{start_line,start_col,end_line,end_col}|null,read_only,word_wrap}.
+    std::function<QJsonObject(int)> tabState;
+    // ACT: view/navigation change on tab i (op: activate, set_read_only,
+    // bookmarks, fold, set_preview, compare_with_file, close). Never a dialog.
+    std::function<QJsonObject(int tab, const QString &op, const QJsonObject &args,
+                              QString *err)> tabAction;
+    // WRITE (runs only after Approve): buffer/file mutation on tab i, one
+    // undo step, same functions as the menu (op = the tool name).
+    std::function<QJsonObject(int tab, const QString &op, const QJsonObject &args,
+                              QString *err)> editTab;
+    // ACT: app-wide view state (op: set_view, set_theme).
+    std::function<QJsonObject(const QString &op, const QJsonObject &args,
+                              QString *err)> appAction;
+    // READ: pure computation over text (op = the tool name); never a buffer.
+    std::function<QJsonObject(const QString &op, const QJsonObject &args,
+                              QString *err)> computeText;
 };
 
 // Editor-side MCP bridge: a dedicated QLocalServer, deliberately separate from
@@ -214,6 +236,11 @@ public:
 
     // Test hook: shrink the human-approval timeout (production default 120 s).
     void setApprovalTimeoutMs(int ms);
+
+    // Refusal text when `path` must never be a write destination (credential
+    // store or a write-only-dangerous target such as authorized_keys, a shell
+    // rc file or .git/hooks); "" when fine. Canonicalizes parent and leaf.
+    static QString writeDestinationRefusal(const QString &path);
 
 protected:
     // Repositions the approval card when its host widget resizes.
@@ -354,6 +381,21 @@ private:
     void enqueueApproval(QLocalSocket *client, int id,
                          const QString &description, const QString &preview,
                          std::function<QJsonObject(QString *)> execute);
+    // v0.1.133 (D4): a write held for approval names a DOCUMENT, not a
+    // position. Captures tab i's stable id now and re-resolves it when the
+    // human approves; a tab closed meanwhile fails the write. `run` gets the
+    // live index; its result's tab_index/tab_id are filled in here.
+    void enqueueTabApproval(QLocalSocket *client, int id, int idx,
+                            const QString &description, const QString &preview,
+                            std::function<QJsonObject(int, QString *)> run);
+    // Live index of the tab captured as (tid, idx, title); -1 + *err if gone.
+    int liveTabIndex(qint64 tid, int idx, const QString &title,
+                     QString *err) const;
+    // Refusal for any write that targets tab idx (credential file, or a
+    // write-dangerous destination); "" when the write may be proposed.
+    QString tabWriteRefusal(int idx) const;
+    // Countdown text on the live card ("Auto-deny in 1:58").
+    void updateCountdown();
     void showNextApproval();
     void showApprovalCard(QWidget *parent, const PendingWrite &pw);
     void resolveActiveApproval(bool approved, const QString &denyMessage);
@@ -382,6 +424,10 @@ private:
     QPointer<QWidget> m_cardParent;
     QTimer *m_approvalTimer = nullptr;
     int m_approvalTimeoutMs = 120000; // 120 s auto-deny
+    // v0.1.133 (D16): once-a-second countdown on the live card.
+    QTimer *m_countdownTimer = nullptr;
+    QPointer<QLabel> m_cardCountdown;
+    qint64 m_approvalDeadlineMs = 0; // QDateTime msecs since epoch
 };
 
 #endif

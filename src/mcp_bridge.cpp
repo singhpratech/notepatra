@@ -122,6 +122,7 @@
 #include "path_denylist.h"
 #include "singleinstance.h"
 
+#include <QApplication>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -497,6 +498,15 @@ McpBridge::McpBridge(McpEditorHost host, QObject *parent,
     connect(m_approvalTimer, &QTimer::timeout, this, [this]() {
         resolveActiveApproval(false, QStringLiteral("approval timed out"));
     });
+    m_countdownTimer = new QTimer(this);
+    m_countdownTimer->setInterval(1000);
+    connect(m_countdownTimer, &QTimer::timeout, this,
+            &McpBridge::updateCountdown);
+    // v0.1.133 (D6): a quit that never destroys us (the SIGTERM path, a
+    // leaked window) must still take the endpoint file down with the loop.
+    if (QCoreApplication *app = QCoreApplication::instance())
+        connect(app, &QCoreApplication::aboutToQuit, this,
+                [this]() { unpublishEndpoint(); });
 }
 
 McpBridge::~McpBridge() {
@@ -565,8 +575,49 @@ void McpBridge::unpublishEndpoint() {
 
 void McpBridge::setApprovalTimeoutMs(int ms) {
     m_approvalTimeoutMs = qMax(1, ms);
-    if (m_approvalTimer && m_approvalTimer->isActive())
+    if (m_approvalTimer && m_approvalTimer->isActive()) {
         m_approvalTimer->start(m_approvalTimeoutMs);
+        m_approvalDeadlineMs =
+            QDateTime::currentMSecsSinceEpoch() + m_approvalTimeoutMs;
+        updateCountdown();
+    }
+}
+
+// v0.1.133 (D12). A card is not a deny-list: a human approving forty edits
+// approves the forty-first, and a write into authorized_keys, a shell rc file
+// or a git hook runs code later without anyone opening it. The check runs on
+// every spelling of the destination: the absolute path, the leaf under its
+// canonical parent (symlinked directory), and a leaf symlink's target.
+QString McpBridge::writeDestinationRefusal(const QString &path) {
+    if (path.isEmpty()) return QString();
+    const QFileInfo fi(QDir::fromNativeSeparators(path));
+    QStringList forms;
+    forms << fi.absoluteFilePath();
+    const QString parentCanon =
+        QFileInfo(fi.absolutePath()).canonicalFilePath();
+    if (!parentCanon.isEmpty())
+        forms << parentCanon + QLatin1Char('/') + fi.fileName();
+    if (fi.isSymLink())
+        forms << QFileInfo(fi.symLinkTarget()).absoluteFilePath();
+    if (fi.exists()) {
+        const QString leafCanon = fi.canonicalFilePath();
+        if (!leafCanon.isEmpty()) forms << leafCanon;
+    }
+    for (const QString &f : forms) {
+        if (!credentialRefusal(f).isEmpty() || PathDenylist::isWriteDangerous(f))
+            return QStringLiteral(
+                       "refusing to write %1: it is a protected destination "
+                       "(credential store, shell start-up file, autostart "
+                       "entry, scheduled job, git hook or git config). Edit "
+                       "it yourself if you really mean to.")
+                .arg(QDir::toNativeSeparators(fi.absoluteFilePath()));
+    }
+    return QString();
+}
+
+QString McpBridge::tabWriteRefusal(int idx) const {
+    return writeDestinationRefusal(m_host.tabPath ? m_host.tabPath(idx)
+                                                  : QString());
 }
 
 bool McpBridge::isListening() const {
@@ -789,6 +840,8 @@ void McpBridge::verbOpenFile(QLocalSocket *client, int id,
     QJsonObject result;
     result[QStringLiteral("opened")] = true;
     result[QStringLiteral("tab_index")] = idx;
+    if (const qint64 tid = tabIdOf(idx); tid >= 0)
+        result[QStringLiteral("tab_id")] = tid;
     sendResult(client, id, result);
 }
 
@@ -1039,6 +1092,22 @@ void McpBridge::verbGetStatus(QLocalSocket *client, int id) {
     if (idx >= 0 && m_host.cursorPosition) m_host.cursorPosition(&line, &col);
     result[QStringLiteral("cursor_line")] = line;
     result[QStringLiteral("cursor_col")] = col;
+    // v0.1.133 (D9 + additive status). Absent fields mean "no active tab".
+    if (idx >= 0) {
+        if (const qint64 tid = tabIdOf(idx); tid >= 0)
+            result[QStringLiteral("tab_id")] = tid;
+        result[QStringLiteral("modified")] =
+            m_host.tabModified ? m_host.tabModified(idx) : false;
+        result[QStringLiteral("editable")] = tabIsEditable(idx);
+        if (m_host.tabState) {
+            const QJsonObject st = m_host.tabState(idx);
+            for (auto it = st.begin(); it != st.end(); ++it)
+                result[it.key()] = it.value();
+        }
+    }
+    result[QStringLiteral("workspace_root")] =
+        QDir::toNativeSeparators(m_host.workspaceRoot ? m_host.workspaceRoot()
+                                                      : QString());
     result[QStringLiteral("edition")] = QLatin1String(editionName());
     result[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
     sendResult(client, id, result);
@@ -1151,6 +1220,8 @@ void McpBridge::verbNewTab(QLocalSocket *client, int id,
     }
     QJsonObject result;
     result[QStringLiteral("tab_index")] = idx;
+    if (const qint64 tid = tabIdOf(idx); tid >= 0)
+        result[QStringLiteral("tab_id")] = tid;
     sendResult(client, id, result);
 }
 
@@ -1167,14 +1238,12 @@ void McpBridge::verbGotoLine(QLocalSocket *client, int id,
                   QStringLiteral("line must be >= 1"));
         return;
     }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int idx = args.contains(QLatin1String("tab_index"))
-                        ? args.value(QLatin1String("tab_index")).toInt(-1)
-                        : (m_host.currentTabIndex ? m_host.currentTabIndex()
-                                                  : -1);
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    // v0.1.133 (D3): the common resolver. This used to read tab_index only,
+    // so a tab_id call silently moved the cursor in the FOCUSED tab.
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
         return;
     }
     const int landed = m_host.gotoLine(idx, line);
@@ -1261,14 +1330,12 @@ void McpBridge::verbSetLanguage(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("missing language"));
         return;
     }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int idx = args.contains(QLatin1String("tab_index"))
-                        ? args.value(QLatin1String("tab_index")).toInt(-1)
-                        : (m_host.currentTabIndex ? m_host.currentTabIndex()
-                                                  : -1);
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    // v0.1.133 (D3): same resolver as every other tab verb — tab_id used to
+    // be ignored here, so the language changed on the focused tab instead.
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
         return;
     }
     // Resolve to the canonical menu token; a null resolver (test hosts)
@@ -1301,12 +1368,31 @@ void McpBridge::verbCompareTabs(QLocalSocket *client, int id,
                   QStringLiteral("compare_tabs not supported by host"));
         return;
     }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int a = args.value(QLatin1String("index_a")).toInt(-1);
-    const int b = args.value(QLatin1String("index_b")).toInt(-1);
-    if (a < 0 || a >= n || b < 0 || b >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1, %2").arg(a).arg(b));
+    // v0.1.133 (D3): each side is tab_id_X or index_X, resolved by the
+    // common resolver, so a stale id is an error and never a fallback.
+    const auto side = [this, &args](const char *idKey, const char *idxKey,
+                                    QString *err) -> int {
+        QJsonObject sel;
+        if (args.contains(QLatin1String(idKey)))
+            sel[QStringLiteral("tab_id")] = args.value(QLatin1String(idKey));
+        else if (args.contains(QLatin1String(idxKey)))
+            sel[QStringLiteral("index")] = args.value(QLatin1String(idxKey));
+        else {
+            *err = QStringLiteral("missing %1 or %2")
+                       .arg(QLatin1String(idKey), QLatin1String(idxKey));
+            return -1;
+        }
+        return resolveTab(sel, "index", /*allowCurrent=*/false, err);
+    };
+    QString errA, errB;
+    const int a = side("tab_id_a", "index_a", &errA);
+    if (a < 0) {
+        sendError(client, id, errA);
+        return;
+    }
+    const int b = side("tab_id_b", "index_b", &errB);
+    if (b < 0) {
+        sendError(client, id, errB);
         return;
     }
     if (a == b) {
@@ -1435,14 +1521,22 @@ QString McpBridge::resolveNotePath(const QJsonObject &args,
         return QString();
     }
     const QString rootCanon = QFileInfo(root).canonicalFilePath();
-    const QFileInfo fi(fileArg);
+    // v0.1.133 (D7b): a relative path is relative to the Noter ROOT, never
+    // to the app's working directory. Canonicalized and confined below.
+    const QFileInfo fi(QDir::isAbsolutePath(fileArg)
+                           ? fileArg
+                           : QDir(root).absoluteFilePath(fileArg));
     const QString fileCanon = fi.canonicalFilePath();
     if (rootCanon.isEmpty() || fileCanon.isEmpty() || !fi.isFile() ||
         !fileCanon.endsWith(QLatin1String(".html"), Qt::CaseInsensitive) ||
         !fileCanon.startsWith(rootCanon + QLatin1Char('/'))) {
         if (err)
-            *err = QStringLiteral("not a note file: %1")
-                       .arg(QDir::toNativeSeparators(fileArg));
+            *err = QStringLiteral(
+                       "not a note file: %1 (expected an existing .html note "
+                       "inside the Noter folder %2, given as the absolute "
+                       "path list_notes returns or relative to that folder)")
+                       .arg(QDir::toNativeSeparators(fileArg),
+                            QDir::toNativeSeparators(root));
         return QString();
     }
     return fileCanon;
@@ -1635,6 +1729,10 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
         sendError(client, id, nonEditableReason(idx));
         return;
     }
+    if (const QString deny = tabWriteRefusal(idx); !deny.isEmpty()) {
+        sendError(client, id, deny); // D12: never a card for a protected file
+        return;
+    }
     int line = -1, col = -1;
     // `col` alone is meaningless and used to be silently DISCARDED: the insert
     // then went to the cursor, so an assistant asking for column 1 of wherever
@@ -1664,20 +1762,18 @@ void McpBridge::verbInsertText(QLocalSocket *client, int id,
               .arg(text.size()).arg(tabLabel(idx)).arg(line).arg(col)
         : QStringLiteral("insert %1 chars into '%2' at the cursor")
               .arg(text.size()).arg(tabLabel(idx));
-    enqueueApproval(client, id, desc,
-                    elideForCard(text, kApprovalPreviewChars),
-                    [this, idx, line, col, text](QString *execErr) {
-        if (!m_host.insertText(idx, line, col, text)) {
+    enqueueTabApproval(client, id, idx, desc,
+                       elideForCard(text, kApprovalPreviewChars),
+                       [this, line, col, text](int live, QString *execErr) {
+        if (!m_host.insertText(live, line, col, text)) {
             // v0.1.121 (issue #6): name the tab and the likely cause.
             *execErr = QStringLiteral(
                            "could not insert into tab %1 (line/col out of "
                            "range?)")
-                           .arg(idx);
+                           .arg(live);
             return QJsonObject();
         }
-        QJsonObject r;
-        r[QStringLiteral("tab_index")] = idx;
-        return r;
+        return QJsonObject();
     });
 }
 
@@ -1703,6 +1799,10 @@ void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
         sendError(client, id, nonEditableReason(idx));
         return;
     }
+    if (const QString deny = tabWriteRefusal(idx); !deny.isEmpty()) {
+        sendError(client, id, deny);
+        return;
+    }
     // Fail fast: never ask the human to approve a no-op.
     if (m_host.hasSelection && !m_host.hasSelection(idx)) {
         sendError(client, id, QStringLiteral("no selection"));
@@ -1711,19 +1811,18 @@ void McpBridge::verbReplaceSelection(QLocalSocket *client, int id,
     const QString desc =
         QStringLiteral("replace the selection in '%1' with %2 chars")
             .arg(tabLabel(idx)).arg(text.size());
-    enqueueApproval(client, id, desc,
-                    text.isEmpty() ? QStringLiteral("(delete the selection)")
-                                   : elideForCard(text, kApprovalPreviewChars),
-                    [this, idx, text](QString *execErr) {
+    enqueueTabApproval(client, id, idx, desc,
+                       text.isEmpty()
+                           ? QStringLiteral("(delete the selection)")
+                           : elideForCard(text, kApprovalPreviewChars),
+                       [this, text](int live, QString *execErr) {
         // Re-checked at execute time: the selection may have vanished while
         // the card was waiting for a click.
-        if (!m_host.replaceSelection(idx, text)) {
+        if (!m_host.replaceSelection(live, text)) {
             *execErr = QStringLiteral("no selection");
             return QJsonObject();
         }
-        QJsonObject r;
-        r[QStringLiteral("tab_index")] = idx;
-        return r;
+        return QJsonObject();
     });
 }
 
@@ -1768,6 +1867,21 @@ void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("no match"));
         return;
     }
+    if (const QString deny = tabWriteRefusal(idx); !deny.isEmpty()) {
+        sendError(client, id, deny);
+        return;
+    }
+    // D4: what the card describes, pinned. The first match's offset (or the
+    // total count for all=true) must be unchanged when the human approves.
+    const auto fingerprint = [find, all](const QString &t) {
+        if (!all) return t.indexOf(find);
+        int n = 0;
+        for (int at = t.indexOf(find); at >= 0;
+             at = t.indexOf(find, at + find.size()))
+            ++n;
+        return n;
+    };
+    const int pinned = fingerprint(text);
     const QString desc =
         QStringLiteral("replace %1 '%2' with '%3' in '%4'")
             .arg(all ? QStringLiteral("every") : QStringLiteral("the first"),
@@ -1777,9 +1891,24 @@ void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
         elideForCard(find, kApprovalPreviewChars / 2) +
         QStringLiteral("\n-> ") +
         elideForCard(replace, kApprovalPreviewChars / 2);
-    enqueueApproval(client, id, desc, preview,
-                    [this, idx, find, replace, all](QString *execErr) {
-        const int count = m_host.applyEdit(idx, find, replace, all);
+    enqueueTabApproval(client, id, idx, desc, preview,
+                       [this, find, replace, all, pinned,
+                        fingerprint](int live, QString *execErr) {
+        QString now;
+        if (!tabTextFor(live, &now, execErr)) return QJsonObject();
+        if (!now.contains(find)) {
+            *execErr = QStringLiteral("no match");
+            return QJsonObject();
+        }
+        if (fingerprint(now) != pinned) {
+            *execErr = QStringLiteral(
+                "the document changed while the approval card was waiting, "
+                "so the match the card described may not be the one that "
+                "would be replaced. Nothing was changed; call apply_edit "
+                "again.");
+            return QJsonObject();
+        }
+        const int count = m_host.applyEdit(live, find, replace, all);
         if (count < 0) {
             *execErr = QStringLiteral("could not apply edit");
             return QJsonObject();
@@ -1852,6 +1981,14 @@ void McpBridge::verbSaveTab(QLocalSocket *client, int id,
                                  "been saved (pass \"path\")"));
         return;
     }
+    // D12: the destination, and (for Save As) the tab's own file too, since
+    // a credential buffer must not be copied anywhere either.
+    for (const QString &p : {destPath, currentPath}) {
+        if (const QString deny = writeDestinationRefusal(p); !deny.isEmpty()) {
+            sendError(client, id, deny);
+            return;
+        }
+    }
     // Card shows the destination; a pre-existing file is flagged OVERWRITE.
     const bool overwrite = QFileInfo::exists(destPath);
     const QString shownDest =
@@ -1860,21 +1997,30 @@ void McpBridge::verbSaveTab(QLocalSocket *client, int id,
         QStringLiteral("%1save '%2' to %3")
             .arg(overwrite ? QStringLiteral("OVERWRITE — ") : QString(),
                  tabLabel(idx), shownDest);
-    enqueueApproval(client, id, desc, shownDest,
-                    [this, idx, saveAs, destPath](QString *execErr) {
+    enqueueTabApproval(client, id, idx, desc, shownDest,
+                       [this, saveAs, destPath](int live, QString *execErr) {
         bool ok;
         if (saveAs) {
-            ok = m_host.saveTabAs(idx, destPath);
+            ok = m_host.saveTabAs(live, destPath);
         } else {
-            // Re-check: the tab may have become untitled while the card waited.
-            const QString nowPath = m_host.tabPath ? m_host.tabPath(idx)
+            // Re-check: the tab may have been retargeted while the card
+            // waited (Save As, rename); never save it somewhere unshown.
+            const QString nowPath = m_host.tabPath ? m_host.tabPath(live)
                                                    : QString();
             if (nowPath.isEmpty()) {
                 *execErr = QStringLiteral("save_tab needs a path: this tab has "
                                           "never been saved (pass \"path\")");
                 return QJsonObject();
             }
-            ok = m_host.saveTab(idx);
+            if (QFileInfo(nowPath).absoluteFilePath() !=
+                QFileInfo(destPath).absoluteFilePath()) {
+                *execErr = QStringLiteral(
+                               "the tab now points at %1, not the file the "
+                               "approval card named; nothing was saved")
+                               .arg(QDir::toNativeSeparators(nowPath));
+                return QJsonObject();
+            }
+            ok = m_host.saveTab(live);
         }
         if (!ok) {
             *execErr = QStringLiteral("could not save: %1")
@@ -1883,7 +2029,6 @@ void McpBridge::verbSaveTab(QLocalSocket *client, int id,
         }
         QJsonObject r;
         r[QStringLiteral("saved")] = true;
-        r[QStringLiteral("tab_index")] = idx;
         r[QStringLiteral("path")] = QDir::toNativeSeparators(destPath);
         return r;
     });
@@ -1987,12 +2132,13 @@ void McpBridge::verbValidateNpd(QLocalSocket *client, int id,
     QString source;
     if (args.contains(QLatin1String("source"))) {
         source = args.value(QLatin1String("source")).toString();
-    } else if (args.contains(QLatin1String("tab_index"))) {
-        const int n = m_host.tabCount ? m_host.tabCount() : 0;
-        const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
-        if (idx < 0 || idx >= n) {
-            sendError(client, id,
-                      QStringLiteral("tab index out of range: %1").arg(idx));
+    } else if (args.contains(QLatin1String("tab_index")) ||
+               args.contains(QLatin1String("tab_id"))) {
+        // v0.1.133 (D2): tab_id is accepted, through the common resolver.
+        QString err;
+        const int idx = resolveTab(args, "tab_index", false, &err);
+        if (idx < 0) {
+            sendError(client, id, err);
             return;
         }
         if (!m_host.diagramSource || !m_host.diagramSource(idx, &source)) {
@@ -2002,7 +2148,8 @@ void McpBridge::verbValidateNpd(QLocalSocket *client, int id,
             return;
         }
     } else {
-        sendError(client, id, QStringLiteral("missing source or tab_index"));
+        sendError(client, id,
+                  QStringLiteral("missing source, tab_id or tab_index"));
         return;
     }
     sendResult(client, id, npdValidationJson(source));
@@ -2075,6 +2222,12 @@ void McpBridge::verbGetCapabilities(QLocalSocket *client, int id) {
     result[QStringLiteral("platform")] = QLatin1String(platformName());
     result[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
     result[QStringLiteral("features")] = features;
+    // v0.1.133: what export_diagram accepts in THIS build, asked at runtime.
+    result[QStringLiteral("diagram_export_formats")] =
+        QJsonArray::fromStringList(
+            m_host.diagramExportFormats
+                ? m_host.diagramExportFormats()
+                : QStringList{QStringLiteral("png"), QStringLiteral("pdf")});
     sendResult(client, id, result);
 }
 
@@ -2250,15 +2403,11 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
                   QStringLiteral("export_diagram not supported by host"));
         return;
     }
-    if (!args.contains(QLatin1String("tab_index"))) {
-        sendError(client, id, QStringLiteral("missing tab_index"));
-        return;
-    }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    // v0.1.133 (D2): tab_id OR tab_index, through the common resolver.
+    QString selErr;
+    const int idx = resolveTab(args, "tab_index", false, &selErr);
+    if (idx < 0) {
+        sendError(client, id, selErr);
         return;
     }
     // Fail fast when the tab isn't a diagram — never queue a doomed approval.
@@ -2270,9 +2419,18 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
     }
     QString format = args.value(QLatin1String("format")).toString().toLower();
     if (format.isEmpty()) format = QStringLiteral("png");
-    if (format != QLatin1String("png") && format != QLatin1String("pdf")) {
+    if (format == QLatin1String("jpg")) format = QStringLiteral("jpeg");
+    // The accepted set is what THIS build's DiagramView can write, asked at
+    // runtime; a host that cannot say keeps the historical png|pdf.
+    QStringList formats = m_host.diagramExportFormats
+                              ? m_host.diagramExportFormats()
+                              : QStringList{QStringLiteral("png"),
+                                            QStringLiteral("pdf")};
+    if (!formats.contains(format)) {
         sendError(client, id,
-                  QStringLiteral("unsupported format: %1 (png|pdf)").arg(format));
+                  QStringLiteral("unsupported format: %1 (this build "
+                                 "supports: %2)")
+                      .arg(format, formats.join(QLatin1Char('|'))));
         return;
     }
     const QString path =
@@ -2293,6 +2451,10 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
                       .arg(QDir::toNativeSeparators(fi.absolutePath())));
         return;
     }
+    if (const QString deny = writeDestinationRefusal(path); !deny.isEmpty()) {
+        sendError(client, id, deny);
+        return;
+    }
     // Card DISPLAY text only: sanitize bidi/control codepoints so a crafted
     // path can't visually disguise its destination, and flag an overwrite of
     // an existing file. The EXECUTED path below stays the exact validated
@@ -2303,13 +2465,17 @@ void McpBridge::verbExportDiagram(QLocalSocket *client, int id,
         ? QStringLiteral("OVERWRITE existing file: ") + shownPath
         : shownPath;
     const QString desc =
-        QStringLiteral("export '%1' to %2")
-            .arg(elideForCard(tabLabel(idx), kApprovalDescChars), shownDest);
-    enqueueApproval(client, id, desc, shownDest,
-                    [this, idx, path, format](QString *execErr) {
+        QStringLiteral("export '%1' as %2 to %3")
+            .arg(elideForCard(tabLabel(idx), kApprovalDescChars),
+                 format.toUpper(), shownDest);
+    enqueueTabApproval(client, id, idx, desc, shownDest,
+                       [this, path, format](int live, QString *execErr) {
         QString e;
-        if (!m_host.exportDiagram(idx, path, format, &e)) {
-            *execErr = e.isEmpty() ? QStringLiteral("export failed") : e;
+        if (!m_host.exportDiagram(live, path, format, &e)) {
+            *execErr = e.isEmpty()
+                           ? QStringLiteral("export to %1 failed")
+                                 .arg(QDir::toNativeSeparators(path))
+                           : e;
             return QJsonObject();
         }
         QJsonObject r;
@@ -2345,20 +2511,18 @@ void McpBridge::verbCreateDiagram(QLocalSocket *client, int id,
     if (m_host.diagramSource) m_host.diagramSource(idx, &actual);
     QJsonObject result = npdValidationJson(actual);
     result[QStringLiteral("tab_index")] = idx;
+    if (const qint64 tid = tabIdOf(idx); tid >= 0)
+        result[QStringLiteral("tab_id")] = tid;
     sendResult(client, id, result);
 }
 
 void McpBridge::verbGetDiagramSource(QLocalSocket *client, int id,
                                      const QJsonObject &args) {
-    if (!args.contains(QLatin1String("tab_index"))) {
-        sendError(client, id, QStringLiteral("missing tab_index"));
-        return;
-    }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    // v0.1.133 (D2): tab_id OR tab_index, through the common resolver.
+    QString selErr;
+    const int idx = resolveTab(args, "tab_index", false, &selErr);
+    if (idx < 0) {
+        sendError(client, id, selErr);
         return;
     }
     QString src;
@@ -2388,15 +2552,11 @@ void McpBridge::verbSetDiagramSource(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("source too large"));
         return;
     }
-    if (!args.contains(QLatin1String("tab_index"))) {
-        sendError(client, id, QStringLiteral("missing tab_index"));
-        return;
-    }
-    const int n = m_host.tabCount ? m_host.tabCount() : 0;
-    const int idx = args.value(QLatin1String("tab_index")).toInt(-1);
-    if (idx < 0 || idx >= n) {
-        sendError(client, id,
-                  QStringLiteral("tab index out of range: %1").arg(idx));
+    // v0.1.133 (D2): tab_id OR tab_index, through the common resolver.
+    QString selErr;
+    const int idx = resolveTab(args, "tab_index", false, &selErr);
+    if (idx < 0) {
+        sendError(client, id, selErr);
         return;
     }
     // Fail fast when the tab isn't a diagram — never queue a doomed approval.
@@ -2411,18 +2571,17 @@ void McpBridge::verbSetDiagramSource(QLocalSocket *client, int id,
                        "(the canvas re-renders)")
             .arg(elideForCard(tabLabel(idx), kApprovalDescChars))
             .arg(source.size());
-    enqueueApproval(client, id, desc,
-                    elideForCard(source, kApprovalPreviewChars),
-                    [this, idx, source](QString *execErr) {
+    enqueueTabApproval(client, id, idx, desc,
+                       elideForCard(source, kApprovalPreviewChars),
+                       [this, source](int live, QString *execErr) {
         // Re-checked at execute time: the tab may have changed while pending.
-        if (!m_host.setDiagramSource(idx, source)) {
+        if (!m_host.setDiagramSource(live, source)) {
             *execErr = QStringLiteral("tab %1 is not a diagram (.npd) tab")
-                           .arg(idx);
+                           .arg(live);
             return QJsonObject();
         }
         QJsonObject r = npdValidationJson(source);
         r[QStringLiteral("ok")] = true;
-        r[QStringLiteral("tab_index")] = idx;
         return r;
     });
 }
@@ -2634,6 +2793,10 @@ void McpBridge::verbExportQueryResults(QLocalSocket *client, int id,
             return;
         }
     }
+    if (const QString deny = writeDestinationRefusal(path); !deny.isEmpty()) {
+        sendError(client, id, deny);
+        return;
+    }
     const bool overwrites = QFileInfo(path).isFile();
     const QString shownPath = sanitizeForCard(QDir::toNativeSeparators(path));
     const QString shownDest = overwrites
@@ -2653,14 +2816,15 @@ void McpBridge::verbExportQueryResults(QLocalSocket *client, int id,
         const QByteArray bytes = (format == QLatin1String("csv"))
                                      ? sqlResultToCsv(r)
                                      : sqlResultToJson(r);
-        QFile f(path);
-        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            *execErr = QStringLiteral("could not write: %1")
-                           .arg(QDir::toNativeSeparators(path));
+        // D13: write-temp-then-replace, never a truncate in place.
+        QSaveFile f(path);
+        if (!f.open(QIODevice::WriteOnly) || f.write(bytes) != bytes.size() ||
+            !f.commit()) {
+            *execErr = QStringLiteral("could not write: %1 (%2)")
+                           .arg(QDir::toNativeSeparators(path),
+                                f.errorString());
             return QJsonObject();
         }
-        f.write(bytes);
-        f.close();
         QJsonObject out;
         out[QStringLiteral("ok")] = true;
         out[QStringLiteral("path")] = QDir::toNativeSeparators(path);
@@ -2712,6 +2876,10 @@ void McpBridge::verbExportChart(QLocalSocket *client, int id,
                       .arg(QDir::toNativeSeparators(fi.absolutePath())));
         return;
     }
+    if (const QString deny = writeDestinationRefusal(path); !deny.isEmpty()) {
+        sendError(client, id, deny);
+        return;
+    }
     const bool overwrites = QFileInfo(path).isFile();
     const QString shownPath = sanitizeForCard(QDir::toNativeSeparators(path));
     const QString shownDest = overwrites
@@ -2729,6 +2897,46 @@ void McpBridge::verbExportChart(QLocalSocket *client, int id,
         }
         QJsonObject r;
         r[QStringLiteral("path")] = QDir::toNativeSeparators(path);
+        return r;
+    });
+}
+
+int McpBridge::liveTabIndex(qint64 tid, int idx, const QString &title,
+                            QString *err) const {
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    if (tid >= 0) {
+        for (int i = 0; i < n; ++i)
+            if (tabIdOf(i) == tid) return i;
+    } else if (idx >= 0 && idx < n && tabLabel(idx) == title) {
+        return idx; // host without ids: same position AND same title only
+    }
+    if (err)
+        *err = QStringLiteral(
+                   "the tab '%1' named on the approval card was closed while "
+                   "the card was waiting; nothing was changed")
+                   .arg(title);
+    return -1;
+}
+
+void McpBridge::enqueueTabApproval(QLocalSocket *client, int id, int idx,
+                                   const QString &description,
+                                   const QString &preview,
+                                   std::function<QJsonObject(int, QString *)> run) {
+    const qint64 tid = tabIdOf(idx);
+    const QString title = tabLabel(idx);
+    enqueueApproval(client, id, description, preview,
+                    [this, tid, idx, title, run](QString *execErr) {
+        const int live = liveTabIndex(tid, idx, title, execErr);
+        if (live < 0) return QJsonObject();
+        // The file behind the tab can change during the wait too (Save As).
+        if (const QString deny = tabWriteRefusal(live); !deny.isEmpty()) {
+            *execErr = deny;
+            return QJsonObject();
+        }
+        QJsonObject r = run(live, execErr);
+        if (!execErr->isEmpty()) return QJsonObject();
+        r[QStringLiteral("tab_index")] = live;
+        if (tid >= 0) r[QStringLiteral("tab_id")] = tid;
         return r;
     });
 }
@@ -2767,8 +2975,15 @@ void McpBridge::showNextApproval() {
             continue;
         }
         m_approvalActive = true;
+        m_approvalDeadlineMs =
+            QDateTime::currentMSecsSinceEpoch() + m_approvalTimeoutMs;
         showApprovalCard(parent, front);
         m_approvalTimer->start(m_approvalTimeoutMs);
+        m_countdownTimer->start();
+        // D16: flash the taskbar entry / bounce the dock icon so a human in
+        // another window notices. alert() never raises or takes focus.
+        if (QWidget *win = parent->window())
+            QApplication::alert(win, 0);
         return;
     }
 }
@@ -2845,6 +3060,16 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
              pal.color(QPalette::ButtonText).name(), borderC.name()));
     btnRow->addWidget(approveBtn);
     btnRow->addStretch(1);
+    // D16: the time left before the card auto-denies, refreshed each second.
+    auto *countdown = new QLabel(card);
+    countdown->setObjectName(QStringLiteral("mcpApprovalCountdown"));
+    countdown->setTextFormat(Qt::PlainText);
+    countdown->setStyleSheet(QStringLiteral(
+        "color:%1; background:transparent; font-size:11px;")
+        .arg(mutedC.name()));
+    btnRow->addWidget(countdown);
+    m_cardCountdown = countdown;
+    btnRow->addSpacing(8);
     btnRow->addWidget(denyBtn);
     lay->addLayout(btnRow);
 
@@ -2855,9 +3080,22 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
     });
 
     m_card = card;
+    updateCountdown();
     positionCard();
     card->show();
     card->raise();
+}
+
+void McpBridge::updateCountdown() {
+    if (!m_cardCountdown) return;
+    const qint64 leftMs =
+        qMax<qint64>(0, m_approvalDeadlineMs -
+                            QDateTime::currentMSecsSinceEpoch());
+    const qint64 secs = (leftMs + 999) / 1000;
+    m_cardCountdown->setText(
+        tr("Auto-deny in %1:%2")
+            .arg(secs / 60)
+            .arg(secs % 60, 2, 10, QLatin1Char('0')));
 }
 
 void McpBridge::resolveActiveApproval(bool approved,
@@ -2882,6 +3120,8 @@ void McpBridge::resolveActiveApproval(bool approved,
 }
 
 void McpBridge::dismissActiveCard() {
+    if (m_countdownTimer) m_countdownTimer->stop();
+    m_cardCountdown.clear();
     if (m_cardParent) m_cardParent->removeEventFilter(this);
     m_cardParent.clear();
     if (m_card) {

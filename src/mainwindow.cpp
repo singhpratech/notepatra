@@ -14,6 +14,12 @@
 #include "ai_interaction_log.h"
 #include "fontpack_dialog.h"
 #include "mcp_bridge.h"
+#include "atomic_write.h"
+#include "functionlist.h"
+#include "passwordgen_core.h"
+#include "diagram/mermaid_import.h"
+#include <QSaveFile>
+#include <QTemporaryFile>
 #include <QPointer>
 #include <QScopeGuard>
 #include <numeric>
@@ -1933,6 +1939,32 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = m_tabs->editorAt(i);
             return ed ? ed->encoding() : QString();
         };
+        // v0.1.133: the extra get_status fields, read from the same Editor
+        // state the status bar shows.
+        host.tabState = [this](int i) -> QJsonObject {
+            QJsonObject o;
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed) return o;
+            o[QStringLiteral("eol")] = ed->eolModeName();
+            o[QStringLiteral("line_count")] = ed->lines();
+            o[QStringLiteral("length")] = ed->length();
+            o[QStringLiteral("read_only")] = ed->isReadOnly();
+            o[QStringLiteral("word_wrap")] =
+                ed->wrapMode() != QsciScintilla::WrapNone;
+            if (ed->hasSelectedText()) {
+                int l1 = 0, c1 = 0, l2 = 0, c2 = 0;
+                ed->getSelection(&l1, &c1, &l2, &c2);
+                QJsonObject sel;
+                sel[QStringLiteral("start_line")] = l1 + 1;
+                sel[QStringLiteral("start_col")] = c1 + 1;
+                sel[QStringLiteral("end_line")] = l2 + 1;
+                sel[QStringLiteral("end_col")] = c2 + 1;
+                o[QStringLiteral("selection")] = sel;
+            } else {
+                o[QStringLiteral("selection")] = QJsonValue();
+            }
+            return o;
+        };
         host.cursorPosition = [this](int *line, int *col) {
             int l = 0, c = 0;
             if (auto *ed = currentEditor()) {
@@ -2461,11 +2493,48 @@ MainWindow::MainWindow(bool standaloneNoSession)
             DiagramView view; // off-screen; same route as npd_render_qt.cpp
             view.resize(1000, 800);
             view.setSource(de->npdText());
-            if (!view.exportTo(format, path)) {
-                if (err) *err = QStringLiteral("export failed");
+            // v0.1.133 (D13): render to a sibling temp file, then replace the
+            // target in one step; the real DiagramView error is reported.
+            QTemporaryFile tmp(path + QStringLiteral(".npexport-XXXXXX"));
+            tmp.setAutoRemove(true);
+            if (!tmp.open()) {
+                if (err) *err = QStringLiteral("could not create a temporary "
+                                               "file next to %1")
+                                    .arg(QDir::toNativeSeparators(path));
+                return false;
+            }
+            const QString tmpPath = tmp.fileName();
+            tmp.close();
+            // Empty placeholder only reserved the name; the PDF writer judges
+            // success by existence, so let the exporter create it afresh.
+            QFile::remove(tmpPath);
+            QString viewErr;
+            QObject::connect(&view, &DiagramView::renderError, &view,
+                             [&viewErr](const QString &m) { viewErr = m; });
+            if (!view.exportTo(format, tmpPath)) {
+                if (err)
+                    *err = viewErr.isEmpty()
+                               ? QStringLiteral("could not export to %1")
+                                     .arg(QDir::toNativeSeparators(path))
+                               : QString(viewErr).replace(tmpPath, path);
+                return false;
+            }
+            {
+                QFile f(tmpPath);
+                if (f.open(QIODevice::ReadWrite)) NpAtomic::syncData(f);
+            }
+            QString replaceErr;
+            if (!NpAtomic::replaceFile(tmpPath, path, &replaceErr)) {
+                if (err) *err = replaceErr;
                 return false;
             }
             return true;
+        };
+        host.diagramExportFormats = [] {
+            QStringList out;
+            for (const QString &f : DiagramView::supportedExportFormats())
+                out << f.toLower();
+            return out;
         };
         // ACT: create a Diagram tab via the same helper the menu uses.
         host.createDiagram = [this](const QString &source, const QString &title) {
@@ -2678,14 +2747,16 @@ MainWindow::MainWindow(bool standaloneNoSession)
                     *err = QStringLiteral("chart export produced no data");
                 return false;
             }
-            QFile f(path);
-            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                if (err) *err = QStringLiteral("could not write: %1")
-                                    .arg(QDir::toNativeSeparators(path));
+            // v0.1.133 (D13): temp-then-replace; a failed write leaves the
+            // old file intact instead of truncated.
+            QSaveFile f(path);
+            if (!f.open(QIODevice::WriteOnly) ||
+                f.write(bytes) != bytes.size() || !f.commit()) {
+                if (err) *err = QStringLiteral("could not write: %1 (%2)")
+                                    .arg(QDir::toNativeSeparators(path),
+                                         f.errorString());
                 return false;
             }
-            f.write(bytes);
-            f.close();
             return true;
         };
 #endif

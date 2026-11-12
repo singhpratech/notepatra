@@ -70,4 +70,46 @@ bool isSecretPath(const QString &absPath) {
     return false;
 }
 
+bool isWriteDangerous(const QString &absPath) {
+    QString p = absPath.toLower();
+    p.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    const int slash = p.lastIndexOf(QLatin1Char('/'));
+    const QString name = slash >= 0 ? p.mid(slash + 1) : p;
+
+    // Shell start-up files: run by every new terminal.
+    static const QStringList kRcNames = {
+        QStringLiteral(".bashrc"),   QStringLiteral(".bash_profile"),
+        QStringLiteral(".bash_login"), QStringLiteral(".bash_logout"),
+        QStringLiteral(".profile"),  QStringLiteral(".zshrc"),
+        QStringLiteral(".zshenv"),   QStringLiteral(".zprofile"),
+        QStringLiteral(".zlogin"),   QStringLiteral(".cshrc"),
+        QStringLiteral(".tcshrc"),   QStringLiteral(".kshrc"),
+        QStringLiteral(".xprofile"), QStringLiteral(".xsession"),
+        QStringLiteral(".xinitrc"),  QStringLiteral(".gitconfig"),
+        QStringLiteral("authorized_keys"), QStringLiteral("known_hosts"),
+        QStringLiteral("microsoft.powershell_profile.ps1"),
+        QStringLiteral("profile.ps1"),
+    };
+    if (kRcNames.contains(name)) return true;
+
+    // Directories whose contents execute on login, on a schedule, or on a
+    // git operation.
+    static const QStringList kDirs = {
+        QStringLiteral("/.config/autostart/"),
+        QStringLiteral("/.config/fish/"),
+        QStringLiteral("/.config/systemd/user/"),
+        QStringLiteral("/library/launchagents/"),
+        QStringLiteral("/library/launchdaemons/"),
+        QStringLiteral("/start menu/programs/startup/"),
+        QStringLiteral("/var/spool/cron/"),
+        QStringLiteral("/etc/cron"),
+        QStringLiteral("/etc/profile.d/"),
+        QStringLiteral("/.git/hooks/"),
+        QStringLiteral("/.ssh/"),
+    };
+    for (const QString &d : kDirs)
+        if (p.contains(d)) return true;
+    return false;
+}
+
 } // namespace PathDenylist

