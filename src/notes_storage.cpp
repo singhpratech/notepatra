@@ -15,7 +15,6 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QRegularExpression>
-#include <QSaveFile>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -197,12 +196,12 @@ bool NotesStorage::validateBody(const QString &fullHtml, QString *errorOut) cons
 // ═══════════════════════════════════════════════════════════════════════
 // saveNote — the six-step atomic protocol.
 //
-// The write goes through QSaveFile: a uniquely named, exclusively created
-// temp beside the note (`<note>.html.XXXXXX`), fsynced and renamed over the
-// note on commit. The old fixed `<note>.html.tmp` name was opened with
-// Truncate, so a symlink planted there was followed and its target written.
-// A temp orphaned by a crash ends in random letters, not `.html`, so
-// listAllNotes (which lists `*.html`) never shows it.
+// The write goes through NpAtomic::writeFileNoFollow: a uniquely named,
+// exclusively created temp beside the note (`<note>.html.<random>.tmp`),
+// fsynced and renamed over the note. The old fixed `<note>.html.tmp` name was
+// opened with Truncate, so a symlink planted there was followed and its
+// target written. A temp orphaned by a crash ends in `.tmp`, which every
+// Noter listing filters.
 // ═══════════════════════════════════════════════════════════════════════
 
 bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml,
@@ -255,33 +254,19 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
     rotateBackups(absolutePath);
 
     // (4) Write to a uniquely named temp beside the note and (5) replace it
-    //     in one step. QSaveFile creates the temp exclusively (O_EXCL), so a
-    //     symlink planted at the old fixed `<note>.html.tmp` name can never
-    //     redirect the write; it keeps an existing note's permission bits,
-    //     fsyncs the payload before the rename (a power loss can never
-    //     publish a truncated note), and on any failure leaves the note as it
-    //     was. The directory entry is synced after, as NpAtomic does.
+    //     in one step (NpAtomic::writeFileNoFollow → NpAtomic::replaceFile).
+    //     The temp is created exclusively, so a symlink planted at the old
+    //     fixed `<note>.html.tmp` name can never redirect the write, and the
+    //     rename replaces a symlink at the note's own name instead of writing
+    //     through it (QSaveFile would follow it). The payload is fsynced before
+    //     the rename, an existing note keeps its permission bits, and on any
+    //     failure the note is left as it was.
     {
-        QSaveFile f(absolutePath);
-        if (!f.open(QIODevice::WriteOnly)) {
-            if (errorOut)
-                *errorOut = QStringLiteral("Failed to open temp file: %1").arg(f.errorString());
+        QString writeErr;
+        if (!NpAtomic::writeFileNoFollow(absolutePath, cleaned.toUtf8(), &writeErr)) {
+            if (errorOut) *errorOut = writeErr;
             return false;
         }
-        const QByteArray bytes = cleaned.toUtf8();
-        if (f.write(bytes) != bytes.size()) {
-            f.cancelWriting();
-            if (errorOut) *errorOut = QStringLiteral("Short write to temp file");
-            return false;
-        }
-        if (!f.commit()) {
-            if (errorOut)
-                *errorOut = QStringLiteral("Could not replace \"%1\": %2. "
-                                           "The existing file was left unchanged.")
-                                .arg(absolutePath, f.errorString());
-            return false;
-        }
-        NpAtomic::syncDirectoryOf(absolutePath);
     }
 
     // (6) Emit signal + clear the draft sidecar (a successful save
@@ -332,20 +317,18 @@ void NotesStorage::rotateBackups(const QString &absolutePath) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Draft sidecar — fast non-atomic write; survives a soft crash, gets
-// supplanted by the next saveNote().
+// Draft sidecar — survives a hard crash, gets supplanted by the next
+// saveNote(). Still `<note>.html.draft` (the name NotesPanel's recovery and
+// the rename carry-forward expect), but written like the note itself: a
+// unique exclusive temp renamed over it. Truncating the fixed name wrote
+// through a symlink planted there, and QSaveFile would follow one too.
 // ═══════════════════════════════════════════════════════════════════════
 
 bool NotesStorage::writeDraft(const QString &absolutePath, const QString &html) {
     const QString draftPath = absolutePath + QStringLiteral(".draft");
     QFileInfo fi(absolutePath);
     QDir().mkpath(fi.absolutePath());
-    QFile f(draftPath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-    const QByteArray b = html.toUtf8();
-    const qint64 n = f.write(b);
-    f.close();
-    return n == b.size();
+    return NpAtomic::writeFileNoFollow(draftPath, html.toUtf8());
 }
 
 void NotesStorage::clearDraft(const QString &absolutePath) {

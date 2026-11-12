@@ -75,6 +75,17 @@ bool replaceFile(const QString &tmpPath,
                  const QString &target,
                  QString *errorOut = nullptr);
 
+// Write `bytes` to `target` durably without ever following a symlink: the
+// payload goes to a new, uniquely named sibling (`<target>.<random>.tmp`,
+// created with QIODevice::NewOnly so nothing already at a name is opened),
+// is synced, then replaceFile()s the target. A symlink AT `target` is
+// replaced by the regular file, never written through; QSaveFile, by
+// contrast, resolves such a link and replaces the file it points to. A new
+// target gets the default permissions a plain QFile::open would give it.
+bool writeFileNoFollow(const QString &target,
+                       const QByteArray &bytes,
+                       QString *errorOut = nullptr);
+
 }   // namespace NpAtomic
 
 #endif   // NOTEPATRA_ATOMIC_WRITE_H
