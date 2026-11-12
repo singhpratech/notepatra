@@ -262,6 +262,69 @@ static void sectionHistory() {
                "https://x.test/a?page=1&api_key=<redacted>&access_token={{t}}#f");
     EXPECT("URL password redacted", redactUrl("https://bob:hunter2@x.test/") == "https://bob:<redacted>@x.test/");
     EXPECT("URL without secrets unchanged", redactUrl("{{baseUrl}}/users?page=1") == "{{baseUrl}}/users?page=1");
+    // R20: credential headers by any "key" name, user-info containing '@'.
+    EXPECT("Ocp-Apim-Subscription-Key redacted",
+           redactHeaderValue("Ocp-Apim-Subscription-Key", "abc") == "<redacted>");
+    EXPECT("x-functions-key redacted", redactHeaderValue("x-functions-key", "abc") == "<redacted>");
+    EXPECT("any *key* header redacted", redactHeaderValue("X-Custom-Keyring", "abc") == "<redacted>");
+    EXPECT("URL password containing '@' redacted whole",
+           redactUrl("https://bob:p@ss@x.test/a") == "https://bob:<redacted>@x.test/a");
+    EXPECT("URL token-as-user-name redacted",
+           redactUrl("https://ghtoken123@x.test/a") == "https://<redacted>@x.test/a");
+    EXPECT("URL user-info variable kept",
+           redactUrl("https://{{user}}:{{pass}}@x.test/") == "https://{{user}}:{{pass}}@x.test/");
+
+    // R10: bodies.
+    EXPECT("sensitive field names, case and -/_ variants",
+           isSensitiveField("Password") && isSensitiveField("client_secret") &&
+               isSensitiveField("client-secret") && isSensitiveField("ACCESS_TOKEN") &&
+               isSensitiveField("refreshToken") && isSensitiveField("id_token") &&
+               isSensitiveField("api-key") && isSensitiveField("apikey") &&
+               isSensitiveField("Authorization") && isSensitiveField("session_id") &&
+               isSensitiveField("signature") && isSensitiveField("private_key") &&
+               isSensitiveField("otp") && isSensitiveField("totp") && isSensitiveField("pin") &&
+               isSensitiveField("cvv") && isSensitiveField("card_number") &&
+               isSensitiveField("pwd") && isSensitiveField("pass") && isSensitiveField("passwd"));
+    EXPECT("ordinary field names are not sensitive",
+           !isSensitiveField("username") && !isSensitiveField("author") &&
+               !isSensitiveField("footprint") && !isSensitiveField("shipping") &&
+               !isSensitiveField("email") && !isSensitiveField("passenger_count"));
+    {
+        const QString login = "{\n  \"username\": \"asha\",\n  \"password\": \"hunter2\",\n"
+                              "  \"client_secret\": \"cs-777\",\n  \"nested\": {\"Refresh-Token\": \"rt-9\","
+                              " \"keep\": 1},\n  \"pin\": 1234,\n  \"card\": {\"cvv\": \"123\"},\n"
+                              "  \"session\": {\"id\": \"s1\", \"exp\": 5},\n  \"token\": \"{{tok}}\"\n}";
+        bool omitted = true;
+        const QString red = redactBody(login, "Content-Type: application/json", &omitted);
+        EXPECT("JSON body: every secret value redacted, recursively",
+               !omitted && !red.contains("hunter2") && !red.contains("cs-777") && !red.contains("rt-9") &&
+                   !red.contains("1234") && !red.contains("\"123\"") && !red.contains("s1"));
+        EXPECT("JSON body: other fields, formatting and {{variables}} kept",
+               red.contains("\"username\": \"asha\"") && red.contains("\"keep\": 1") &&
+                   red.contains("\"token\": \"{{tok}}\"") && red.contains("\"password\": \"<redacted>\"") &&
+                   red.startsWith("{\n  \"username\""));
+        EXPECT("JSON template that is not valid JSON yet is still redacted",
+               redactBody("{\"n\": {{count}}, \"password\": \"pw-1\"}", QString()) ==
+                   "{\"n\": {{count}}, \"password\": \"<redacted>\"}");
+        EXPECT("form body: secret fields redacted, others kept",
+               redactBody("grant_type=password&username=asha&password=hunter2&client_secret=cs%2B1"
+                          "&scope=read",
+                          "Content-Type: application/x-www-form-urlencoded") ==
+                   "grant_type=password&username=asha&password=<redacted>&client_secret=<redacted>"
+                   "&scope=read");
+        EXPECT("form body without a Content-Type is recognised",
+               redactBody("user=a&pwd=b", QString()) == "user=a&pwd=<redacted>");
+        EXPECT("small plain text body kept as typed", redactBody("hello", "Content-Type: text/plain") == "hello");
+        bool om = false;
+        const QString bigText = redactBody(QString(5000, QLatin1Char('x')), "Content-Type: text/plain", &om);
+        EXPECT("larger plain text body omitted with size and type",
+               om && bigText == "<body omitted: 5000 bytes, text/plain>");
+        EXPECT("binary body omitted",
+               redactBody(QStringLiteral("PK\x01\x02") + QChar(0) + "x", "Content-Type: application/zip") ==
+                   "<body omitted: 6 bytes, application/zip>");
+        EXPECT("Send is blocked by a redacted or omitted body",
+               bodyBlocksSend(red) && bodyBlocksSend(bigText) && !bodyBlocksSend("{\"a\": 1}"));
+    }
 
     QTemporaryDir dir;
     const QString path = dir.filePath("rest-client.json");
@@ -292,7 +355,18 @@ static void sectionHistory() {
     Entry big = e;
     big.body = QString(kMaxStoredBody + 1, QLatin1Char('x'));
     append(path, big);
-    EXPECT("oversized body omitted", load(path).first().bodyOmitted && load(path).first().body.isEmpty());
+    EXPECT("oversized body omitted (stored as the omitted marker)",
+           load(path).first().bodyOmitted && load(path).first().body.startsWith("<body omitted: "));
+    Entry login = e;
+    login.headers = "Content-Type: application/json";
+    login.body = "{\"user\": \"a\", \"password\": \"BODYSECRET3\", \"client_secret\": \"BODYSECRET4\"}";
+    append(path, login);
+    QFile f2(path);
+    f2.open(QIODevice::ReadOnly);
+    const QByteArray raw2 = f2.readAll();
+    EXPECT("R10: a login body's password / client_secret never reach rest-client.json",
+           !raw2.contains("BODYSECRET3") && !raw2.contains("BODYSECRET4") &&
+               load(path).first().body.contains("\"user\": \"a\""));
     EXPECT("environment remembered per folder", setEnvironmentFor(path, "/some/dir", "staging") &&
                                                      environmentFor(path, "/some/dir") == "staging");
     EXPECT("clear empties history", clear(path) && load(path).isEmpty());

@@ -393,6 +393,55 @@ int main(int argc, char *argv[]) {
     EXPECT("S8: Copy as cURL keeps {{token}}", rest->currentAsCurl().contains("Bearer {{token}}"));
     EXPECT("S8: bad command reported", !rest->importCurl("wget x") && TA::badge(rest).contains("Import failed"));
 
+    // ── S10 (R5) ──
+    std::printf("-- S10: MCP rest_request sends exactly what its card resolved --\n");
+    {
+        const QString folder = QFileInfo(httpPath).absolutePath();
+        RestHistory::setEnvironmentFor(histPath, folder, "local");
+        const RestClient::Resolved card = RestClient::resolve(QString::fromUtf8(httpText), 3, httpPath,
+                                                              QString(), QString(), QString(),
+                                                              QString(), histPath);
+        EXPECT("S10: the card resolves with the folder's remembered environment",
+               card.error.isEmpty() && card.url.startsWith(server.base() + "/json") &&
+                   card.environment == "local" && card.rawUrl == "{{base}}{{path}}?id={{$randomInt 1 2}}");
+        // While the card waits: the panel switches to "other", the env files now
+        // point "local" at another host with another token, and the user types
+        // a request of their own into the panel.
+        TA::env(rest)->setCurrentIndex(TA::env(rest)->findData("other"));
+        writeFile(work.filePath("http-client.env.json"),
+                  QStringLiteral(R"({"local": {"base": "%1"}, "other": {"base": "%1"}})")
+                      .arg(other.base()).toUtf8());
+        writeFile(work.filePath("http-client.private.env.json"), R"({"local": {"token": "tok-prod-999"}})");
+        TA::method(rest)->setCurrentText("PATCH");
+        TA::url(rest)->setText("my-own-request.test/x");
+        TA::headers(rest)->setPlainText("X-Mine: 1");
+        TA::body(rest)->setPlainText("draft");
+        const int conns10 = server.connections, other10 = other.connections;
+        before = finished.count();
+        QString err;
+        const bool started = rest->sendResolvedForMcp(card, &err);
+        EXPECT("S10: sent", started && waitFinished(finished, before));
+        EXPECT("S10: the request reached the host the card named, with the card's token",
+               server.connections == conns10 + 1 && other.connections == other10 &&
+                   server.heads.last().contains("Bearer tok-fake-123") &&
+                   !server.heads.last().contains("tok-prod-999"));
+        EXPECT("S10: the panel's own request fields are untouched",
+               TA::method(rest)->currentText() == "PATCH" && TA::url(rest)->text() == "my-own-request.test/x" &&
+                   TA::headers(rest)->toPlainText() == "X-Mine: 1" && TA::body(rest)->toPlainText() == "draft");
+        const RestHistory::Entry h = RestHistory::load(histPath).value(0);
+        EXPECT("S10: history records the request unexpanded, under its .http name",
+               h.url == "{{base}}{{path}}?id={{$randomInt 1 2}}" && h.name == "Get json" &&
+                   !readFile(histPath).contains("tok-fake-123"));
+        writeFile(work.filePath("http-client.env.json"),
+                  QStringLiteral(R"({"local": {"base": "%1"}, "other": {"base": "http://127.0.0.1:1"}})")
+                      .arg(server.base()).toUtf8());
+        writeFile(work.filePath("http-client.private.env.json"), R"({"local": {"token": "tok-fake-123"}})");
+        RestClient::Resolved bad = card;
+        bad.url = "file:///etc/hostname";
+        EXPECT("S10: a non-http URL is refused even on the resolved path",
+               !rest->sendResolvedForMcp(bad, &err) && !err.isEmpty());
+    }
+
     delete rest;
 
     // ── S9 ──

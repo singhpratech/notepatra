@@ -1112,12 +1112,18 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
             out[QStringLiteral("headers")] = headers;
             out[QStringLiteral("body")] = r.body;
             out[QStringLiteral("name")] = r.name;
+            // What the history records (unexpanded) and where the values came from.
+            out[QStringLiteral("raw_url")] = r.rawUrl;
+            out[QStringLiteral("raw_headers")] = r.rawHeaders;
+            out[QStringLiteral("raw_body")] = r.rawBody;
+            out[QStringLiteral("file_path")] = r.filePath;
+            out[QStringLiteral("environment")] = r.environment;
             return out;
         }
         *err = QStringLiteral("unknown REST op: %1").arg(op);
         return out;
     };
-    host.restAsync = [this, headersText](const QString &, const QJsonObject &a,
+    host.restAsync = [this](const QString &, const QJsonObject &a,
                                          McpEditorHost::Done done) {
         // The REST Client tab the menu opens (reused when one is open).
         RestClient *rest = qobject_cast<RestClient *>(m_tabs->currentWidget());
@@ -1148,14 +1154,24 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
             done(QJsonObject(), QStringLiteral("the REST Client tab was closed before the "
                                                "response arrived"));
         });
+        // Exactly the request the card was built from (resolved once, then):
+        // never re-resolved against the panel's environment or env files.
+        const QJsonObject res = a.value(QLatin1String("resolved")).toObject();
+        RestClient::Resolved req;
+        req.method = res.value(QLatin1String("method")).toString();
+        req.url = res.value(QLatin1String("url")).toString();
+        req.body = res.value(QLatin1String("body")).toString();
+        req.name = res.value(QLatin1String("name")).toString();
+        for (const QJsonValue &v : res.value(QLatin1String("headers")).toArray())
+            req.headers.append({v.toObject().value(QLatin1String("name")).toString(),
+                                v.toObject().value(QLatin1String("value")).toString()});
+        req.rawUrl = res.value(QLatin1String("raw_url")).toString();
+        req.rawHeaders = res.value(QLatin1String("raw_headers")).toString();
+        req.rawBody = res.value(QLatin1String("raw_body")).toString();
+        req.filePath = res.value(QLatin1String("file_path")).toString();
+        if (req.url.isEmpty()) req.error = QStringLiteral("no resolved request");
         QString e;
-        if (!rest->sendForMcp(a.value(QLatin1String("text")).toString(),
-                              a.value(QLatin1String("line")).toInt(),
-                              a.value(QLatin1String("file_path")).toString(),
-                              a.value(QLatin1String("method")).toString(),
-                              a.value(QLatin1String("url")).toString(),
-                              headersText(a.value(QLatin1String("headers")).toArray()),
-                              a.value(QLatin1String("body")).toString(), &e)) {
+        if (!rest->sendResolvedForMcp(req, &e)) {
             QObject::disconnect(*conn);
             QObject::disconnect(*gone);
             done(QJsonObject(), QStringLiteral("not sent: %1").arg(e));

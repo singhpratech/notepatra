@@ -6027,15 +6027,32 @@ void McpBridge::verbRest(QLocalSocket *client, int id, const QJsonObject &args,
     preview << QStringLiteral("Headers: %1").arg(names.isEmpty() ? QStringLiteral("none")
                                                                  : names.join(QStringLiteral(", ")));
     preview << QStringLiteral("Body: %1 bytes").arg(bodyBytes);
-    preview << QStringLiteral("Redirects are not followed; 30 s timeout; recorded in the REST "
-                              "history with secrets redacted.");
+    if (!res.value(QLatin1String("file_path")).toString().isEmpty())
+        preview << QStringLiteral("Variables from: %1")
+                       .arg(res.value(QLatin1String("environment")).toString().isEmpty()
+                                ? QStringLiteral("the .http file only (no environment)")
+                                : QStringLiteral("environment '%1' and the .http file")
+                                      .arg(sanitizeForCard(
+                                          res.value(QLatin1String("environment")).toString())));
+    preview << QStringLiteral(
+        "Exactly this request is sent: variables were resolved for this card and are not "
+        "resolved again. Redirects are not followed; 30 s timeout. The REST Client tab shows "
+        "the response; its own request fields are left as they are.");
+    preview << QStringLiteral(
+        "History keeps the request as written ({{variables}} unexpanded) with secrets as "
+        "<redacted>: secret headers (Authorization, Cookie, any *key* header), URL user-info "
+        "and token-like query values, and secret-named fields of a JSON or form body; any "
+        "other body is kept only if it is under 4 KB of text.");
+    // R5: the request resolved for THIS card is what is sent at Approve.
+    QJsonObject sendArgs = req;
+    sendArgs[QStringLiteral("resolved")] = res;
     enqueueApprovalEx(client, id, desc, preview.join(QLatin1Char('\n')), CardOptions(), nullptr,
-                      [this, req](McpEditorHost::Done done) {
+                      [this, sendArgs](McpEditorHost::Done done) {
                           if (!m_host.restAsync) {
                               done(QJsonObject(), QStringLiteral("rest_request not supported by host"));
                               return;
                           }
-                          m_host.restAsync(QStringLiteral("rest_request"), req, done);
+                          m_host.restAsync(QStringLiteral("rest_request"), sendArgs, done);
                       });
 }
 

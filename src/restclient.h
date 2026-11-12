@@ -53,6 +53,10 @@ public:
     struct Resolved {
         QString method, url, body, name, error;
         HttpFile::HeaderList headers;
+        // As written ({{variables}} unexpanded): what the history keeps.
+        QString rawUrl, rawHeaders, rawBody;
+        QString filePath;     // the .http file, "" for a typed request
+        QString environment;  // the environment the variables came from ("" = none)
     };
     // fileText + 0-based line names a .http request; otherwise method/url/
     // headersText/body are the request as typed.
@@ -60,10 +64,12 @@ public:
                             const QString &method, const QString &url,
                             const QString &headersText, const QString &body,
                             const QString &historyPath = QString());
-    // Fills the panel and presses Send; false + *err when Send refused.
-    bool sendForMcp(const QString &fileText, int line, const QString &filePath,
-                    const QString &method, const QString &url,
-                    const QString &headersText, const QString &body, QString *err);
+    // Sends EXACTLY `r` (a request resolve() returned when the approval card
+    // was built): nothing is re-resolved, no environment or env file is
+    // re-read, and the panel's editable request fields are left as the user
+    // had them. The response shows in the panel and the request is recorded
+    // in history like any other. false + *err when it cannot be sent.
+    bool sendResolvedForMcp(const Resolved &r, QString *err);
     // The last response for a caller that cannot see the panel: status,
     // headers, body capped at bodyCap bytes (binary bodies summarised).
     QJsonObject lastResponseJson(int bodyCap) const;
@@ -108,6 +114,12 @@ private:
     void reloadEnvironments();
     void onEnvironmentChosen(int index);
     void onReplyFinished(QNetworkReply *reply);
+    // Validates the expanded URL and starts the request; on refusal sets
+    // the badge/note (and m_lastRefusal) and returns false. hist* are the
+    // unexpanded request the history entry records.
+    bool startRequest(const QString &method, QString url, const HttpFile::HeaderList &headers,
+                      const QString &body, const QString &histUrl, const QString &histHeaders,
+                      const QString &histBody, const QString &name, const QString &source);
     void renderResponse();
     void showResponseView(int which);
     void updateResponseActions();
@@ -185,6 +197,7 @@ private:
 
     // Request being sent, as typed (unexpanded) for the history entry.
     QString m_sentMethod, m_sentUrl, m_sentHeaders, m_sentBody;
+    QString m_sentName, m_sentSource;
 };
 
 #endif

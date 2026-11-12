@@ -6,9 +6,12 @@
 // REST client history + per-folder environment choice, kept in one JSON
 // file in the per-user config dir. Written with QSaveFile (atomic) and
 // owner-only permissions on Unix. Requests are stored with {{variables}}
-// unexpanded, and literal secrets in Authorization / Cookie / API-key style
-// headers, URL user-info and token-like query parameters are replaced by
-// "<redacted>" before anything touches the disk.
+// unexpanded, and literal secrets are replaced by "<redacted>" before
+// anything touches the disk: Authorization / Cookie / API-key style headers
+// (any header name containing "key"), URL user-info, token-like query
+// parameters, and secret-named fields of JSON and form-urlencoded bodies.
+// Any other body is kept only when it is small text; otherwise it is stored
+// as "<body omitted: N bytes, type>".
 
 #include <QDateTime>
 #include <QList>
@@ -18,6 +21,8 @@ namespace RestHistory {
 
 constexpr int kMaxEntries = 50;
 constexpr int kMaxStoredBody = 256 * 1024;
+// A body that is neither JSON nor form-urlencoded is kept only up to this.
+constexpr int kMaxStoredOtherBody = 4 * 1024;
 
 QString redactedMarker();  // "<redacted>"
 
@@ -41,6 +46,15 @@ QString redactHeaderValue(const QString &name, const QString &value);
 QString redactHeaders(const QString &headersText);
 QString redactUrl(const QString &url);
 bool containsRedacted(const QString &text);
+// True for a field name whose value is a secret in a JSON or form body:
+// case-insensitive, '-', '_', '.' and spaces ignored.
+bool isSensitiveField(const QString &name);
+// The body as history stores it (headersText gives its Content-Type).
+// *omitted is set when the whole body was replaced by the omitted marker.
+QString redactBody(const QString &body, const QString &headersText, bool *omitted = nullptr);
+// True when a body still holds a <redacted> value or the omitted marker:
+// Send refuses it, as it refuses a <redacted> URL or header.
+bool bodyBlocksSend(const QString &body);
 Entry redacted(const Entry &e);
 
 QList<Entry> load(const QString &path);

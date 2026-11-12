@@ -592,8 +592,10 @@ RestClient::Resolved RestClient::resolve(const QString &fileText, int line,
         out.error = tr("The request has no URL");
         return out;
     }
-    if (RestHistory::containsRedacted(rawUrl) || RestHistory::containsRedacted(rawHeaders)) {
-        out.error = tr("The URL or headers still contain <redacted> values");
+    if (RestHistory::containsRedacted(rawUrl) || RestHistory::containsRedacted(rawHeaders) ||
+        RestHistory::bodyBlocksSend(rawBody)) {
+        out.error = tr("The URL, headers or body still contain <redacted> values (or a body "
+                       "history did not keep)");
         return out;
     }
     if (rawBody.startsWith(QLatin1String("< "))) {
@@ -612,6 +614,11 @@ RestClient::Resolved RestClient::resolve(const QString &fileText, int line,
         envName = RestHistory::environmentFor(hp, dir);
         if (!envs.names.contains(envName)) envName.clear();
     }
+    out.rawUrl = rawUrl;
+    out.rawHeaders = rawHeaders.trimmed();
+    out.rawBody = rawBody;
+    out.filePath = filePath;
+    out.environment = envName;
     const HttpFile::Resolver resolver(envs.variablesFor(envName), fileVars);
     QStringList undefined;
     auto take = [&](const HttpFile::ResolveResult &r) {
@@ -636,22 +643,20 @@ RestClient::Resolved RestClient::resolve(const QString &fileText, int line,
     return out;
 }
 
-bool RestClient::sendForMcp(const QString &fileText, int line, const QString &filePath,
-                            const QString &method, const QString &url,
-                            const QString &headersText, const QString &body, QString *err) {
+bool RestClient::sendResolvedForMcp(const Resolved &r, QString *err) {
     if (isBusy()) {
         if (err) *err = tr("the REST client is already sending a request");
         return false;
     }
-    m_lastRefusal.clear();
-    if (!fileText.isEmpty()) {
-        sendHttpRequest(fileText, line, filePath);
-    } else {
-        setContext(Context());
-        fillFromRequest(method, url, headersText, body);
-        send();
+    if (!r.error.isEmpty()) {
+        if (err) *err = r.error;
+        return false;
     }
-    if (!isBusy()) {
+    m_lastRefusal.clear();
+    // The approved request, byte for byte: no second resolve, so a changed
+    // environment choice or env file cannot redirect it to another host.
+    if (!startRequest(r.method.trimmed().toUpper(), r.url, r.headers, r.body, r.rawUrl,
+                      r.rawHeaders, r.rawBody, r.name, r.filePath)) {
         if (err)
             *err = m_lastRefusal.isEmpty() ? tr("the REST client did not send the request")
                                            : m_lastRefusal;
@@ -707,10 +712,12 @@ void RestClient::send() {
         m_urlInput->setFocus();
         return;
     }
-    if (RestHistory::containsRedacted(rawUrl) || RestHistory::containsRedacted(rawHeaders)) {
+    if (RestHistory::containsRedacted(rawUrl) || RestHistory::containsRedacted(rawHeaders) ||
+        RestHistory::bodyBlocksSend(rawBody)) {
         refuse(tr("Not sent: fill in the <redacted> values"),
-               tr("History never stores secrets. Replace each <redacted> value in the URL or "
-                  "headers (or use a {{variable}}) and press Send again."));
+               tr("History never stores secrets. Replace each <redacted> value in the URL, "
+                  "headers or body (or use a {{variable}}), or paste back a body history did "
+                  "not keep, and press Send again."));
         return;
     }
     if (rawBody.startsWith(QLatin1String("< "))) {
@@ -753,19 +760,27 @@ void RestClient::send() {
         return;
     }
 
-    if (!url.contains(QLatin1String("://"))) {
-        url.prepend(QStringLiteral("https://"));
-        if (!HttpFile::hasVariables(rawUrl)) m_urlInput->setText(url);
-    }
+    if (!url.contains(QLatin1String("://")) && !HttpFile::hasVariables(rawUrl))
+        m_urlInput->setText(QStringLiteral("https://") + url);
+    startRequest(method, url, headers, body, rawUrl, rawHeaders.trimmed(), rawBody,
+                 m_ctx.requestName, m_ctx.filePath);
+}
+
+bool RestClient::startRequest(const QString &method, QString url,
+                              const HttpFile::HeaderList &headers, const QString &body,
+                              const QString &histUrl, const QString &histHeaders,
+                              const QString &histBody, const QString &name,
+                              const QString &source) {
+    if (!url.contains(QLatin1String("://"))) url.prepend(QStringLiteral("https://"));
     const QUrl qurl(url, QUrl::TolerantMode);
     const QString scheme = qurl.scheme().toLower();
     if (scheme != QLatin1String("http") && scheme != QLatin1String("https")) {
         refuse(tr("Not sent: unsupported URL"), tr("Only http:// and https:// URLs can be sent."));
-        return;
+        return false;
     }
     if (!qurl.isValid() || qurl.host().isEmpty()) {
         refuse(tr("Not sent: invalid URL"), url);
-        return;
+        return false;
     }
 
     QNetworkRequest req(qurl);
@@ -788,9 +803,11 @@ void RestClient::send() {
     m_tooLarge = false;
     m_sslErrors.clear();
     m_sentMethod = method;
-    m_sentUrl = rawUrl;
-    m_sentHeaders = rawHeaders.trimmed();
-    m_sentBody = rawBody;
+    m_sentUrl = histUrl;
+    m_sentHeaders = histHeaders;
+    m_sentBody = histBody;
+    m_sentName = name;
+    m_sentSource = source;
     m_respUrl = url;
     m_elapsed.start();
     m_timeout.start(m_timeoutMs);
@@ -816,6 +833,7 @@ void RestClient::send() {
         for (const QSslError &e : errs) m_sslErrors << e.errorString();
     });
     connect(reply, &QNetworkReply::finished, this, [this, reply]() { onReplyFinished(reply); });
+    return true;
 }
 
 void RestClient::cancelRequest() {
@@ -923,8 +941,8 @@ void RestClient::onReplyFinished(QNetworkReply *reply) {
     e.outcome = status > 0 ? QString() : (outcome.isEmpty() ? tr("Error") : outcome);
     e.ms = ms;
     e.size = bytes;
-    e.name = m_ctx.requestName;
-    e.sourceFile = m_ctx.filePath;
+    e.name = m_sentName;
+    e.sourceFile = m_sentSource;
     RestHistory::append(historyPath(), e);
     reloadHistory();
 
@@ -1170,9 +1188,12 @@ void RestClient::loadHistoryEntry(int row) {
     fillFromRequest(e.method, e.url, e.headers, e.body);
     QStringList notes;
     notes << tr("Loaded from history. Press Send to run it again.");
-    if (RestHistory::containsRedacted(e.url) || RestHistory::containsRedacted(e.headers))
+    if (RestHistory::containsRedacted(e.url) || RestHistory::containsRedacted(e.headers) ||
+        RestHistory::containsRedacted(e.body))
         notes << tr("Values marked <redacted> were not saved; fill them in before sending.");
-    if (e.bodyOmitted) notes << tr("The body was too large to keep in history.");
+    if (e.bodyOmitted)
+        notes << tr("History did not keep this body (too large, or not text); paste it in "
+                    "before sending.");
     setBadge(tr("Ready"), QStringLiteral("muted"));
     setNote(notes.join(QLatin1Char(' ')), notes.size() > 1);
 }
