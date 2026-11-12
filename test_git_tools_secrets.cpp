@@ -204,6 +204,30 @@ int main(int argc, char *argv[]) {
     }
     git({"commit", "-q", "-m", "c4"});
 
+    std::printf("=== git_show: merge commit (combined diff) ===\n");
+    {
+        const QString base = git({"rev-parse", "--abbrev-ref", "HEAD"});
+        git({"checkout", "-q", "-b", "side"});
+        put(".env", "API_KEY=LEAKTOKEN-side\n");
+        put("app.txt", "side app\n");
+        git({"commit", "-q", "-am", "side"});
+        git({"checkout", "-q", base});
+        put(".env", "API_KEY=LEAKTOKEN-main\n");
+        put("app.txt", "main app\n");
+        git({"commit", "-q", "-am", "main"});
+        git({"merge", "-q", "side"});   // conflicts on purpose
+        put(".env", "API_KEY=LEAKTOKEN-merged\n");
+        put("app.txt", "merged app\n");
+        git({"add", "-A"});
+        git({"commit", "-q", "-m", "merge"}, &ok);
+        const AiTools::ToolResult r = run("git_show", QJsonObject{{"commit", "HEAD"}});
+        const QString t = textOf(r);
+        check("merge fixture committed", ok);
+        check("git_show merge: combined diff shown (vacuity)",
+              t.contains("diff --cc") && t.contains("merged app"));
+        check("git_show merge: no secret content", !r.isError && !r.content.contains(kLeak));
+    }
+
     std::printf("=== textconv / external diff commands never run ===\n");
     put(".gitattributes", "*.txt diff=npconv\n");
     git({"config", "diff.npconv.textconv", "touch textconv-ran; cat"});
