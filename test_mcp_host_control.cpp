@@ -740,6 +740,57 @@ int main(int argc, char *argv[]) {
         EXPECT("R18: an unchanged tab reloads on Approve", ok(r) && red && red->text() == "on disk\n");
     }
 
+    // ── W2: the app's own settings are never readable through MCP ──
+    {
+        // The user opens a settings file in a tab; nothing of it leaves
+        // through MCP. config.json is rewritten by the app itself (recent
+        // files), so its file-watcher prompt is answered here; that prompt
+        // is a QMessageBox, which offscreen Windows cannot show: db-
+        // connections.json (not rewritten meanwhile) covers every platform.
+        auto check = [&](const QString &file, const char *marker) {
+            r = call("open_file", {{"path", file}});
+            EXPECT("W2: open_file on an app settings file is refused",
+                   !ok(r) && errOf(r).contains("deny-list"));
+            g_mw->openFile(file); // the USER opens it
+            pump(100);
+            auto *tm = g_mw->findChild<TabManager *>();
+            int ci = -1;
+            for (int i = 0; i < tm->count(); ++i)
+                if (Editor *e = tm->editorAt(i))
+                    if (QFileInfo(e->filePath()).fileName() == QFileInfo(file).fileName()) ci = i;
+            EXPECT("fixture: the user has the settings file open in a tab", ci >= 0);
+            if (ci < 0) return;
+            r = call("read_tab", {{"index", ci}});
+            EXPECT("W2: read_tab on the user's settings tab is refused",
+                   !ok(r) && errOf(r).contains("deny-list") && !QJsonDocument(r).toJson().contains(marker));
+            r = call("hash_text", {{"tab_index", ci}});
+            EXPECT("W2: hash_text on that tab is refused", !ok(r));
+            r = call("hex_dump", {{"tab_index", ci}});
+            EXPECT("W2: hex_dump on that tab is refused", !ok(r));
+            r = call("find_in_tab", {{"index", ci}, {"query", "a"}});
+            EXPECT("W2: find_in_tab on that tab is refused", !ok(r));
+            tm->setCurrentIndex(ci);
+            tm->editorAt(ci)->selectAll();
+            r = call("get_selection");
+            EXPECT("W2: get_selection inside that tab is refused",
+                   !ok(r) && !QJsonDocument(r).toJson().contains(marker));
+            tm->editorAt(ci)->setModified(false);
+            call("close_tab", {{"tab_index", ci}});
+        };
+        check(Config::appConfigDir() + "/db-connections.json", "QSQLITE");
+#ifndef Q_OS_WIN
+        QTimer keep;
+        QObject::connect(&keep, &QTimer::timeout, []() {
+            for (QWidget *w : QApplication::topLevelWidgets())
+                if (auto *mb = qobject_cast<QMessageBox *>(w); mb && mb->isVisible())
+                    mb->done(QMessageBox::No);
+        });
+        keep.start(50);
+        check(Config::appConfigDir() + "/config.json", "showWelcome");
+        keep.stop();
+#endif
+    }
+
     // ── leftovers ──
     writeFile(g_repo + "/bytes.bin", QByteArray("\x00\x01" "AB", 4));
     r = call("hex_dump", {{"path", g_repo + "/bytes.bin"}});

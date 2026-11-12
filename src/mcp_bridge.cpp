@@ -305,8 +305,9 @@ QString credentialRefusal(const QString &path) {
         return QString();
     return QStringLiteral(
                "refusing to read %1: it matches the credential deny-list "
-               "(SSH/GPG/AWS keys, .env, keystores, Terraform state). Open it "
-               "in the editor yourself if you need to see it.")
+               "(SSH/GPG/AWS keys, .env, keystores, Terraform state, Notepatra's "
+               "own settings and saved connections). Open it in the editor "
+               "yourself if you need to see it.")
         .arg(QDir::toNativeSeparators(fi.fileName()));
 }
 
