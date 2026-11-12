@@ -29,7 +29,10 @@ struct Result {
     QString message(const QString &what) const;
 };
 
-Result run(const QString &dir, const QStringList &args, int timeoutMs = 15000);
+// literalPaths: GIT_LITERAL_PATHSPECS=1, for every command whose arguments
+// after "--" are client-supplied paths (no glob, no :(magic)).
+Result run(const QString &dir, const QStringList &args, int timeoutMs = 15000,
+           bool literalPaths = false);
 // Same, asynchronously: done() runs on the GUI thread, once.
 void runAsync(QObject *context, const QString &dir, const QStringList &args, int timeoutMs,
               std::function<void(const Result &)> done);

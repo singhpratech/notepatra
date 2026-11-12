@@ -4682,7 +4682,10 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
     const QStringList modified = jsonStrings(ctx.value(QLatin1String("modified")));
     const QStringList untracked = jsonStrings(ctx.value(QLatin1String("untracked")));
     const QStringList conflicts = jsonStrings(ctx.value(QLatin1String("conflicts")));
-    auto run = [this, verb](const QJsonObject &a) {
+    // Every write carries the repository the card named; the host refuses
+    // to run it anywhere else (a workspace switch approved meanwhile).
+    auto run = [this, verb, root](QJsonObject a) {
+        a[QStringLiteral("expect_root")] = root;
         return [this, verb, a](QString *e) { return m_host.gitOp(verb, a, e); };
     };
 
@@ -4796,9 +4799,10 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
             QStringLiteral("git commit on branch '%1' in %2: %3 staged file(s); hooks run")
                 .arg(sanitizeForCard(branch), shownRepo).arg(staged.size());
         const QString preview = QStringLiteral("Message:\n%1\n\nStaged files:\n%2")
-                                    .arg(sanitizeMultiline(msg), bulletList(staged));
+                                    .arg(fullTextPreview(msg), bulletList(staged));
         const QJsonObject a{{QStringLiteral("message"), msg},
-                            {QStringLiteral("expect_staged"), QJsonArray::fromStringList(staged)}};
+                            {QStringLiteral("expect_staged"), QJsonArray::fromStringList(staged)},
+                            {QStringLiteral("expect_root"), root}};
         // Hooks can take a while: the commit answers asynchronously when it can.
         if (m_host.gitAsync)
             enqueueApprovalEx(client, id, desc, preview, o, nullptr,
@@ -4943,7 +4947,8 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
             desc = QStringLiteral("git push: send '%1' to '%2' in %3 (network; never forced)")
                        .arg(sanitizeForCard(branch), sanitizeForCard(upstream), shownRepo);
         const QJsonObject a{{QStringLiteral("branch"), branch},
-                            {QStringLiteral("upstream"), upstream}};
+                            {QStringLiteral("upstream"), upstream},
+                            {QStringLiteral("expect_root"), root}};
         enqueueApprovalEx(client, id, desc, QString(), CardOptions(), nullptr,
                           [this, verb, a](McpEditorHost::Done done) {
                               m_host.gitAsync(verb, a, done);
@@ -5001,7 +5006,9 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
                                           {QStringLiteral("hunk_index"), idx},
                                           {QStringLiteral("action"), action},
                                           {QStringLiteral("expect_header"),
-                                           h.value(QLatin1String("header"))}}));
+                                           h.value(QLatin1String("header"))},
+                                          {QStringLiteral("expect_hunk"),
+                                           h.value(QLatin1String("fingerprint"))}}));
         return;
     }
 
@@ -5062,7 +5069,9 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
                                           {QStringLiteral("region"), region},
                                           {QStringLiteral("take"), take},
                                           {QStringLiteral("expect_start"),
-                                           rg.value(QLatin1String("start_line"))}}));
+                                           rg.value(QLatin1String("start_line"))},
+                                          {QStringLiteral("expect_region"),
+                                           rg.value(QLatin1String("fingerprint"))}}));
         return;
     }
     sendError(client, id, QStringLiteral("unknown verb: %1").arg(verb));

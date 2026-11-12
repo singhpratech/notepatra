@@ -23,9 +23,14 @@ QProcessEnvironment gitEnv() {
     return env;
 }
 
-void prepare(QProcess &p, const QString &dir) {
+void prepare(QProcess &p, const QString &dir, bool literalPaths = false) {
     p.setWorkingDirectory(dir);
-    p.setProcessEnvironment(gitEnv());
+    QProcessEnvironment env = gitEnv();
+    // Client paths are file names, never globs or :(magic): "a[1].txt" must
+    // not also stage "a1.txt". Only for the commands that take client paths:
+    // stash push -u relies on pathspec magic internally and breaks with it.
+    if (literalPaths) env.insert(QStringLiteral("GIT_LITERAL_PATHSPECS"), QStringLiteral("1"));
+    p.setProcessEnvironment(env);
     p.setProgram(QStringLiteral("git"));
 }
 
@@ -39,10 +44,10 @@ QString Result::message(const QString &what) const {
                           : QStringLiteral("%1 failed: %2").arg(what, text.left(4000));
 }
 
-Result run(const QString &dir, const QStringList &args, int timeoutMs) {
+Result run(const QString &dir, const QStringList &args, int timeoutMs, bool literalPaths) {
     Result r;
     QProcess p;
-    prepare(p, dir);
+    prepare(p, dir, literalPaths);
     p.setArguments(args);
     p.start();
     if (!p.waitForStarted(3000)) return r;

@@ -30,6 +30,7 @@
 #include "atomic_write.h"
 
 #include <QAction>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -62,6 +63,25 @@ QStringList strings(const QJsonValue &v) {
     return out;
 }
 
+// The whole hunk (header and every body line, uncapped), hashed: what the
+// card showed must be exactly what is applied.
+QString hunkFingerprint(const DiffHunk &h) {
+    return QString::fromLatin1(
+        QCryptographicHash::hash((h.hunkHeader + QLatin1Char('\n') +
+                                  h.rawDiffLines.join(QLatin1Char('\n'))).toUtf8(),
+                                 QCryptographicHash::Sha256).toHex());
+}
+
+// Every line of a conflict region, markers included, hashed.
+QString regionFingerprint(const QString &text, const MergeHelper::ConflictRegion &r) {
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    const QString region =
+        lines.mid(r.startLine, r.endLine - r.startLine + 1).join(QLatin1Char('\n'));
+    return QString::fromLatin1(
+        QCryptographicHash::hash(QString::number(r.startLine).toUtf8() + '\n' + region.toUtf8(),
+                                 QCryptographicHash::Sha256).toHex());
+}
+
 QJsonArray hunksJson(const QVector<DiffHunk> &hunks) {
     QJsonArray out;
     for (int i = 0; i < hunks.size() && i < 500; ++i) {
@@ -77,16 +97,19 @@ QJsonArray hunksJson(const QVector<DiffHunk> &hunks) {
                                {QStringLiteral("new_start"), h.newStart},
                                {QStringLiteral("new_lines"), h.newLen},
                                {QStringLiteral("diff"), h.hunkHeader + QLatin1Char('\n') +
-                                                            lines.join(QLatin1Char('\n'))}});
+                                                            lines.join(QLatin1Char('\n'))},
+                               {QStringLiteral("fingerprint"), hunkFingerprint(h)}});
     }
     return out;
 }
 
-QJsonArray regionsJson(const QVector<MergeHelper::ConflictRegion> &regions) {
+QJsonArray regionsJson(const QString &text,
+                       const QVector<MergeHelper::ConflictRegion> &regions) {
     QJsonArray out;
     for (int i = 0; i < regions.size(); ++i) {
         const auto &r = regions.at(i);
         out.append(QJsonObject{{QStringLiteral("index"), i},
+                               {QStringLiteral("fingerprint"), regionFingerprint(text, r)},
                                {QStringLiteral("start_line"), r.startLine + 1},
                                {QStringLiteral("separator_line"), r.separatorLine + 1},
                                {QStringLiteral("end_line"), r.endLine + 1},
@@ -182,8 +205,20 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
         const QString root = GitWrite::repoRoot(workspaceFolder(), err);
         if (root.isEmpty()) return QJsonObject();
         if (op == QLatin1String("context")) return GitWrite::context(root, err);
+        // Every write runs in the repository the card named, or not at all: a
+        // set_workspace_folder approved while this card waited moves the
+        // workspace, never the write.
+        const bool readOp = op == QLatin1String("list_hunks") ||
+                            op == QLatin1String("list_conflicts");
+        if (!readOp && a.value(QLatin1String("expect_root")).toString() != root) {
+            *err = QStringLiteral("the workspace changed while the card was waiting; nothing "
+                                  "was changed");
+            return QJsonObject();
+        }
+        // Client paths (git_stage / git_unstage / git_discard) are literal.
+        const bool clientPaths = a.contains(QLatin1String("paths"));
         auto git = [&](const QStringList &args, const QString &what, int ms = 15000) {
-            const GitWrite::Result r = GitWrite::run(root, args, ms);
+            const GitWrite::Result r = GitWrite::run(root, args, ms, clientPaths);
             if (!r.ok) *err = r.message(what);
             return r;
         };
@@ -257,8 +292,11 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
         } else if (op == QLatin1String("git_hunk")) {
             const QVector<DiffHunk> hunks = GitGutter::hunksForFile(abs);
             const int i = a.value(QLatin1String("hunk_index")).toInt();
+            // The full hunk text, not just its header: same header, other
+            // lines must not apply.
             if (i < 0 || i >= hunks.size() ||
-                hunks.at(i).hunkHeader != a.value(QLatin1String("expect_header")).toString()) {
+                hunks.at(i).hunkHeader != a.value(QLatin1String("expect_header")).toString() ||
+                hunkFingerprint(hunks.at(i)) != a.value(QLatin1String("expect_hunk")).toString()) {
                 *err = QStringLiteral("the hunk changed after the approval card was shown; "
                                       "nothing was applied");
                 return out;
@@ -295,7 +333,7 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
             const QString text = ed ? ed->text() : readUtf8(abs, err);
             if (!err->isEmpty()) return out;
             out[QStringLiteral("path")] = rel;
-            out[QStringLiteral("regions")] = regionsJson(MergeHelper::scanConflicts(text));
+            out[QStringLiteral("regions")] = regionsJson(text, MergeHelper::scanConflicts(text));
             return out;
         } else if (op == QLatin1String("resolve_conflict")) {
             int t = tabIndexForPath(abs);
@@ -316,8 +354,11 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
             const QString text = ed->text();
             const QVector<MergeHelper::ConflictRegion> regions = MergeHelper::scanConflicts(text);
             const int i = a.value(QLatin1String("region")).toInt();
+            // Position AND every line of the region, markers included.
             if (i < 0 || i >= regions.size() ||
-                regions.at(i).startLine + 1 != a.value(QLatin1String("expect_start")).toInt()) {
+                regions.at(i).startLine + 1 != a.value(QLatin1String("expect_start")).toInt() ||
+                regionFingerprint(text, regions.at(i)) !=
+                    a.value(QLatin1String("expect_region")).toString()) {
                 *err = QStringLiteral("the conflict regions changed after the approval card "
                                       "was shown; nothing was changed");
                 return out;
@@ -356,6 +397,11 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
         const QJsonObject ctx = root.isEmpty() ? QJsonObject() : GitWrite::context(root, &err);
         if (!err.isEmpty()) {
             done(QJsonObject(), err);
+            return;
+        }
+        if (a.value(QLatin1String("expect_root")).toString() != root) {
+            done(QJsonObject(), QStringLiteral("the workspace changed while the card was "
+                                               "waiting; nothing was changed"));
             return;
         }
         if (op == QLatin1String("git_commit")) {
