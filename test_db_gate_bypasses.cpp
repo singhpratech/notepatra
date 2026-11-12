@@ -350,6 +350,34 @@ static const Reject kReject[] = {
     {"8", Std, "SELECT * FROM t WHERE EXISTS (DELETE FROM t RETURNING 1)", "in verb position", true},
     {"8", Std, "SELECT a, (INSERT INTO t VALUES (1) RETURNING 1) FROM u", "in verb position", true},
     {"8", Std, "SELECT * FROM t WHERE x = (COPY t TO '/tmp/x')", "in verb position", true},
+
+    // ── 9. SQL Server lexing on the strict READ path (run_query, no card):
+    // a number ends where a letter begins, an ODBC {call} runs a procedure,
+    // and USE HINT is a hint only inside OPTION ( ... ) ───────────────────
+    {"9", Strict,   "SELECT 1DROP TABLE users", "'DROP'", true},
+    {"9", StrictRF, "SELECT 1DROP TABLE users", "'DROP'", true},
+    {"9", Strict,   "SELECT 1e5EXEC sp_who", "'EXEC'", true},
+    {"9", Strict,   "SELECT 1E5EXECUTE ('DROP TABLE t')", "'EXECUTE'", true},
+    {"9", Strict,   "SELECT 0xUPDATE t SET a = 1", kTsql, true},
+    {"9", Strict,   "SELECT 0x1F WHERE 1 = 1 0xDROP TABLE users", kTsql, true},
+    {"9", Strict,   "SELECT a FROM t WHERE b = 2.DELETE FROM t", "'DELETE'", true},
+    {"9", Strict,   "SELECT a FROM t WHERE b = 2. DELETE FROM t", "'DELETE'", true},
+    {"9", Strict,   "SELECT 1. DROP TABLE users", "'DROP'", true},
+    {"9", Strict,   "SELECT $1. DROP TABLE users", "'DROP'", true},
+    {"9", Strict,   "SELECT 1.EDROP TABLE users", "'DROP'", true},
+    {"9", Strict,   "SELECT 1.5E3WAITFOR DELAY '0:0:10'", "'WAITFOR'", true},
+    {"9", Strict,   "SELECT TOP 10 * FROM t ORDER BY 1SHUTDOWN", "'SHUTDOWN'", true},
+    {"9", Strict,   "SELECT 1END CONVERSATION @h", "'END CONVERSATION'", true},
+    {"9", Strict,   "SELECT 1xp_cmdshell 'dir'", "'XP_CMDSHELL'", true},
+    {"9", Strict,   "SELECT 1\r\n2DECLARE @x int", "'DECLARE'", true},
+    {"9", Strict,   "SELECT 1 {call dbo.wipe}", "ODBC {call}", true},
+    {"9", Strict,   "SELECT 1 {CALL dbo.wipe(1, 2)}", "ODBC {call}", true},
+    {"9", Strict,   "SELECT 1 {?= call dbo.wipe}", "ODBC {call}", true},
+    {"9", Strict,   "SELECT 1 { ? = CALL dbo.wipe }", "ODBC {call}", true},
+    {"9", StrictRF, "SELECT * FROM t WHERE a = 1 {call dbo.wipe}", "ODBC {call}", true},
+    {"9", Strict,   "SELECT 1 USE HINT (SELECT 1)", "'USE'", true},
+    {"9", Strict,   "SELECT 1 USE HINT ('x')", "'USE'", true},
+    {"9", Strict,   "SELECT * FROM t WHERE a IN (SELECT 1 USE HINT('x'))", "'USE'", true},
 };
 
 // Hard-fail rows: the verdict an approval card can never override. Before the
@@ -744,6 +772,31 @@ static const Accept kAccept[] = {
     {"8", Std,    "SELECT (comment || 'x') FROM posts"},
     {"8", Std,    "SELECT a FROM t ORDER BY a, (start)"},
     {"8", Strict, "SELECT (comment) FROM posts WHERE (start > 1)"},
+
+    // 9 — ordinary analyst T-SQL around numbers, ODBC escapes and hints.
+    // `1.` is a numeric literal in T-SQL, so `SELECT 1. AS x` stays a read: only
+    // a statement keyword after a number (or glued to its tail) is refused.
+    {"9", Strict,   "SELECT 1 AS n"},
+    {"9", Strict,   "SELECT * FROM t WHERE a = 2 AND b = 3"},
+    {"9", Strict,   "SELECT TOP 10 * FROM dbo.t ORDER BY 1"},
+    {"9", Strict,   "SELECT TOP (10) PERCENT a FROM t"},
+    {"9", Strict,   "SELECT 1e5 AS x, 1E-3 AS y, 2.5e+10 AS z"},
+    {"9", Strict,   "SELECT 0x1F AS b, 0xDEADBEEF AS c, 0x AS empty"},
+    {"9", Strict,   "SELECT $1.50 AS price, $.5 AS half, $100 AS hundred"},
+    {"9", Strict,   "SELECT 1. AS x, 2.5 AS y, .5 AS z"},
+    {"9", Strict,   "SELECT a FROM t WHERE b = 2. AND c = 3."},
+    {"9", Strict,   "SELECT 1AS n, 2FROM_x"},
+    {"9", Strict,   "SELECT CASE WHEN a = 1 THEN 1END AS c FROM t"},
+    {"9", Strict,   "SELECT [1drop], [2update] AS [3exec] FROM t"},
+    {"9", Strict,   "SELECT t.[1set] FROM dbo.t AS t"},
+    {"9", Strict,   "SELECT a FROM t OPTION (RECOMPILE, USE HINT('FORCE_ORDER'))"},
+    {"9", Strict,   "SELECT a FROM t OPTION (MAXDOP 1, USE HINT ('FORCE_LEGACY_CARDINALITY_ESTIMATION', 'DISABLE_OPTIMIZER_ROWGOAL'))"},
+    {"9", Strict,   "SELECT {fn NOW()} AS now_ts, {fn UCASE(name)} FROM t"},
+    {"9", Strict,   "SELECT * FROM t WHERE d >= {d '2024-01-01'} AND ts < {ts '2024-01-01 00:00:00'}"},
+    {"9", Strict,   "SELECT * FROM {oj t LEFT OUTER JOIN u ON t.id = u.id}"},
+    {"9", Strict,   "SELECT {t '12:00:00'} AS noon"},
+    {"9", StrictRF, "SELECT 'call {call x}' AS s, [call] FROM t"},
+    {"9", Strict,   "SELECT db..t.a FROM db..t"},
 };
 
 int main(int argc, char **argv) {
@@ -755,7 +808,7 @@ int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
 
     std::printf("== REJECT: confirmed bypasses and their variants ==\n");
-    int perItem[9] = {0};
+    int perItem[10] = {0};
     for (const Reject &r : kReject) {
         const SqlVerdict v = verdict(r.mode, r.sql);
         const bool rejected = !(v.singleStatement && v.readOnly);
@@ -836,7 +889,11 @@ int main(int argc, char **argv) {
         // The no-card read path (run_query) is unchanged: never read-only there.
         const SqlVerdict r1 = classifySql(q, true, true);
         const SqlVerdict r2 = classifySql(q, false, true);
-        const bool readOk = !r1.readOnly && !r2.readOnly && r1.mutation;
+        // ... and a write's own verb is still a hard refusal there (the write
+        // grammar's allowances belong to the approval path only).
+        const bool selectInto = q.startsWith(QLatin1String("SELECT"));
+        const bool readOk = !r1.readOnly && !r2.readOnly && r1.mutation
+                            && (selectInto || (r1.hardFail && r2.hardFail));
         readOk ? ++g_pass : ++g_fail;
         if (!readOk)
             std::printf("  [FAIL] read path: strict classifySql calls it read-only: %s\n",
@@ -910,8 +967,21 @@ int main(int argc, char **argv) {
         ok2 ? ++g_pass : ++g_fail;
     }
 
+    // OPTION (USE HINT(...)) as the FIRST option was already refused (softly)
+    // by the verb-slot rule before the strict-read lexing fixes; they must not
+    // turn it into a hard refusal. (OPTION (MAXDOP 1, USE HINT(...)) is a read,
+    // see the ACCEPT rows.)
+    {
+        const SqlVerdict v = classifySql(
+            QStringLiteral("SELECT a FROM t OPTION (USE HINT('FORCE_ORDER'))"), true, true);
+        const bool ok = !v.hardFail && v.reason.contains(QStringLiteral("verb position"));
+        ok ? ++g_pass : ++g_fail;
+        std::printf("  [%s] OPTION (USE HINT(...)) first: unchanged soft refusal, not hard\n",
+                    ok ? "PASS" : "FAIL");
+    }
+
     // Every item keeps a real reject table (guards against a truncated array).
-    for (int item = 1; item <= 8; ++item) {
+    for (int item = 1; item <= 9; ++item) {
         if (perItem[item] < 5) {
             ++g_fail;
             std::printf("  [FAIL] item %d has only %d reject rows\n", item, perItem[item]);

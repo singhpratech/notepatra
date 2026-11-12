@@ -128,7 +128,9 @@ struct SqlVerdict {
 // The desktop data-analyst leaves it false so a power user can still type
 // read_csv_auto('x.csv') directly. Legit CSV ingestion (Client::registerCsv)
 // never goes through classifySql, so this only affects user-typed SQL.
-// `strictBatch` (QODBC): a bare T-SQL verb anywhere is a mutation (SELECT 1 DROP TABLE x).
+// `strictBatch` (QODBC): a bare T-SQL verb anywhere is a mutation (SELECT 1 DROP TABLE x),
+// including one glued to a number's tail (1DROP, 2.DELETE, 0xUPDATE, 1. DROP); an ODBC
+// {call ...} escape is a hard refusal; USE HINT is exempt only inside OPTION ( ... ).
 SqlVerdict classifySql(const QString &sql, bool restrictFilesystem = false,
                        bool strictBatch = false);
 

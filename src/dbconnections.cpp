@@ -1041,8 +1041,12 @@ struct TsqlWriteGrammar {
     QSet<int> allowed;        // word indices: batch keywords that are this statement's grammar
     QVector<bool> qualified;  // per word: a part of a dotted name (t.col, db..t)
     QVector<int> depth;       // per word: paren depth
+    QVector<bool> inOption;   // per word: directly inside an OPTION ( ... ) clause
     QString secondStatement;  // the first other word that starts another statement
     bool writeForm = false;   // an INSERT / UPDATE / DELETE / MERGE / DDL form was matched
+    // SQL Server lexing facts the strict READ scan uses as well:
+    QString gluedKeyword;     // a statement keyword glued to a number's tail (1DROP)
+    bool odbcCall = false;    // an ODBC {call ...} / {?= call ...} escape (run as EXEC)
 };
 
 static TsqlWriteGrammar tsqlWriteGrammar(const QString &stmt) {
@@ -1054,11 +1058,17 @@ static TsqlWriteGrammar tsqlWriteGrammar(const QString &stmt) {
 
     // A word after '.' is a name part only when the '.' follows a name (or
     // another '.'): `1. DROP TABLE x` is the number 1. and then a statement.
+    QVector<bool> optionParens;  // open parens: was each one OPTION's?
     for (int k = 0; k < n; ++k) {
-        if (!T[k].word) continue;
+        if (!T[k].word) {
+            if (S(k, '(')) optionParens.append(k > 0 && T[k - 1].word && T[k - 1].text == QLatin1String("OPTION"));
+            else if (S(k, ')') && !optionParens.isEmpty()) optionParens.removeLast();
+            continue;
+        }
         g.qualified.append(S(k - 1, '.') && k >= 2
                            && (S(k - 2, '.') || (T[k - 2].word && !T[k - 2].text[0].isDigit())));
         g.depth.append(T[k].depth);
+        g.inOption.append(!optionParens.isEmpty() && optionParens.last());
     }
 
     auto skipGroup = [&](int i) {  // T[i] is '(': the index after its ')', or -1
@@ -1220,7 +1230,10 @@ static TsqlWriteGrammar tsqlWriteGrammar(const QString &stmt) {
             if (t.text == QLatin1String("{")) {
                 int m = k + 1;
                 while (S(m, '?') || S(m, '=')) ++m;
-                if (W(m, "CALL")) second(QStringLiteral("{call}"));
+                if (W(m, "CALL")) {
+                    g.odbcCall = true;
+                    second(QStringLiteral("{call}"));
+                }
             }
             // A parenthesised query after a finished operand (`SET a = 1 (SELECT ...)`)
             // is a statement of its own; a subquery follows an operator or a keyword.
@@ -1252,8 +1265,14 @@ static TsqlWriteGrammar tsqlWriteGrammar(const QString &stmt) {
                 if (!w[c].isLetter()) continue;
                 const QString tail = w.mid(c);
                 if (tsqlBatchKeywords().contains(tail) || tsqlDangerousProcedures().contains(tail)
-                    || tsqlConditionalBatchKeyword(tail, next)
-                    || tail == QLatin1String("SELECT") || tail == QLatin1String("IF")
+                    || tsqlConditionalBatchKeyword(tail, next)) {
+                    if (g.gluedKeyword.isEmpty())
+                        g.gluedKeyword = tsqlConditionalBatchKeyword(tail, next)
+                                             ? tail + QLatin1Char(' ') + next : tail;
+                    second(tail);
+                    break;
+                }
+                if (tail == QLatin1String("SELECT") || tail == QLatin1String("IF")
                     || tail == QLatin1String("GO") || tail == QLatin1String("PRINT")
                     || tail == QLatin1String("THROW") || tail == QLatin1String("RETURN")
                     || tail == QLatin1String("WITH")) {
@@ -1659,15 +1678,31 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         // their grammatical slots are not another statement (tsqlWriteGrammar).
         // Name parts follow a name's '.', never a number's (`1. DROP ...`), and
         // an alias gets no pass: a keyword-named alias needs brackets anyway.
-        TsqlWriteGrammar grammar;
+        // Both modes use its SQL Server lexing facts: a number ends where a
+        // letter begins (`1DROP`, `2.DELETE` are a number and a statement), an
+        // ODBC {call} runs a procedure, and USE HINT is only a hint inside
+        // OPTION ( ... ). These only ever add refusals to the read scan.
+        TsqlWriteGrammar grammar = tsqlWriteGrammar(stmt);
+        if (grammar.qualified.size() != stoks.size()) {
+            grammar = TsqlWriteGrammar();
+            grammar.qualified = QVector<bool>(stoks.size(), false);
+            grammar.depth = QVector<int>(stoks.size(), 0);
+            grammar.inOption = QVector<bool>(stoks.size(), false);
+            grammar.secondStatement = QStringLiteral("(unparsed)");
+            grammar.gluedKeyword = QStringLiteral("(unparsed)");
+        }
+        if (!grammar.gluedKeyword.isEmpty()) {
+            *mutation = true;
+            noteHard(QStringLiteral(
+                "T-SQL statement keyword '%1' starts another statement "
+                "(this driver runs batches without ';')").arg(grammar.gluedKeyword));
+        }
+        if (grammar.odbcCall) {
+            *mutation = true;
+            noteHard(QStringLiteral(
+                "an ODBC {call} escape runs a procedure (this driver runs it as EXEC)"));
+        }
         if (writeGrammar) {
-            grammar = tsqlWriteGrammar(stmt);
-            if (grammar.qualified.size() != stoks.size()) {
-                grammar = TsqlWriteGrammar();
-                grammar.qualified = QVector<bool>(stoks.size(), false);
-                grammar.depth = QVector<int>(stoks.size(), 0);
-                grammar.secondStatement = QStringLiteral("(unparsed)");
-            }
             if (grammar.writeForm) *mutation = true;
             if (!grammar.secondStatement.isEmpty()) {
                 *mutation = true;
@@ -1679,7 +1714,8 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         for (int idx = 0; idx < stoks.size(); ++idx) {
             const StructToken &tk = stoks[idx];
             const QString next = (idx + 1 < stoks.size()) ? stoks[idx + 1].text : QString();
-            const bool afterDot = writeGrammar ? grammar.qualified[idx] : tk.afterDot;
+            // A name part follows a name's '.', never a number's (`2.DELETE`).
+            const bool afterDot = grammar.qualified[idx] && (writeGrammar || tk.afterDot);
             const bool afterAs = writeGrammar ? false : tk.afterAs;
             // Even qualified or bracketed: master..xp_cmdshell, [master]..[xp_cmdshell].
             const QString proc = tk.text.startsWith(QLatin1String("QID_")) ? tk.text.mid(4)
@@ -1698,13 +1734,13 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
                 continue;
             }
             if (afterDot || afterAs || !tsqlBatchKeywords().contains(tk.text)) continue;
-            if (grammar.allowed.contains(idx)) continue;  // this write's own keyword
+            if (writeGrammar && grammar.allowed.contains(idx)) continue;  // this write's own keyword
             if (tk.text == QStringLiteral("MERGE")
                 && (next == QStringLiteral("JOIN") || next == QStringLiteral("UNION")))
                 continue;  // INNER MERGE JOIN / OPTION (MERGE JOIN|UNION)
             if (tk.text == QStringLiteral("USE") && next == QStringLiteral("HINT")
-                && stoks[idx + 1].callsFunction && (!writeGrammar || grammar.depth[idx] > 0))
-                continue;  // OPTION (..., USE HINT (...)); a write's is inside OPTION's parens
+                && stoks[idx + 1].callsFunction && grammar.inOption[idx])
+                continue;  // OPTION (..., USE HINT (...)); anywhere else USE switches database
             if ((tk.text == QStringLiteral("ENABLE") || tk.text == QStringLiteral("DISABLE"))
                 && next != QStringLiteral("TRIGGER"))
                 continue;
