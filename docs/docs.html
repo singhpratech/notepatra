@@ -579,7 +579,7 @@
     <tbody>
       <tr><td>🐧 Linux x64</td><td><code>notepatra-linux-x64.tar.gz</code></td><td>~4.8 MB</td></tr>
       <tr><td>🐧 Linux ARM64</td><td><code>notepatra-linux-arm64.tar.gz</code></td><td>~4.5 MB</td></tr>
-      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~27.8 MB</td></tr>
+      <tr><td>🍎 macOS Apple Silicon</td><td><code>notepatra-macos-arm64.dmg</code></td><td>~28.3 MB</td></tr>
       <tr><td>🪟 Windows x64 (MSI)</td><td><code>notepatra-&lt;version&gt;.msi</code></td><td>~44.1 MB</td></tr>
       <tr><td>🪟 Windows x64 (installer)</td><td><code>notepatra-setup-&lt;version&gt;.exe</code></td><td>~33.1 MB</td></tr>
       <tr><td>🪟 Windows x64 (portable)</td><td><code>notepatra-windows-x64.zip</code></td><td>~37.8 MB</td></tr>
@@ -587,7 +587,7 @@
       <tr><td>Linux x64 / ARM64 (.rpm)</td><td><code>notepatra-&lt;version&gt;-1.x86_64.rpm</code> / <code>.aarch64.rpm</code></td><td>~24.5 MB / 23.2 MB</td></tr>
       <tr><td>Linux x64 (AppImage)</td><td><code>Notepatra-&lt;version&gt;-x86_64.AppImage</code></td><td>~54.8 MB</td></tr>
       <tr><td>Full: Linux x64 / ARM64</td><td><code>notepatra-linux-x64-full.tar.gz</code> / <code>notepatra-linux-arm64-full.tar.gz</code></td><td>~22.7 MB / 21.3 MB</td></tr>
-      <tr><td>Full: macOS Apple Silicon</td><td><code>notepatra-macos-arm64-full.dmg</code></td><td>~91.1 MB</td></tr>
+      <tr><td>Full: macOS Apple Silicon</td><td><code>notepatra-macos-arm64-full.dmg</code></td><td>~90.5 MB</td></tr>
       <tr><td>Full: Windows x64</td><td><code>notepatra-setup-&lt;version&gt;-full.exe</code> / <code>notepatra-windows-x64-full.zip</code></td><td>~81.6 MB / 103.4 MB</td></tr>
     </tbody>
   </table></div>
@@ -2386,7 +2386,7 @@ sha256sum -c SHA256SUMS --ignore-missing</code></pre>
   <p>The default download is <strong>Lite</strong>: the complete editor — all 82 lexers, the AI dock, diagrams, formatters, Git, terminal — with no browser engine bundled, which is why the bare binary stays ~13 MB. <strong>Full</strong> bundles the DuckDB engine on every platform, and — on <strong>Linux and Windows</strong> — adds QtWebEngine so the <code>generate_chart</code> AI tool can render interactive Vega-Lite charts inline. (<strong>macOS Full is DuckDB-only</strong>: Homebrew <code>qt@5</code> no longer ships QtWebEngine and there is no Apple-Silicon Qt5 WebEngine, so inline Vega charts are a Linux/Windows feature.) Everything else is identical. Most people want Lite; reach for Full only if you need the DuckDB engine or WebEngine-rendered Vega charts — the native QtCharts inline charts and the <code>.npd</code> diagram renderer work in <em>both</em> flavors on <em>every</em> platform. See <a href="#lite-vs-full">Lite mode vs Full mode</a>.</p>
 
   <h4>How big is it, really?</h4>
-  <p>The bare executable is ~13 MB (~13.6 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.8 MB (Linux x64 tar.gz), 27.8 MB (macOS DMG with Qt), 44.1 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
+  <p>The bare executable is ~13 MB (~13.6 MB on Linux x64) on every platform — no Electron, no bundled browser runtime. Download sizes differ because Linux links Qt from your distro while macOS and Windows bundle it: roughly 4.8 MB (Linux x64 tar.gz), 28.3 MB (macOS DMG with Qt), 44.1 MB (Windows MSI with the Qt DLLs). The GitHub release page is always canonical for exact bytes.</p>
 
   <h4>Does my code go to the cloud? Is there any telemetry?</h4>
   <p>No telemetry, no analytics, no account — the editor starts fully offline. Apart from the update check in (4), every outbound connection is one you trigger: (1) your selected AI backend — a <em>local</em> Ollama (<code>localhost:11434</code>) or llama-server (<code>localhost:8080</code>) by default, or whichever URL you set on the llama.cpp entry; (2) <code>git push/pull</code> from the Git panel; (3) the REST client when you send a request; (4) the update check: about 3 seconds after launch, at most once every 24 hours, one request to <code>api.github.com</code> for the latest release tag. It is on by default; set <code>updates/checkOnStartup=false</code> in Notepatra's QSettings file to turn it off. Cloud AI backends (Ollama Cloud / OpenRouter / OpenAI / Azure OpenAI) are <strong>opt-in</strong> from the dropdown and use <em>your</em> key — your code leaves the machine only when you pick one and send it. All of this is verifiable with <code>strace</code>, and the built-in AI Interaction Log records exactly what was sent so you never have to take our word for it.</p>
