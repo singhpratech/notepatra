@@ -36,6 +36,7 @@ private slots:
 
     // ── atomic write ──
     void atomicWrite_corruptedTmpLeftBehind_doesntBreakRead();
+    void atomicWrite_plantedTmpSymlinkNotFollowed();
     void atomicWrite_signalEmittedOnSuccess();
 
     // ── backup ring ──
@@ -173,6 +174,55 @@ void TestNotesStorage::atomicWrite_corruptedTmpLeftBehind_doesntBreakRead() {
     const QString back = s.readNote(path);
     QVERIFY(back.contains("<p>canonical</p>"));
     QVERIFY(!back.contains("PARTIAL"));
+}
+
+// The save used to open the fixed `<note>.html.tmp` with Truncate, so a
+// symlink planted at that name was followed and its target overwritten with
+// the note. The temp is now unique and created exclusively.
+void TestNotesStorage::atomicWrite_plantedTmpSymlinkNotFollowed() {
+#ifdef Q_OS_WIN
+    QSKIP("symlinks need privileges on Windows");
+#else
+    QTemporaryDir td;
+    QTemporaryDir outside;
+    NotesStorage s(td.path());
+    const QString path = td.path() + "/note.html";
+    QVERIFY(s.saveNote(path, "<html><body><p>first</p></body></html>"));
+
+    const QString victim = outside.path() + "/victim.txt";
+    {
+        QFile v(victim);
+        QVERIFY(v.open(QIODevice::WriteOnly));
+        v.write("VICTIM_ORIGINAL\n");
+    }
+    // Planted at the old fixed temp name, and a dangling one too (a dangling
+    // link is created through by O_CREAT without O_EXCL).
+    QVERIFY(QFile::link(victim, path + ".tmp"));
+    QVERIFY(QFileInfo(path + ".tmp").isSymLink());
+    const QString dangling = outside.path() + "/created-through-link.txt";
+    const QString path2 = td.path() + "/second.html";
+    QVERIFY(QFile::link(dangling, path2 + ".tmp"));
+
+    QVERIFY(s.saveNote(path, "<html><body><p>second</p></body></html>"));
+    QVERIFY(s.saveNote(path2, "<html><body><p>other</p></body></html>"));
+
+    QFile v(victim);
+    QVERIFY(v.open(QIODevice::ReadOnly));
+    QCOMPARE(v.readAll(), QByteArray("VICTIM_ORIGINAL\n"));
+    QVERIFY(!QFileInfo::exists(dangling));
+    QVERIFY(QFileInfo(path + ".tmp").isSymLink());     // left alone, not written through
+    QVERIFY(s.readNote(path).contains("<p>second</p>"));
+    QVERIFY(s.readNote(path2).contains("<p>other</p>"));
+    QVERIFY(!QFileInfo(path).isSymLink());
+
+    // No temp of the new kind is left behind after the saves.
+    const QStringList left = QDir(td.path()).entryList(
+        QStringList() << QStringLiteral("note.html.*") << QStringLiteral("second.html.*"),
+        QDir::Files | QDir::System | QDir::Hidden);
+    for (const QString &name : left)
+        QVERIFY2(name.endsWith(QStringLiteral(".tmp")) || name.contains(QStringLiteral(".bak")),
+                 qPrintable("unexpected leftover: " + name));
+#endif
 }
 
 void TestNotesStorage::atomicWrite_signalEmittedOnSuccess() {

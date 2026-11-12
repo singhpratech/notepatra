@@ -874,7 +874,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     )
     target_link_libraries(test_notes_storage PRIVATE Qt5::Core Qt5::Network Qt5::Test)
     add_test(NAME test_notes_storage COMMAND $<TARGET_FILE:test_notes_storage>)
-    set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage")
+    set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_notes_storage")
 endif()
 

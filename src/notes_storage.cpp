@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QString>
 #include <QStringList>
@@ -196,13 +197,12 @@ bool NotesStorage::validateBody(const QString &fullHtml, QString *errorOut) cons
 // ═══════════════════════════════════════════════════════════════════════
 // saveNote — the six-step atomic protocol.
 //
-// Design choice: we use explicit `.tmp + rename` instead of QSaveFile.
-// Two reasons —
-//   1. The replace goes through NpAtomic::replaceFile (src/atomic_write.h),
-//      shared with the other durable-save sites.
-//   2. QSaveFile silently leaves a `.qsave` orphan when the process
-//      dies between commitWithReplace and dtor — the explicit form
-//      makes the orphan path predictable so listAllNotes can filter it.
+// The write goes through QSaveFile: a uniquely named, exclusively created
+// temp beside the note (`<note>.html.XXXXXX`), fsynced and renamed over the
+// note on commit. The old fixed `<note>.html.tmp` name was opened with
+// Truncate, so a symlink planted there was followed and its target written.
+// A temp orphaned by a crash ends in random letters, not `.html`, so
+// listAllNotes (which lists `*.html`) never shows it.
 // ═══════════════════════════════════════════════════════════════════════
 
 bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml,
@@ -254,46 +254,34 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
     //     just one step ahead.
     rotateBackups(absolutePath);
 
-    // (4) Write to a sibling `.tmp` and (5) atomic-rename. Mirror the
-    //     src/ai_tools.cpp idiom.
-    const QString tmpPath = absolutePath + QStringLiteral(".tmp");
+    // (4) Write to a uniquely named temp beside the note and (5) replace it
+    //     in one step. QSaveFile creates the temp exclusively (O_EXCL), so a
+    //     symlink planted at the old fixed `<note>.html.tmp` name can never
+    //     redirect the write; it keeps an existing note's permission bits,
+    //     fsyncs the payload before the rename (a power loss can never
+    //     publish a truncated note), and on any failure leaves the note as it
+    //     was. The directory entry is synced after, as NpAtomic does.
     {
-        QFile tmp(tmpPath);
-        if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QSaveFile f(absolutePath);
+        if (!f.open(QIODevice::WriteOnly)) {
             if (errorOut)
-                *errorOut = QStringLiteral("Failed to open temp file: %1").arg(tmp.errorString());
+                *errorOut = QStringLiteral("Failed to open temp file: %1").arg(f.errorString());
             return false;
         }
         const QByteArray bytes = cleaned.toUtf8();
-        const qint64 n = tmp.write(bytes);
-        // Force the data to STABLE STORAGE before the rename. flush()
-        // only drains Qt's userspace buffer into the kernel page cache —
-        // a power loss between rename and the kernel's writeback used to
-        // be able to surface a zero-length (or truncated) note under the
-        // canonical name. fsync the tmp file's payload first, so the
-        // rename can only ever publish fully-durable bytes. (A7 fix —
-        // the old comment claimed fsync-equivalence that never existed.)
-        tmp.flush();
-#ifdef Q_OS_WIN
-        FlushFileBuffers(reinterpret_cast<HANDLE>(_get_osfhandle(tmp.handle())));
-#else
-        if (tmp.handle() >= 0) ::fsync(tmp.handle());
-#endif
-        tmp.close();
-        if (n != bytes.size()) {
-            QFile::remove(tmpPath);
+        if (f.write(bytes) != bytes.size()) {
+            f.cancelWriting();
             if (errorOut) *errorOut = QStringLiteral("Short write to temp file");
             return false;
         }
-    }
-
-    // Single-step replace + directory fsync; see src/atomic_write.h.
-    {
-        QString replaceErr;
-        if (!NpAtomic::replaceFile(tmpPath, absolutePath, &replaceErr)) {
-            if (errorOut) *errorOut = replaceErr;
+        if (!f.commit()) {
+            if (errorOut)
+                *errorOut = QStringLiteral("Could not replace \"%1\": %2. "
+                                           "The existing file was left unchanged.")
+                                .arg(absolutePath, f.errorString());
             return false;
         }
+        NpAtomic::syncDirectoryOf(absolutePath);
     }
 
     // (6) Emit signal + clear the draft sidecar (a successful save

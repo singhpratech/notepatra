@@ -507,6 +507,37 @@ static void testGatedWriteBookkeeping() {
     }
 }
 
+// The save used to open the fixed `<history>.tmp` with Truncate, so a symlink
+// planted there was followed and the conversation written into its target.
+static void testPlantedTmpSymlinkNotFollowed() {
+    std::printf("\n=== a symlink at the old fixed temp name is not followed ===\n");
+#ifdef Q_OS_WIN
+    std::printf("  [SKIP] symlinks need privileges on Windows\n");
+#else
+    QTemporaryDir tmp, outside;
+    const QString histPath = tmp.path() + "/history.json";
+    const QString victim = outside.path() + "/victim.txt";
+    {
+        QFile v(victim);
+        v.open(QIODevice::WriteOnly);
+        v.write("VICTIM_ORIGINAL\n");
+    }
+    EXPECT_TRUE("symlink planted at <history>.tmp",
+                QFile::link(victim, histPath + ".tmp") && QFileInfo(histPath + ".tmp").isSymLink());
+    AIPanel panel;
+    AIPanelTestAccess::setHistoryPath(&panel, histPath);
+    AIPanelTestAccess::chat(&panel).append(userMsg("link-q1"));
+    AIPanelTestAccess::saveNow(&panel);
+    QFile v(victim);
+    v.open(QIODevice::ReadOnly);
+    EXPECT_TRUE("the link's target is untouched", v.readAll() == QByteArray("VICTIM_ORIGINAL\n"));
+    QFile h(histPath);
+    h.open(QIODevice::ReadOnly);
+    EXPECT_TRUE("the history was still saved", h.readAll().contains("link-q1"));
+    EXPECT_TRUE("the history is a regular file", !QFileInfo(histPath).isSymLink());
+#endif
+}
+
 int main(int argc, char *argv[]) {
 
     // Force offscreen platform BEFORE QApplication construction so any
@@ -530,6 +561,7 @@ int main(int argc, char *argv[]) {
     testSaveReloadRoundTrip();
     testV1Migration();
     testGatedWriteBookkeeping();
+    testPlantedTmpSymlinkNotFollowed();
 
     std::printf("\n=== %d passed · %d failed ===\n", g_passed, g_failed);
     return (g_failed == 0) ? 0 : 1;

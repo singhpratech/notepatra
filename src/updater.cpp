@@ -258,8 +258,15 @@ QNetworkReply::NetworkError downloadTo(QNetworkAccessManager &nam,
 
     QNetworkReply *reply = nam.get(req);
 
+    // The names are fixed (<asset>.part, SHA256SUMS.<tag>) in the Downloads
+    // folder: never write through whatever is already there. A leftover file
+    // or a planted symlink is removed (a symlink itself, never its target),
+    // then the file is created exclusively, so a link that reappears in
+    // between fails the download instead of redirecting it.
+    if (QFileInfo(outPath).isSymLink() || QFileInfo::exists(outPath))
+        QFile::remove(outPath);
     QFile out(outPath);
-    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    if (!out.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
         reply->abort();
         reply->deleteLater();
         return QNetworkReply::ContentAccessDenied;

@@ -7016,37 +7016,22 @@ void MainWindow::saveSession() {
     session["tabs"] = tabs;
 
     QDir().mkpath(QFileInfo(sessionFilePath()).path());
-    // Atomic write — .tmp + rename, so a crash mid-write can never leave a
-    // truncated session.json (QSaveFile deliberately avoided, see
-    // notes_storage.cpp).
+    // Atomic write — a uniquely named temp beside session.json, renamed over
+    // it on commit, so a crash mid-write can never leave a truncated
+    // session.json and a failed write leaves the previous one in place.
+    // QSaveFile creates the temp exclusively: the old fixed
+    // `session.json.tmp` was opened with Truncate, so a symlink planted there
+    // was followed and its target overwritten with the session (which holds
+    // unsaved buffer text).
     const QString target = sessionFilePath();
-    const QString tmpPath = target + QStringLiteral(".tmp");
-    QFile tmp(tmpPath);
-    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
+    QSaveFile f(target);
+    if (!f.open(QIODevice::WriteOnly)) return;
     const QByteArray payload = QJsonDocument(session).toJson();
-    const bool wroteAll = tmp.write(payload) == payload.size();
-    tmp.close();
-    if (!wroteAll) { QFile::remove(tmpPath); return; }
-#ifdef Q_OS_WIN
-    // MoveFileExW(REPLACE_EXISTING) swaps atomically. The old remove-then-
-    // rename left a window with NO session.json on disk, and a rename
-    // failure after the remove deleted the only surviving copy. On failure
-    // keep the .tmp — it may be the freshest copy that exists.
-    if (!::MoveFileExW(
-            reinterpret_cast<const wchar_t *>(
-                QDir::toNativeSeparators(tmpPath).utf16()),
-            reinterpret_cast<const wchar_t *>(
-                QDir::toNativeSeparators(target).utf16()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    if (f.write(payload) != payload.size()) {
+        f.cancelWriting();
         return;
     }
-#else
-    if (std::rename(QFile::encodeName(tmpPath).constData(),
-                    QFile::encodeName(target).constData()) != 0) {
-        QFile::remove(tmpPath);
-        return;
-    }
-#endif
+    if (!f.commit()) return;
 
     // Only after a successful rename — a failed write leaves the flags set
     // so the next tick retries.
