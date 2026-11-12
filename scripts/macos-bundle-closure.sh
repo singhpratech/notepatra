@@ -5,6 +5,7 @@
 #
 #   bash scripts/macos-bundle-closure.sh <App.app>               # fix, then check
 #   bash scripts/macos-bundle-closure.sh <App.app> --check-only  # check only
+#   OTOOL= / INSTALL_NAME_TOOL= / CODESIGN= override the tools (default: PATH)
 #
 # Why this exists (v0.1.131): both macOS DMGs died at startup with
 #   Could not load the Qt platform plugin "cocoa"
@@ -241,7 +242,7 @@ np_rel() { printf '%s\n' "${1#"$NP_ROOT"/}"; }
 # parser no longer understands otool's output, and a silent pass would lie.
 np_load_commands() {
     local f="$1" raw parsed
-    raw=$(otool -l "$f") || np_die "otool -l failed on $(np_rel "$f")"
+    raw=$("$NP_OTOOL" -l "$f") || np_die "otool -l failed on $(np_rel "$f")"
     parsed=$(printf '%s\n' "$raw" | np_parse_load_commands | sort -u)
     case "$parsed" in
         *"DEP${NP_TAB}"*) ;;
@@ -380,7 +381,7 @@ np_bundle_dylib() {
     echo "  bundle: $leaf  (from $src)"
     cp "$src" "$dst" || np_die "cp $src -> $dst failed"
     chmod u+w "$dst" || np_die "chmod u+w $dst failed"
-    install_name_tool -id "@rpath/$leaf" "$dst" || np_die "install_name_tool -id failed on $dst"
+    "$NP_INSTALL_NAME_TOOL" -id "@rpath/$leaf" "$dst" || np_die "install_name_tool -id failed on $dst"
     np_mark_modified "$dst"
 }
 
@@ -402,7 +403,7 @@ np_bundle_framework() {
     cp -R "$src" "$NP_FW/$fwname" || np_die "cp -R $src failed"
     chmod -R u+w "$NP_FW/$fwname" || np_die "chmod -R u+w $NP_FW/$fwname failed"
     if [ -f "$NP_FW/$fwname/$inner" ]; then
-        install_name_tool -id "@rpath/$fwname/$inner" "$NP_FW/$fwname/$inner" ||
+        "$NP_INSTALL_NAME_TOOL" -id "@rpath/$fwname/$inner" "$NP_FW/$fwname/$inner" ||
             np_die "install_name_tool -id failed on $fwname/$inner"
         np_mark_modified "$NP_FW/$fwname/$inner"
     else
@@ -417,7 +418,7 @@ np_bundle_framework() {
 np_change() {
     local ref="$1" old="$2" new="$3" after
     chmod u+w "$ref" || np_die "chmod u+w $ref failed"
-    install_name_tool -change "$old" "$new" "$ref" || np_die "install_name_tool -change failed on $(np_rel "$ref")"
+    "$NP_INSTALL_NAME_TOOL" -change "$old" "$new" "$ref" || np_die "install_name_tool -change failed on $(np_rel "$ref")"
     after=$(np_load_commands "$ref") || exit 2
     if printf '%s\n' "$after" | grep -Fxq "DEP${NP_TAB}$old"; then
         np_die "install_name_tool -change left '$old' in $(np_rel "$ref") (silent no-op)"
@@ -547,7 +548,7 @@ np_resign_modified() {
     sort -u -o "$NP_TMP/modified" "$NP_TMP/modified"
     echo "=== ad-hoc re-sign of $(wc -l <"$NP_TMP/modified" | tr -d ' ') modified file(s) ==="
     while IFS= read -r f; do
-        codesign --force --sign - "$f" || np_die "codesign --force --sign - failed on $(np_rel "$f")"
+        "$NP_CODESIGN" --force --sign - "$f" || np_die "codesign --force --sign - failed on $(np_rel "$f")"
         echo "  signed: $(np_rel "$f")"
     done <"$NP_TMP/modified"
 }
@@ -627,11 +628,19 @@ np_main() {
     [ -n "$app" ] || np_die "usage: $0 <App.app> [--check-only]"
     [ -d "$app/Contents" ] || np_die "$app is not an app bundle (no Contents/)"
 
-    command -v otool >/dev/null ||
-        np_die "otool not found on PATH — this check needs macOS (Xcode command line tools); refusing to report a pass it could not compute"
+    # Tool overrides (like CC): OTOOL / INSTALL_NAME_TOOL / CODESIGN, default
+    # to the plain names on PATH. The self-test points OTOOL at a missing
+    # path to prove the "cannot run" exit on a Mac, where otool is in /usr/bin.
+    NP_OTOOL="${OTOOL:-otool}"
+    NP_INSTALL_NAME_TOOL="${INSTALL_NAME_TOOL:-install_name_tool}"
+    NP_CODESIGN="${CODESIGN:-codesign}"
+    command -v "$NP_OTOOL" >/dev/null ||
+        np_die "otool not found ('$NP_OTOOL'; set OTOOL or PATH) — this check needs macOS (Xcode command line tools); refusing to report a pass it could not compute"
     if [ "$check_only" = 0 ]; then
-        command -v install_name_tool >/dev/null || np_die "install_name_tool not found on PATH (fix mode)"
-        command -v codesign >/dev/null || np_die "codesign not found on PATH (fix mode)"
+        command -v "$NP_INSTALL_NAME_TOOL" >/dev/null ||
+            np_die "install_name_tool not found ('$NP_INSTALL_NAME_TOOL'; set INSTALL_NAME_TOOL or PATH) (fix mode)"
+        command -v "$NP_CODESIGN" >/dev/null ||
+            np_die "codesign not found ('$NP_CODESIGN'; set CODESIGN or PATH) (fix mode)"
     fi
 
     NP_ROOT=$(cd -P "$app" && pwd -P) || np_die "cannot resolve $app"

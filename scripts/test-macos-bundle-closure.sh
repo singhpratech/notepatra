@@ -22,8 +22,17 @@
 #      fails; an unfixable dep fails; a parser that sees no load commands
 #      fails; and an environment without otool FAILS instead of passing.
 #
+# Fixture rule (learned on the first macOS CI run): NO absolute path in a
+# fixture may exist on a real Mac. Fix mode rightly prefers a literal
+# /opt/homebrew/... path when it exists, so a fixture naming a real formula
+# (libpng) made the test copy the runner's REAL libpng into the fake bundle,
+# which the stub otool cannot parse. Absolute Homebrew refs therefore use
+# fixture-only formula/version names, and assert_no_live_paths fails the run
+# if any fixture path exists on the current machine.
+#
 # CLOSURE_SH=/path/to/script overrides the script under test.
 set -u
+unset OTOOL INSTALL_NAME_TOOL CODESIGN
 cd "$(dirname "$0")/.."
 CLOSURE_SH="${CLOSURE_SH:-$PWD/scripts/macos-bundle-closure.sh}"
 case "$CLOSURE_SH" in /*) ;; *) CLOSURE_SH="$PWD/$CLOSURE_SH" ;; esac
@@ -126,10 +135,10 @@ mk_brew() {
         "ID /opt/homebrew/opt/webp/lib/libsharpyuv.0.dylib" "DEP /usr/lib/libSystem.B.dylib"
     mkdir -p "$BREW/lib"
     ln -s ../Cellar/webp/1.5.0/lib/libsharpyuv.0.1.1.dylib "$BREW/lib/libsharpyuv.0.dylib"
-    mk_macho "$BREW/Cellar/libpng/1.6.44/lib/libpng16.16.dylib" \
-        "ID /opt/homebrew/opt/libpng/lib/libpng16.16.dylib" "DEP /usr/lib/libz.1.dylib" "DEP /usr/lib/libSystem.B.dylib"
-    mkdir -p "$BREW/opt/libpng/lib"
-    ln -s ../../../Cellar/libpng/1.6.44/lib/libpng16.16.dylib "$BREW/opt/libpng/lib/libpng16.16.dylib"
+    mk_macho "$BREW/Cellar/np-fixture-png/0.0.0/lib/libnpfixturepng16.16.dylib" \
+        "ID /opt/homebrew/opt/np-fixture-png/lib/libnpfixturepng16.16.dylib" "DEP /usr/lib/libz.1.dylib" "DEP /usr/lib/libSystem.B.dylib"
+    mkdir -p "$BREW/opt/np-fixture-png/lib"
+    ln -s ../../../Cellar/np-fixture-png/0.0.0/lib/libnpfixturepng16.16.dylib "$BREW/opt/np-fixture-png/lib/libnpfixturepng16.16.dylib"
     mk_macho "$BREW/Cellar/zstd/1.5.6/lib/libzstd.1.5.6.dylib" \
         "ID /opt/homebrew/opt/zstd/lib/libzstd.1.dylib" "DEP /usr/lib/libSystem.B.dylib"
     mkdir -p "$BREW/opt/zstd/lib"
@@ -155,7 +164,7 @@ mk_bundle() {
 PL
     printf '[Paths]\nPlugins = PlugIns\n' >"$C/Resources/qt.conf"
     mk_macho "$C/MacOS/Notepatra" "DYLD" "$fwrpath" "RPATH @executable_path" \
-        "RPATH /Users/runner/work/notepatra/notepatra/vendor/duckdb" \
+        "RPATH /Users/runner/work/np-fixture-ci/vendor/duckdb" \
         "DEP @rpath/QtCore.framework/Versions/5/QtCore" "DEP @rpath/libqscintilla2_qt5.15.dylib" \
         "DEP @rpath/libduckdb.dylib" "DEP /usr/lib/libc++.1.dylib" \
         "DEP /System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa"
@@ -182,8 +191,8 @@ PL
             "DEP @executable_path/../Frameworks/libpcre2-16.0.dylib" "DEP /usr/lib/libSystem.B.dylib"
         mk_macho "$FW/libpcre2-16.0.dylib" "ID @rpath/libpcre2-16.0.dylib" "DEP /usr/lib/libSystem.B.dylib"
         mk_macho "$FW/libfreetype.6.dylib" "ID @rpath/libfreetype.6.dylib" \
-            "DEP @loader_path/libbrotlidec.1.dylib" "DEP @rpath/libpng16.16.dylib" "DEP /usr/lib/libz.1.dylib"
-        mk_macho "$FW/libpng16.16.dylib" "ID @rpath/libpng16.16.dylib" "DEP /usr/lib/libSystem.B.dylib"
+            "DEP @loader_path/libbrotlidec.1.dylib" "DEP @rpath/libnpfixturepng16.16.dylib" "DEP /usr/lib/libz.1.dylib"
+        mk_macho "$FW/libnpfixturepng16.16.dylib" "ID @rpath/libnpfixturepng16.16.dylib" "DEP /usr/lib/libSystem.B.dylib"
         mk_macho "$FW/libbrotlidec.1.dylib" "ID @rpath/libbrotlidec.1.dylib" "DEP @rpath/libbrotlicommon.1.dylib" \
             "DEP /usr/lib/libSystem.B.dylib"
         mk_macho "$FW/libbrotlicommon.1.dylib" "ID @rpath/libbrotlicommon.1.dylib" "DEP /usr/lib/libSystem.B.dylib"
@@ -196,12 +205,12 @@ PL
             "DEP @rpath/QtCore.framework/Versions/5/QtCore" \
             "DEP @executable_path/../Frameworks/libpcre2-16.0.dylib" "DEP /usr/lib/libSystem.B.dylib"
         mk_macho "$FW/libfreetype.6.dylib" "ID @rpath/libfreetype.6.dylib" \
-            "DEP @loader_path/libbrotlidec.1.dylib" "DEP /opt/homebrew/opt/libpng/lib/libpng16.16.dylib" \
+            "DEP @loader_path/libbrotlidec.1.dylib" "DEP /opt/homebrew/opt/np-fixture-png/lib/libnpfixturepng16.16.dylib" \
             "DEP /usr/lib/libz.1.dylib"
         mk_macho "$FW/libbrotlidec.1.dylib" "ID @rpath/libbrotlidec.1.dylib" "DEP @rpath/libbrotlicommon.1.dylib" \
             "DEP /usr/lib/libSystem.B.dylib"
         mk_macho "$FW/libssl.3.dylib" "ID @rpath/libssl.3.dylib" \
-            "DEP /opt/homebrew/Cellar/openssl@3/3.5.9/lib/libcrypto.3.dylib" "DEP /usr/lib/libSystem.B.dylib"
+            "DEP /opt/homebrew/Cellar/openssl@3/0.0.0-npfixture/lib/libcrypto.3.dylib" "DEP /usr/lib/libSystem.B.dylib"
         # Homebrew-relocated relative ref that only works inside the Cellar.
         mk_macho "$FW/libtiff.6.dylib" "ID @rpath/libtiff.6.dylib" \
             "DEP @loader_path/../lib/libzstd.1.dylib" "DEP /usr/lib/libSystem.B.dylib"
@@ -217,6 +226,22 @@ run_closure() { # PATH_VALUE ARGS... -> sets OUT, RC
 }
 has() { printf '%s\n' "$OUT" | grep -Fxq -- "$1"; }
 count_unresolved() { printf '%s\n' "$OUT" | grep -c '^UNRESOLVED: '; }
+
+# assert_no_live_paths DIR... — every absolute non-system path written into a
+# fixture must be absent on THIS machine (see "Fixture rule" above).
+assert_no_live_paths() {
+    local p n=0 live=0
+    while IFS= read -r p; do
+        n=$((n + 1))
+        if [ -e "$p" ] || [ -L "$p" ]; then
+            bad "fixture path exists on this machine (would leak real files into the test): $p"
+            live=$((live + 1))
+        fi
+    done < <(LC_ALL=C find "$@" -type f -exec sed -n -E 's/^(DEP|WEAK|RPATH|ID) (\/.*)$/\2/p' {} + |
+        grep -vE '^/(usr/lib|System)/' | sort -u)
+    [ "$n" -gt 0 ] || bad "assert_no_live_paths found no absolute fixture paths (guard is vacuous)"
+    [ "$live" -eq 0 ] && ok "none of the $n absolute fixture paths exists on this machine"
+}
 
 mk_brew
 
@@ -344,8 +369,8 @@ for line in \
     "UNRESOLVED: @rpath/libsharpyuv.0.dylib  <- Contents/Frameworks/libwebp.7.dylib  [rpath-missing]" \
     "UNRESOLVED: @rpath/libsharpyuv.0.dylib  <- Contents/Frameworks/libwebpdemux.2.dylib  [rpath-missing]" \
     "UNRESOLVED: @rpath/libsharpyuv.0.dylib  <- Contents/Frameworks/libwebpmux.3.dylib  [rpath-missing]" \
-    "UNRESOLVED: /opt/homebrew/Cellar/openssl@3/3.5.9/lib/libcrypto.3.dylib  <- Contents/Frameworks/libssl.3.dylib  [homebrew]" \
-    "UNRESOLVED: /opt/homebrew/opt/libpng/lib/libpng16.16.dylib  <- Contents/Frameworks/libfreetype.6.dylib  [homebrew]" \
+    "UNRESOLVED: /opt/homebrew/Cellar/openssl@3/0.0.0-npfixture/lib/libcrypto.3.dylib  <- Contents/Frameworks/libssl.3.dylib  [homebrew]" \
+    "UNRESOLVED: /opt/homebrew/opt/np-fixture-png/lib/libnpfixturepng16.16.dylib  <- Contents/Frameworks/libfreetype.6.dylib  [homebrew]" \
     "UNRESOLVED: @executable_path/../Frameworks/libpcre2-16.0.dylib  <- Contents/Frameworks/QtGui.framework/Versions/5/QtGui  [relative-missing]" \
     "UNRESOLVED: @loader_path/../lib/libzstd.1.dylib  <- Contents/Frameworks/libtiff.6.dylib  [relative-missing]"; do
     has "$line" && ok "reported: ${line#UNRESOLVED: }" || bad "missing report line: $line"
@@ -362,7 +387,7 @@ echo "$OUT" | sed 's/^/    | /'
 [ "$RC" -eq 0 ] && ok "fix mode exits 0" || bad "fix mode rc=$RC (want 0)"
 printf '%s\n' "$OUT" | tail -n 1 | grep -q '^closure OK: ' && ok "fix mode ends with a green closure check" || bad "fix mode did not end with 'closure OK'"
 FWB="$B/Contents/Frameworks"
-for leaf in libbrotlicommon.1.dylib libsharpyuv.0.dylib libpng16.16.dylib libpcre2-16.0.dylib libzstd.1.dylib; do
+for leaf in libbrotlicommon.1.dylib libsharpyuv.0.dylib libnpfixturepng16.16.dylib libpcre2-16.0.dylib libzstd.1.dylib; do
     if [ -f "$FWB/$leaf" ] && [ ! -L "$FWB/$leaf" ] && grep -qxF "ID @rpath/$leaf" "$FWB/$leaf"; then
         ok "bundled $leaf as a real file with id @rpath/$leaf"
     else
@@ -374,8 +399,8 @@ grep -qxF "X marker cellar-brotli-1.1.0" "$FWB/libbrotlicommon.1.dylib" &&
     ok "libbrotlicommon came from the Cellar file behind the opt/ symlink" || bad "libbrotlicommon content not from Homebrew Cellar"
 grep -qxF "DEP @rpath/libcrypto.3.dylib" "$FWB/libssl.3.dylib" && ! grep -q Cellar "$FWB/libssl.3.dylib" &&
     ok "libssl -> @rpath/libcrypto.3.dylib (Cellar path gone)" || bad "libssl still references the Cellar libcrypto"
-grep -qxF "DEP @rpath/libpng16.16.dylib" "$FWB/libfreetype.6.dylib" &&
-    ok "libfreetype -> @rpath/libpng16.16.dylib" || bad "libfreetype libpng ref not rewritten"
+grep -qxF "DEP @rpath/libnpfixturepng16.16.dylib" "$FWB/libfreetype.6.dylib" &&
+    ok "libfreetype -> @rpath/libnpfixturepng16.16.dylib (copied from the fake prefix)" || bad "libfreetype png ref not rewritten"
 grep -qxF "DEP @rpath/libzstd.1.dylib" "$FWB/libtiff.6.dylib" &&
     ok "libtiff @loader_path/../lib/libzstd -> @rpath/libzstd.1.dylib" || bad "libtiff zstd ref not rewritten"
 grep -qxF "DEP @executable_path/../Frameworks/libpcre2-16.0.dylib" "$FWB/QtGui.framework/Versions/5/QtGui" &&
@@ -430,16 +455,28 @@ run_closure "$PATH_STUB" "$VB" --check-only
 [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -q 'reported no LC_LOAD_DYLIB' &&
     ok "a Mach-O with zero parsed deps aborts (parser vacuity guard)" || bad "vacuity guard: rc=$RC"
 
-if PATH="$PATH_NOOTOOL" command -v otool >/dev/null; then
-    bad "cannot build a no-otool PATH on this machine (otool found in /usr/bin or /bin)"
-else
+# Missing tools: OTOOL / INSTALL_NAME_TOOL point at a path that cannot exist
+# (on a Mac otool is in /usr/bin, so hiding it via PATH is impossible).
+GONE="$WORK/no-such-dir/otool"
+OUT=$(OTOOL="$GONE" PATH="$PATH_STUB" bash "$CLOSURE_SH" "$CB" --check-only 2>&1)
+RC=$?
+[ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -q 'otool not found' && ! printf '%s\n' "$OUT" | grep -q 'closure OK' &&
+    ok "otool missing: check-only exits 2 instead of passing" || bad "otool missing: rc=$RC out=$OUT"
+OUT=$(OTOOL="$GONE" PATH="$PATH_STUB" bash "$CLOSURE_SH" "$B" 2>&1)
+RC=$?
+[ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -q 'otool not found' &&
+    ok "otool missing: fix mode exits 2" || bad "otool missing fix: rc=$RC"
+OUT=$(INSTALL_NAME_TOOL="$WORK/no-such-dir/install_name_tool" PATH="$PATH_STUB" bash "$CLOSURE_SH" "$B" 2>&1)
+RC=$?
+[ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -q 'install_name_tool not found' &&
+    ok "install_name_tool missing: fix mode exits 2" || bad "install_name_tool missing: rc=$RC"
+if ! PATH="$PATH_NOOTOOL" command -v otool >/dev/null; then
     run_closure "$PATH_NOOTOOL" "$CB" --check-only
-    [ "$RC" -ne 0 ] && printf '%s\n' "$OUT" | grep -q 'otool not found' && ! printf '%s\n' "$OUT" | grep -q 'closure OK' &&
-        ok "no otool on PATH: check-only fails (rc=$RC) instead of passing" || bad "no-otool: rc=$RC out=$OUT"
-    run_closure "$PATH_NOOTOOL" "$B"
-    [ "$RC" -ne 0 ] && printf '%s\n' "$OUT" | grep -q 'otool not found' &&
-        ok "no otool on PATH: fix mode fails (rc=$RC)" || bad "no-otool fix: rc=$RC"
+    [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -q 'otool not found' &&
+        ok "no otool on PATH (Linux): check-only exits 2" || bad "no-otool PATH: rc=$RC"
 fi
+
+assert_no_live_paths "$WORK/broken" "$WORK/clean" "$WORK/norpath" "$WORK/unfixable" "$WORK/vacuous" "$WORK/classify"
 
 run_closure "$PATH_STUB" "$WORK/does-not-exist.app" --check-only
 [ "$RC" -eq 2 ] && ok "non-bundle path fails (rc=2)" || bad "non-bundle path rc=$RC"
