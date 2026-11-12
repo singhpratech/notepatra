@@ -21,9 +21,9 @@
 #     no exit-0-after-forward, no stale socket from a previous run;
 #   - the fresh HOME has no session.json and no crash flag, so no restore and
 #     no "closed unexpectedly" notice (notices are non-modal anyway);
-#   - the silent update check fires 3 s after start. It is pre-disabled below
-#     via `defaults write` (best-effort: QSettings uses CFPreferences, which
-#     may not follow $HOME; if the write misses, the check runs silently, is
+#   - the silent update check fires 3 s after start. On CI (CI=true) it is
+#     pre-disabled below via `defaults write` (best-effort: QSettings uses
+#     CFPreferences, which may not follow $HOME; if the write misses, the check runs silently, is
 #     capped at 8 s by the app, and cannot open a dialog for a build whose
 #     version is not older than the latest release).
 #
@@ -73,8 +73,12 @@ mkdir -p "$smoke_home"
 echo "launch smoke: $bin (${secs}s, QT_DEBUG_PLUGINS=1, HOME=$smoke_home)"
 echo "session manager: $(launchctl managername 2>&1)  (Aqua = GUI session)"
 
-# Best-effort, see header. Failure here is not a test failure.
-if ! HOME="$smoke_home" defaults write com.notepatra.Notepatra updates.checkOnStartup -bool false; then
+# Best-effort, see header. Failure here is not a test failure. CI only: a HOME
+# override does not isolate CFPreferences, so on a developer Mac this write
+# would change the real user's setting.
+if [ "${CI:-}" != true ]; then
+    echo "note: not on CI (CI!=true); leaving preferences untouched, the startup update check runs silently"
+elif ! HOME="$smoke_home" defaults write com.notepatra.Notepatra updates.checkOnStartup -bool false; then
     echo "note: could not pre-disable the startup update check; it will run silently"
 fi
 

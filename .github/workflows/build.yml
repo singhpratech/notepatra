@@ -215,6 +215,72 @@ jobs:
           name: notepatra-linux-x64-appimage
           path: Notepatra-*x86_64.AppImage
 
+      # v0.1.133 — start every PACKAGED Linux artifact the way a user gets it,
+      # on the real xcb platform (private Xvfb), plus ldd over the package.
+      # v0.1.131's DMGs passed CI and could not start: CI only ran build-tree
+      # binaries. Checks and exit codes: scripts/linux-launch-smoke.sh.
+      # After the uploads so a red run still leaves the artifacts to inspect.
+      - name: Install launch smoke deps
+        timeout-minutes: 5
+        run: sudo apt-get install -y xvfb cpio
+
+      - name: Self-test linux-launch-smoke.sh
+        timeout-minutes: 5
+        run: bash scripts/test-linux-launch-smoke.sh
+
+      - name: Launch smoke (Lite tarball, packed as the release job packs it)
+        timeout-minutes: 3
+        run: |
+          T=$(mktemp -d)
+          tar czf "$T/notepatra-linux-x64.tar.gz" -C build notepatra
+          mkdir "$T/x" && tar xzf "$T/notepatra-linux-x64.tar.gz" -C "$T/x"
+          bash scripts/linux-launch-smoke.sh "$T/x/notepatra" 8
+
+      - name: Launch smoke (Full tarball, notepatra + libduckdb.so)
+        timeout-minutes: 3
+        run: |
+          # A missing libduckdb.so would still resolve through the build-tree
+          # RUNPATH here; the script fails any lib resolved outside the package.
+          T=$(mktemp -d)
+          tar czf "$T/notepatra-linux-x64-full.tar.gz" -C build-full notepatra libduckdb.so
+          mkdir "$T/x" && tar xzf "$T/notepatra-linux-x64-full.tar.gz" -C "$T/x"
+          bash scripts/linux-launch-smoke.sh "$T/x/notepatra" 8
+
+      - name: Launch smoke (.deb regular + local-ai, apt-installed in a clean ubuntu:24.04 container)
+        timeout-minutes: 10
+        run: |
+          # A clean container, not the runner: the runner already has every Qt
+          # package, so only a fresh install proves Depends is complete
+          # (--no-install-recommends: Depends alone must be enough).
+          for DEB in notepatra_*_amd64.deb notepatra-local-ai_*_amd64.deb; do
+            [ -f "$DEB" ] || { echo "::error::missing $DEB"; exit 1; }
+            docker run --rm -v "$PWD:/w:ro" ubuntu:24.04 bash -c '
+              set -e
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends "/w/$1" xvfb >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }
+              bash /w/scripts/linux-launch-smoke.sh /usr/bin/notepatra 8' _ "$DEB"
+          done
+
+      - name: Launch smoke (.rpm, extracted with rpm2cpio)
+        timeout-minutes: 3
+        run: |
+          # Extraction on the Ubuntu runner: proves the payload layout, the
+          # bundled libs and the $ORIGIN/lib RUNPATH start against this
+          # runner's Qt. Does NOT prove the Requires resolve on Fedora/RHEL.
+          RPM=$(ls notepatra-*x86_64.rpm)
+          [ -f "$RPM" ] || { echo "::error::expected exactly one x86_64 .rpm"; exit 1; }
+          R=$(mktemp -d)
+          (cd "$R" && rpm2cpio "$GITHUB_WORKSPACE/$RPM" | cpio -idm --quiet)
+          bash scripts/linux-launch-smoke.sh "$R/opt/notepatra/notepatra" 8
+
+      - name: Launch smoke (AppImage, --appimage-extract-and-run)
+        timeout-minutes: 3
+        run: |
+          APPIMAGE=$(ls Notepatra-*x86_64.AppImage)
+          [ -f "$APPIMAGE" ] || { echo "::error::expected exactly one x86_64 AppImage"; exit 1; }
+          bash scripts/linux-launch-smoke.sh "$APPIMAGE" 8
+
   build-linux-arm:
     runs-on: ubuntu-24.04-arm
     # Fail fast instead of burning the 360-minute default on a wedge.
@@ -370,6 +436,51 @@ jobs:
         with:
           name: notepatra-linux-arm64-rpm
           path: notepatra-*aarch64.rpm
+
+      # v0.1.133 — same packaged-artifact launch gates as the x64 job (no
+      # AppImage on ARM). Checks and exit codes: scripts/linux-launch-smoke.sh.
+      - name: Install launch smoke deps
+        timeout-minutes: 5
+        run: sudo apt-get install -y xvfb cpio
+
+      - name: Launch smoke (Lite tarball, packed as the release job packs it)
+        timeout-minutes: 3
+        run: |
+          T=$(mktemp -d)
+          tar czf "$T/notepatra-linux-arm64.tar.gz" -C build notepatra
+          mkdir "$T/x" && tar xzf "$T/notepatra-linux-arm64.tar.gz" -C "$T/x"
+          bash scripts/linux-launch-smoke.sh "$T/x/notepatra" 8
+
+      - name: Launch smoke (Full tarball, notepatra + libduckdb.so)
+        timeout-minutes: 3
+        run: |
+          T=$(mktemp -d)
+          tar czf "$T/notepatra-linux-arm64-full.tar.gz" -C build-full notepatra libduckdb.so
+          mkdir "$T/x" && tar xzf "$T/notepatra-linux-arm64-full.tar.gz" -C "$T/x"
+          bash scripts/linux-launch-smoke.sh "$T/x/notepatra" 8
+
+      - name: Launch smoke (.deb regular + local-ai, apt-installed in a clean ubuntu:24.04 container)
+        timeout-minutes: 10
+        run: |
+          for DEB in notepatra_*_arm64.deb notepatra-local-ai_*_arm64.deb; do
+            [ -f "$DEB" ] || { echo "::error::missing $DEB"; exit 1; }
+            docker run --rm -v "$PWD:/w:ro" ubuntu:24.04 bash -c '
+              set -e
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends "/w/$1" xvfb >/tmp/apt.log 2>&1 || { cat /tmp/apt.log; exit 1; }
+              bash /w/scripts/linux-launch-smoke.sh /usr/bin/notepatra 8' _ "$DEB"
+          done
+
+      - name: Launch smoke (.rpm, extracted with rpm2cpio)
+        timeout-minutes: 3
+        run: |
+          # Extraction only: does NOT prove the Requires resolve on Fedora/RHEL.
+          RPM=$(ls notepatra-*aarch64.rpm)
+          [ -f "$RPM" ] || { echo "::error::expected exactly one aarch64 .rpm"; exit 1; }
+          R=$(mktemp -d)
+          (cd "$R" && rpm2cpio "$GITHUB_WORKSPACE/$RPM" | cpio -idm --quiet)
+          bash scripts/linux-launch-smoke.sh "$R/opt/notepatra/notepatra" 8
 
   # Note: Intel Mac (macos-13) build was removed — Apple stopped selling Intel Macs in 2023,
   # and the macos-13 free runner has been unreliable. Apple Silicon build covers all current
@@ -1918,6 +2029,28 @@ jobs:
               default     { Write-Host "::error::Unknown exit code $code" }
             }
             exit 1
+          }
+
+      # v0.1.133 — launch the portable zips the way a user gets them: zip the
+      # bundle dir as the release job does, extract to a temp dir, start the
+      # real GUI (windows platform plugin) for 8 s with isolated APPDATA /
+      # USERPROFILE, then kill it. Checks: scripts/windows-launch-smoke.ps1.
+      # The MSI and NSIS installers are not launch-tested (they wrap the same
+      # bundle; a silent install/uninstall on the runner was judged not worth
+      # adding blind).
+      - name: Launch smoke (portable zips, extracted)
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $bundles = @('notepatra-win')
+          if (Test-Path notepatra-win-full) { $bundles += 'notepatra-win-full' }
+          foreach ($b in $bundles) {
+            $t = Join-Path $env:RUNNER_TEMP "launch-$b"
+            New-Item -ItemType Directory -Force -Path $t | Out-Null
+            Compress-Archive -Path "$b\*" -DestinationPath "$t\$b.zip" -Force
+            Expand-Archive -Path "$t\$b.zip" -DestinationPath "$t\x" -Force
+            pwsh -NoProfile -File scripts/windows-launch-smoke.ps1 -Exe "$t\x\notepatra.exe" -Seconds 8
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::launch smoke failed for $b"; exit 1 }
           }
 
       - name: Build and run regression suite

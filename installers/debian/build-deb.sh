@@ -180,7 +180,7 @@ Installed-Size: $INSTALLED_SIZE
 Provides: notepatra-editor
 Conflicts: $CONFLICTS_WITH
 Replaces: $CONFLICTS_WITH
-Depends: libqt5core5a (>= 5.12), libqt5gui5 (>= 5.12), libqt5widgets5 (>= 5.12), libqt5network5 (>= 5.12), libqt5printsupport5 (>= 5.12), libqt5sql5 (>= 5.12), libqt5sql5-sqlite (>= 5.12), libqt5concurrent5 (>= 5.12), libqt5charts5 (>= 5.12), libstdc++6, libc6
+Depends: libqt5core5a (>= 5.12), libqt5gui5 (>= 5.12), libqt5widgets5 (>= 5.12), libqt5network5 (>= 5.12), libqt5printsupport5 (>= 5.12), libqt5sql5 (>= 5.12), libqt5sql5-sqlite (>= 5.12), libqt5concurrent5 (>= 5.12), libqt5charts5 (>= 5.12), libqt5svg5 (>= 5.12), libstdc++6, libc6
 Recommends: libqt5webengine5, libqt5webenginewidgets5
 Suggests: ollama
 Homepage: https://notepatra.org
