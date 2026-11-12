@@ -17,6 +17,7 @@
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QTimer>
+#include <QJsonObject>
 #include <QWidget>
 
 class QNetworkReply;
@@ -45,6 +46,27 @@ public:
     bool sendHttpRequest(const QString &fileText, int line, const QString &filePath);
 
     bool importCurl(const QString &command);
+
+    // v0.1.133 (MCP rest_request). The request exactly as Send would resolve
+    // it now: same environment choice, same variable resolver, same URL rules.
+    // A non-empty error means Send would refuse it.
+    struct Resolved {
+        QString method, url, body, name, error;
+        HttpFile::HeaderList headers;
+    };
+    // fileText + 0-based line names a .http request; otherwise method/url/
+    // headersText/body are the request as typed.
+    static Resolved resolve(const QString &fileText, int line, const QString &filePath,
+                            const QString &method, const QString &url,
+                            const QString &headersText, const QString &body,
+                            const QString &historyPath = QString());
+    // Fills the panel and presses Send; false + *err when Send refused.
+    bool sendForMcp(const QString &fileText, int line, const QString &filePath,
+                    const QString &method, const QString &url,
+                    const QString &headersText, const QString &body, QString *err);
+    // The last response for a caller that cannot see the panel: status,
+    // headers, body capped at bodyCap bytes (binary bodies summarised).
+    QJsonObject lastResponseJson(int bodyCap) const;
     QString currentAsCurl() const;
     bool isBusy() const { return !m_reply.isNull(); }
 
@@ -154,6 +176,12 @@ private:
     bool m_haveResponse = false;
     bool m_noteWarning = false;
     QString m_badgeRole = QStringLiteral("muted");
+
+    // Last outcome for lastResponseJson / sendForMcp.
+    int m_respStatus = 0;
+    qint64 m_respMs = 0;
+    QString m_respReason, m_respOutcome, m_lastRefusal;
+    QStringList m_respHeaderLines, m_respNotes;
 
     // Request being sent, as typed (unexpanded) for the history entry.
     QString m_sentMethod, m_sentUrl, m_sentHeaders, m_sentBody;

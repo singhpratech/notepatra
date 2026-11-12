@@ -17,6 +17,7 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QLocale>
 #include <QMimeDatabase>
@@ -463,6 +464,7 @@ void RestClient::setNote(const QString &text, bool warning) {
 }
 
 void RestClient::refuse(const QString &badge, const QString &detail) {
+    m_lastRefusal = detail.isEmpty() ? badge : badge + QStringLiteral(": ") + detail;
     setBadge(badge, QStringLiteral("error"));
     setNote(detail, true);
 }
@@ -557,6 +559,137 @@ bool RestClient::sendHttpRequest(const QString &fileText, int line, const QStrin
     fillFromRequest(r.method, r.url, HttpFile::headersToText(r.headers), r.body);
     send();
     return true;
+}
+
+// ─── MCP (rest_request) ─────────────────────────────────────────────────
+
+RestClient::Resolved RestClient::resolve(const QString &fileText, int line,
+                                         const QString &filePath, const QString &method,
+                                         const QString &url, const QString &headersText,
+                                         const QString &body, const QString &historyPath) {
+    Resolved out;
+    QString rawMethod = method, rawUrl = url.trimmed(), rawHeaders = headersText,
+            rawBody = body.trimmed();
+    QList<QPair<QString, QString>> fileVars;
+    if (!fileText.isEmpty()) {
+        const HttpFile::Document doc = HttpFile::parse(fileText);
+        const int idx = doc.requestAtLine(line);
+        if (idx < 0) {
+            out.error = tr("There is no request at line %1 (put the line inside a request "
+                           "block between ### lines)").arg(line + 1);
+            return out;
+        }
+        const HttpFile::Request &r = doc.requests[idx];
+        rawMethod = r.method;
+        rawUrl = r.url.trimmed();
+        rawHeaders = HttpFile::headersToText(r.headers);
+        rawBody = r.body.trimmed();
+        fileVars = doc.variables;
+        out.name = r.name;
+    }
+    out.method = rawMethod.trimmed().toUpper();
+    if (rawUrl.isEmpty()) {
+        out.error = tr("The request has no URL");
+        return out;
+    }
+    if (RestHistory::containsRedacted(rawUrl) || RestHistory::containsRedacted(rawHeaders)) {
+        out.error = tr("The URL or headers still contain <redacted> values");
+        return out;
+    }
+    if (rawBody.startsWith(QLatin1String("< "))) {
+        out.error = tr("A body read from a file is not supported");
+        return out;
+    }
+    // The environment Send would pick: the one remembered for this folder.
+    const QString dir = filePath.isEmpty() ? QString() : QFileInfo(filePath).absolutePath();
+    HttpFile::Environments envs;
+    QString envName;
+    if (!dir.isEmpty()) {
+        envs = HttpFile::loadEnvironments(dir);
+        const QString hp = historyPath.isEmpty()
+                               ? Config::appConfigDir() + QStringLiteral("/rest-client.json")
+                               : historyPath;
+        envName = RestHistory::environmentFor(hp, dir);
+        if (!envs.names.contains(envName)) envName.clear();
+    }
+    const HttpFile::Resolver resolver(envs.variablesFor(envName), fileVars);
+    QStringList undefined;
+    auto take = [&](const HttpFile::ResolveResult &r) {
+        for (const QString &n : r.undefined + r.cycles)
+            if (!undefined.contains(n)) undefined << n;
+        return r.text;
+    };
+    QString resolvedUrl = take(resolver.resolve(rawUrl));
+    for (const auto &h : HttpFile::headersFromText(rawHeaders))
+        out.headers.append({take(resolver.resolve(h.first)), take(resolver.resolve(h.second))});
+    out.body = take(resolver.resolve(rawBody));
+    if (!undefined.isEmpty()) {
+        QStringList names;
+        for (const QString &n : undefined) names << QStringLiteral("{{%1}}").arg(n);
+        out.error = tr("Undefined variable(s) %1: define them with @name = value in the .http "
+                       "file or in http-client.env.json next to it")
+                        .arg(names.join(QStringLiteral(", ")));
+        return out;
+    }
+    if (!resolvedUrl.contains(QLatin1String("://"))) resolvedUrl.prepend(QStringLiteral("https://"));
+    out.url = resolvedUrl;
+    return out;
+}
+
+bool RestClient::sendForMcp(const QString &fileText, int line, const QString &filePath,
+                            const QString &method, const QString &url,
+                            const QString &headersText, const QString &body, QString *err) {
+    if (isBusy()) {
+        if (err) *err = tr("the REST client is already sending a request");
+        return false;
+    }
+    m_lastRefusal.clear();
+    if (!fileText.isEmpty()) {
+        sendHttpRequest(fileText, line, filePath);
+    } else {
+        setContext(Context());
+        fillFromRequest(method, url, headersText, body);
+        send();
+    }
+    if (!isBusy()) {
+        if (err)
+            *err = m_lastRefusal.isEmpty() ? tr("the REST client did not send the request")
+                                           : m_lastRefusal;
+        return false;
+    }
+    return true;
+}
+
+QJsonObject RestClient::lastResponseJson(int bodyCap) const {
+    QJsonObject o;
+    o[QStringLiteral("status")] = m_respStatus;
+    o[QStringLiteral("time_ms")] = double(m_respMs);
+    o[QStringLiteral("url")] = m_respUrl;
+    if (m_respStatus == 0) {
+        o[QStringLiteral("error")] = m_respOutcome.isEmpty() ? tr("No response") : m_respOutcome;
+    } else {
+        o[QStringLiteral("reason")] = m_respReason;
+        QJsonArray headers;
+        for (int i = 1; i < m_respHeaderLines.size(); ++i) headers.append(m_respHeaderLines.at(i));
+        o[QStringLiteral("headers")] = headers;
+        o[QStringLiteral("content_type")] = m_respContentType;
+        o[QStringLiteral("size")] = double(m_respBytes.size());
+        if (isBinaryResponse(m_respContentType, m_respBytes)) {
+            o[QStringLiteral("binary")] = true;
+            o[QStringLiteral("body")] =
+                tr("(binary response, %1 bytes; not returned)").arg(m_respBytes.size());
+            o[QStringLiteral("truncated")] = false;
+        } else {
+            o[QStringLiteral("binary")] = false;
+            const bool cut = m_respBytes.size() > bodyCap;
+            o[QStringLiteral("body")] = QString::fromUtf8(cut ? m_respBytes.left(bodyCap)
+                                                               : m_respBytes);
+            o[QStringLiteral("truncated")] = cut;
+        }
+    }
+    if (!m_respNotes.isEmpty())
+        o[QStringLiteral("notes")] = QJsonArray::fromStringList(m_respNotes);
+    return o;
 }
 
 // ─── Sending ────────────────────────────────────────────────────────────
@@ -731,6 +864,11 @@ void RestClient::onReplyFinished(QNetworkReply *reply) {
     m_haveResponse = status > 0;
 
     const qint64 bytes = m_respBytes.size();
+    m_respStatus = status;
+    m_respReason = reason;
+    m_respMs = ms;
+    m_respOutcome = outcome;
+    m_respHeaderLines = headerLines;
     QStringList notes;
     if (status > 0) {
         const QString role = status < 300 ? QStringLiteral("success")
@@ -769,6 +907,7 @@ void RestClient::onReplyFinished(QNetworkReply *reply) {
                      .arg(sizeText(kRenderCap), sizeText(bytes));
     }
     setNote(notes.join(QLatin1Char('\n')), !notes.isEmpty() && status == 0);
+    m_respNotes = notes;
 
     m_sendBtn->setEnabled(true);
     m_cancelBtn->setEnabled(false);
