@@ -6,6 +6,7 @@
 #include "ai_context.h"
 #include "ai_intent.h"
 #include "ai_systemprompt.h"
+#include "path_denylist.h"
 #include "ai_tools.h"
 #include "chartrender.h"
 #include "charts/vega_chart_renderer.h"
@@ -7789,6 +7790,20 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
             } else {
                 failures << pair.first + " (refused: non-absolute path, "
                             + errorKind + ")";
+                continue;
+            }
+        }
+
+        // Re-check the write deny-list at Apply time (path and symlink target).
+        {
+            const QString clean = QDir::cleanPath(absPath);
+            const QString real = QFileInfo(clean).canonicalFilePath();
+            auto denied = [](const QString &p) {
+                return !p.isEmpty() &&
+                       (AiTools::isHardDenied(p) || PathDenylist::isWriteDangerous(p));
+            };
+            if (denied(clean) || denied(real)) {
+                failures << pair.first + " (refused: protected path)";
                 continue;
             }
         }
