@@ -357,11 +357,11 @@
       <tr><td><code>list_recent_files</code></td><td>List recently opened file paths.</td></tr>
       <tr><td><code>find_in_tab</code></td><td>Find text inside one open tab (default: the active tab), selected by <code>tab_id</code>, <code>tab_index</code>, or title — a literal substring, or a regular expression with <code>{regex: true}</code>.</td></tr>
       <tr><td><code>search_project</code></td><td>Search all open tabs plus files under the workspace folder, case-insensitive (capped at 200 matches) — a literal substring, or a regular expression with <code>{regex: true}</code>. Reports <code>workspace_searched</code> and <code>scope</code>, so a tabs-only search can never pass for a project-wide one.</td></tr>
-      <tr><td><code>list_notes</code></td><td>List Noter notes with title, file name, and last-modified time.</td></tr>
+      <tr><td><code>list_notes</code></td><td>List Noter notes with title, file name, and last-modified time; <code>include_trash: true</code> adds the notes in the Noter Trash.</td></tr>
       <tr><td><code>read_note</code></td><td>Read one Noter note by its file path.</td></tr>
-      <tr><td><code>list_reminders</code></td><td>List your Noter reminders with note title, due time, and bucket (Overdue / Today / This week / Later).</td></tr>
+      <tr><td><code>list_reminders</code></td><td>List your Noter reminders with id, note title, due time, and bucket (Overdue / Today / This week / Later).</td></tr>
       <tr><td><code>git_status</code></td><td>Read-only <code>git status</code> for the workspace repository.</td></tr>
-      <tr><td><code>git_diff</code></td><td>Read-only <code>git diff</code>, optionally scoped to one path.</td></tr>
+      <tr><td><code>git_diff</code></td><td>Read-only <code>git diff</code>, optionally scoped to one path; <code>staged: true</code> shows what is staged for the next commit.</td></tr>
       <tr><td><code>git_log</code></td><td>Read-only <code>git log</code> (recent commits; default 20, capped at 100).</td></tr>
       <tr><td><code>git_show</code></td><td>Read-only <code>git show</code> for a commit or ref.</td></tr>
       <tr><td><code>git_branch</code></td><td>Read-only list of branches in the workspace repository.</td></tr>

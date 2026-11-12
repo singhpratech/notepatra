@@ -514,7 +514,7 @@ fn base_definitions() -> Value {
         // ── v0.1.119 read tier ──────────────────────────────────────────
         {
             "name": "list_reminders",
-            "description": "List the user's Noter reminders, each tagged with a time bucket (Overdue, Today, This week, or Later), the note file it is bound to, and its due time. Use to see what the user has scheduled before acting on it.",
+            "description": "List the user's Noter reminders, each with its id (for delete_reminder / snooze_reminder / dismiss_reminder), a time bucket (Overdue, Today, This week, or Later), the note file it is bound to, and its due time. Use to see what the user has scheduled before acting on it.",
             "inputSchema": no_args_schema()
         },
         {

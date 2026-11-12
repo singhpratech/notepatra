@@ -4680,10 +4680,16 @@ void McpBridge::verbGitWrite(QLocalSocket *client, int id, const QJsonObject &ar
                 .arg(sanitizeForCard(branch), shownRepo).arg(staged.size());
         const QString preview = QStringLiteral("Message:\n%1\n\nStaged files:\n%2")
                                     .arg(sanitizeMultiline(msg), bulletList(staged));
-        enqueueApprovalEx(client, id, desc, preview, o,
-                          run(QJsonObject{{QStringLiteral("message"), msg},
-                                          {QStringLiteral("expect_staged"),
-                                           QJsonArray::fromStringList(staged)}}));
+        const QJsonObject a{{QStringLiteral("message"), msg},
+                            {QStringLiteral("expect_staged"), QJsonArray::fromStringList(staged)}};
+        // Hooks can take a while: the commit answers asynchronously when it can.
+        if (m_host.gitAsync)
+            enqueueApprovalEx(client, id, desc, preview, o, nullptr,
+                              [this, a](McpEditorHost::Done done) {
+                                  m_host.gitAsync(QStringLiteral("git_commit"), a, done);
+                              });
+        else
+            enqueueApprovalEx(client, id, desc, preview, o, run(a));
         return;
     }
 

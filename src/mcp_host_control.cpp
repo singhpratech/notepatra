@@ -213,28 +213,6 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
                      QStringLiteral("git checkout --")).ok)
                 return out;
             out[QStringLiteral("discarded")] = QJsonArray::fromStringList(paths);
-        } else if (op == QLatin1String("git_commit")) {
-            // The files on the card are the files committed, or nothing is.
-            const QJsonObject ctx = GitWrite::context(root, err);
-            if (!err->isEmpty()) return out;
-            QStringList now = strings(ctx.value(QLatin1String("staged")));
-            QStringList want = strings(a.value(QLatin1String("expect_staged")));
-            now.sort();
-            want.sort();
-            if (now != want) {
-                *err = QStringLiteral("the staged files changed after the approval card was "
-                                      "shown; nothing was committed");
-                return out;
-            }
-            if (!git({QStringLiteral("commit"), QStringLiteral("-m"),
-                      a.value(QLatin1String("message")).toString()},
-                     QStringLiteral("git commit"), 120000).ok)
-                return out;
-            const GitWrite::Result h = GitWrite::run(
-                root, {QStringLiteral("rev-parse"), QStringLiteral("--short"), QStringLiteral("HEAD")});
-            out[QStringLiteral("commit")] = h.out.trimmed();
-            out[QStringLiteral("branch")] = ctx.value(QLatin1String("branch"));
-            out[QStringLiteral("files")] = QJsonArray::fromStringList(want);
         } else if (op == QLatin1String("git_branch_create")) {
             const QString name = a.value(QLatin1String("name")).toString();
             if (!git({QStringLiteral("check-ref-format"), QStringLiteral("--branch"), name},
@@ -378,6 +356,39 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
         const QJsonObject ctx = root.isEmpty() ? QJsonObject() : GitWrite::context(root, &err);
         if (!err.isEmpty()) {
             done(QJsonObject(), err);
+            return;
+        }
+        if (op == QLatin1String("git_commit")) {
+            // The files on the card are the files committed, or nothing is.
+            QStringList now = strings(ctx.value(QLatin1String("staged")));
+            QStringList want = strings(a.value(QLatin1String("expect_staged")));
+            now.sort();
+            want.sort();
+            if (now != want) {
+                done(QJsonObject(), QStringLiteral("the staged files changed after the approval "
+                                                   "card was shown; nothing was committed"));
+                return;
+            }
+            const QString branch = ctx.value(QLatin1String("branch")).toString();
+            // Hooks run normally; their failure text comes back as the error.
+            GitWrite::runAsync(this, root,
+                               {QStringLiteral("commit"), QStringLiteral("-m"),
+                                a.value(QLatin1String("message")).toString()},
+                               120000, [done, root, branch, want, refreshGit](const GitWrite::Result &r) {
+                                   if (!r.ok) {
+                                       done(QJsonObject(), r.message(QStringLiteral("git commit")));
+                                       return;
+                                   }
+                                   const GitWrite::Result h = GitWrite::run(
+                                       root, {QStringLiteral("rev-parse"), QStringLiteral("--short"),
+                                              QStringLiteral("HEAD")});
+                                   refreshGit();
+                                   done(QJsonObject{{QStringLiteral("commit"), h.out.trimmed()},
+                                                    {QStringLiteral("branch"), branch},
+                                                    {QStringLiteral("files"),
+                                                     QJsonArray::fromStringList(want)}},
+                                        QString());
+                               });
             return;
         }
         // The card named a branch and its upstream; both must still hold.
@@ -1033,14 +1044,23 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
         }
         m_tabs->setCurrentWidget(rest);
         auto conn = std::make_shared<QMetaObject::Connection>();
+        auto gone = std::make_shared<QMetaObject::Connection>();
         QPointer<RestClient> guard(rest);
-        *conn = connect(rest, &RestClient::requestFinished, this, [guard, conn, done]() {
+        *conn = connect(rest, &RestClient::requestFinished, this, [guard, conn, gone, done]() {
             QObject::disconnect(*conn);
+            QObject::disconnect(*gone);
             if (!guard) {
                 done(QJsonObject(), QStringLiteral("the REST Client closed"));
                 return;
             }
             done(guard->lastResponseJson(kRestBodyCap), QString());
+        });
+        // Closing the REST tab mid-request aborts it without requestFinished.
+        *gone = connect(rest, &QObject::destroyed, this, [conn, gone, done]() {
+            QObject::disconnect(*conn);
+            QObject::disconnect(*gone);
+            done(QJsonObject(), QStringLiteral("the REST Client tab was closed before the "
+                                               "response arrived"));
         });
         QString e;
         if (!rest->sendForMcp(a.value(QLatin1String("text")).toString(),
@@ -1051,6 +1071,7 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
                               headersText(a.value(QLatin1String("headers")).toArray()),
                               a.value(QLatin1String("body")).toString(), &e)) {
             QObject::disconnect(*conn);
+            QObject::disconnect(*gone);
             done(QJsonObject(), QStringLiteral("not sent: %1").arg(e));
         }
     };
