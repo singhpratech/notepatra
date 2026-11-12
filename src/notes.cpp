@@ -1700,6 +1700,23 @@ QWidget *NotesPanel::buildEmptyPage() {
     return w;
 }
 
+void NotesPanel::updateEmptyHint() {
+    auto *hint = m_emptyPage ? m_emptyPage->findChild<QLabel *>(
+                                   QStringLiteral("noterEmptyHint"))
+                             : nullptr;
+    if (!hint) return;
+    if (!m_accessBlocked.isEmpty()) {
+        hint->setTextFormat(Qt::PlainText);
+        hint->setWordWrap(true);
+        hint->setText(m_accessBlocked);
+        return;
+    }
+    hint->setTextFormat(Qt::RichText);
+    hint->setWordWrap(false);
+    hint->setText(tr("Press <b style='color:%1'>Ctrl+Alt+M</b> "
+                     "to start a new meeting note.").arg(m_pal.accent));
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  A5 — theme parity
 // ═══════════════════════════════════════════════════════════════════════
@@ -1738,11 +1755,7 @@ void NotesPanel::applyNoterTheme(const QString &themeName) {
     if (m_editorPage) m_editorPage->setStyleSheet(editorPageStyle(m_pal));
     if (m_emptyPage) {
         m_emptyPage->setStyleSheet(emptyPageStyle(m_pal));
-        // The keyboard-hint label bakes the accent into rich text.
-        if (auto *hint = m_emptyPage->findChild<QLabel *>(
-                QStringLiteral("noterEmptyHint")))
-            hint->setText(tr("Press <b style='color:%1'>Ctrl+Alt+M</b> "
-                             "to start a new meeting note.").arg(m_pal.accent));
+        updateEmptyHint();   // the keyboard hint bakes the accent into rich text
     }
 
     // ── reminder banner (label + buttons + live flash bg) ───────────
@@ -1850,6 +1863,9 @@ QString NotesPanel::slugifyTitle(const QString &title) const {
 // produce the same logical content, just nested under their roots.
 void NotesPanel::refreshSidebar() {
     if (!m_sidebarTree) return;
+    // A blocked root lists as silently empty; say so instead.
+    m_accessBlocked = NotesStorage::accessBlockedMessage(notesRoot());
+    updateEmptyHint();
     // v0.1.97 — gate itemChanged signal so it doesn't fire while we
     // create / setText items during populate.
     m_loadingTree = true;

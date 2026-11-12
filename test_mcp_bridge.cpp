@@ -29,6 +29,7 @@
 #include <QLocalSocket>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTemporaryDir>
@@ -2260,6 +2261,57 @@ private slots:
                      .toArray()
                      .size(),
                  0);
+    }
+
+    // v0.1.133 — a Noter root the OS will not let us open (macOS privacy
+    // control, chmod 000) must be an error, not {"notes": []}. An absent or
+    // empty root stays a plain empty success.
+    void list_notes_reports_unreadable_root() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+
+        m_notesRoot = dir.path() + QStringLiteral("/absent");
+        QJsonObject resp = call(s, 60, QStringLiteral("list_notes"));
+        QVERIFY2(resp.value(QLatin1String("ok")).toBool(), "absent root is not an error");
+        QVERIFY(!QFileInfo::exists(m_notesRoot));   // and nothing was created
+
+        const QString root = dir.path() + QStringLiteral("/Noter");
+        QVERIFY(QDir().mkpath(root));
+        m_notesRoot = root;
+        resp = call(s, 61, QStringLiteral("list_notes"));
+        QVERIFY2(resp.value(QLatin1String("ok")).toBool(), "empty root is not an error");
+
+#ifndef Q_OS_WIN
+        const QString notePath =
+            writeNote(root + QStringLiteral("/Inbox/20260101-1200-locked.html"),
+                      QStringLiteral("Locked"), QStringLiteral("body"));
+        QVERIFY(!notePath.isEmpty());
+        const QFileDevice::Permissions saved = QFile(root).permissions();
+        QVERIFY(QFile(root).setPermissions(QFileDevice::Permissions()));
+        auto restore = qScopeGuard([&] { QFile(root).setPermissions(saved); });
+        // Prove the root really is unreadable (root/CAP_DAC_OVERRIDE bypasses).
+        if (!QDir(root).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty())
+            QSKIP("directory still readable after chmod 000 (running as root?)");
+
+        resp = call(s, 62, QStringLiteral("list_notes"));
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        const QString err = resp.value(QLatin1String("error")).toString();
+        QVERIFY2(err.contains(QLatin1String("The system blocked access to the Noter folder")),
+                 qPrintable(err));
+        QVERIFY2(err.contains(QDir::toNativeSeparators(root)), qPrintable(err));
+
+        QJsonObject args;
+        args[QStringLiteral("file")] = notePath;
+        resp = call(s, 63, QStringLiteral("read_note"), args);
+        QCOMPARE(resp.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY2(resp.value(QLatin1String("error")).toString().contains(
+                     QLatin1String("The system blocked access to the Noter folder")),
+                 qPrintable(resp.value(QLatin1String("error")).toString()));
+#endif
+        m_notesRoot.clear();
     }
 
     void read_note_plaintext_and_containment() {

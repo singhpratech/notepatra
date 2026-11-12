@@ -30,6 +30,9 @@
     #include <fcntl.h>      // open(O_RDONLY) for the directory fsync
     #include <sys/types.h>
     #include <unistd.h>     // fsync, close
+    #include <sys/stat.h>   // accessBlockedMessage
+    #include <dirent.h>
+    #include <cerrno>
 #endif
 
 #ifdef Q_OS_WIN
@@ -1123,6 +1126,50 @@ QString NotesStorage::legacyH1In(const QString &html) {
     inner.replace(QLatin1String("&nbsp;"), QLatin1String(" "));
     inner = titleAttrUnescape(inner);
     return inner.simplified().left(200);
+}
+
+// Opening the directory is the honest probe: macOS privacy control (TCC) and
+// ACLs can let stat()/access() pass while QDir listings come back silently empty.
+QString NotesStorage::accessBlockedMessage(const QString &root) {
+    if (root.isEmpty()) return QString();
+    const QString abs = QFileInfo(root).absoluteFilePath();
+    bool blocked = false;
+#ifdef Q_OS_WIN
+    if (!QFileInfo(abs).isDir()) return QString();   // absent: never used
+    const QString pattern = QDir::toNativeSeparators(abs) + QStringLiteral("\\*");
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(reinterpret_cast<const wchar_t *>(pattern.utf16()), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        blocked = (GetLastError() == ERROR_ACCESS_DENIED);
+    else
+        FindClose(h);
+#else
+    const QByteArray path = QFile::encodeName(abs);
+    struct stat st;
+    if (::stat(path.constData(), &st) != 0) {
+        blocked = (errno == EACCES || errno == EPERM);   // ENOENT: never used
+    } else if (S_ISDIR(st.st_mode)) {
+        DIR *d = ::opendir(path.constData());
+        if (!d)
+            blocked = (errno == EACCES || errno == EPERM);
+        else
+            ::closedir(d);
+    }
+#endif
+    if (!blocked) return QString();
+    QString msg = QCoreApplication::translate(
+                      "NotesStorage",
+                      "The system blocked access to the Noter folder %1. "
+                      "Notes there cannot be listed or opened.")
+                      .arg(QDir::toNativeSeparators(abs));
+#ifdef Q_OS_MAC
+    msg += QLatin1Char(' ') +
+           QCoreApplication::translate(
+               "NotesStorage",
+               "Allow access in System Settings > Privacy & Security > "
+               "Files and Folders.");
+#endif
+    return msg;
 }
 
 QString NotesStorage::prettyTitleFromFilename(const QString &absPath) {

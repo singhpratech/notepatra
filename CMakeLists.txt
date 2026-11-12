@@ -2339,6 +2339,37 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_startup_lazy
     message(STATUS "Regression test enabled — target: test_noter_startup_lazy")
 endif()
 
+# v0.1.133 — a Noter root the OS will not open shows a notice, not an empty list.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_access_notice.cpp")
+    add_executable(test_noter_access_notice
+        test_noter_access_notice.cpp
+        src/notes.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/notes_todos.cpp
+        src/notes_reminder.cpp
+        src/notes_popout.cpp
+        src/notes_sweep_dialog.cpp
+        src/notes_sweep_prompt.cpp
+        src/notes_extract_apply.cpp
+        src/notes_export.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+    )
+    target_include_directories(test_noter_access_notice PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_noter_access_notice PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::Sql Qt5::Network Qt5::Test
+        Qt5::PrintSupport)
+    add_test(NAME test_noter_access_notice COMMAND $<TARGET_FILE:test_noter_access_notice>)
+    set_tests_properties(test_noter_access_notice PROPERTIES
+        LABELS "integration;noter;widget"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_noter_access_notice")
+endif()
+
 # D8 (win-open-ghost) — session autosave change-detection (idle ticks
 # are free), atomic session.json write, .restoring marker PID liveness.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_session_autosave_guard.cpp")

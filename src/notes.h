@@ -218,6 +218,10 @@ private:
     QWidget *buildSidebar();
     QWidget *buildEditorPage();
     QWidget *buildEmptyPage();
+    // Empty-page hint: the keyboard hint, or the "system blocked access"
+    // notice when the Noter root cannot be opened (m_accessBlocked).
+    void updateEmptyHint();
+    QString m_accessBlocked;
 
     // Sidebar refresh — v0.1.97 tree shape. Rebuilds the QTreeWidget
     // from disk + the todos cache. Preserves the user's expand/collapse

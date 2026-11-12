@@ -1369,6 +1369,12 @@ void McpBridge::verbFormatText(QLocalSocket *client, int id,
 void McpBridge::verbListNotes(QLocalSocket *client, int id) {
     QJsonArray notes;
     const QString root = m_host.notesRoot ? m_host.notesRoot() : QString();
+    // A denied root lists as empty; report it instead of an empty success.
+    const QString blocked = NotesStorage::accessBlockedMessage(root);
+    if (!blocked.isEmpty()) {
+        sendError(client, id, blocked);
+        return;
+    }
     if (!root.isEmpty() && QFileInfo(root).isDir()) {
         NotesStorage storage(root);
         const QString trashPrefix =
@@ -1409,6 +1415,11 @@ QString McpBridge::resolveNotePath(const QJsonObject &args,
     const QString root = m_host.notesRoot ? m_host.notesRoot() : QString();
     if (root.isEmpty()) {
         if (err) *err = QStringLiteral("no Noter storage configured");
+        return QString();
+    }
+    const QString blocked = NotesStorage::accessBlockedMessage(root);
+    if (!blocked.isEmpty()) {
+        if (err) *err = blocked;
         return QString();
     }
     const QString rootCanon = QFileInfo(root).canonicalFilePath();
