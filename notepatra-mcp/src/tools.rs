@@ -3,6 +3,7 @@ use serde_json::{json, Map, Value};
 
 use crate::transport::{EditorTransport, TabRef, TabSelector};
 
+mod control;
 mod editing;
 
 const DEFAULT_MAX_RESULTS: usize = 50;
@@ -55,6 +56,17 @@ pub const READ_TOOLS: &[&str] = &[
     "mermaid_to_npd",
     "list_symbols",
     "generate_password",
+    // v0.1.133 phase 3
+    "list_hunks",
+    "list_conflicts",
+    "search_notes",
+    "get_preferences",
+    "describe_table",
+    "test_connection",
+    "parse_http_file",
+    "curl_to_request",
+    "request_to_curl",
+    "hex_dump",
 ];
 pub const ACT_TOOLS: &[&str] = &[
     "open_file",
@@ -78,6 +90,9 @@ pub const ACT_TOOLS: &[&str] = &[
     "set_theme",
     "set_preview",
     "compare_with_file",
+    // v0.1.133 phase 3: non-modal windows
+    "open_connections_dialog",
+    "open_schema_browser",
 ];
 pub const WRITE_TOOLS: &[&str] = &[
     "insert_text",
@@ -106,6 +121,45 @@ pub const WRITE_TOOLS: &[&str] = &[
     "line_edit",
     "set_eol",
     "set_encoding",
+    // v0.1.133 phase 3
+    "git_stage",
+    "git_unstage",
+    "git_commit",
+    "git_branch_create",
+    "git_checkout",
+    "git_stash",
+    "git_discard",
+    "git_fetch",
+    "git_pull",
+    "git_push",
+    "git_hunk",
+    "resolve_conflict",
+    "rename_note",
+    "trash_note",
+    "restore_note",
+    "delete_note_permanently",
+    "delete_reminder",
+    "snooze_reminder",
+    "dismiss_reminder",
+    "export_note",
+    "set_preference",
+    "set_workspace_folder",
+    "execute_sql",
+    "add_connection",
+    "update_connection",
+    "delete_connection",
+    "rest_request",
+    "clear_recent_files",
+];
+
+/// Writes that leave the editor (a database, the network, a git remote).
+/// The remote gateway requires its highest scope, `write_external`, for these.
+pub const EXTERNAL_WRITE_TOOLS: &[&str] = &[
+    "execute_sql",
+    "rest_request",
+    "git_fetch",
+    "git_pull",
+    "git_push",
 ];
 
 /// Mandatory sentence on every write tool's description: these tools are
@@ -152,6 +206,7 @@ fn format_tool(name: &str, kind_label: &str, extra: &str) -> Value {
         }
         _ => {
             props.insert("indent".into(), json!({ "type": "integer", "minimum": 0, "maximum": 8, "description": "Spaces per indent level (default 2)" }));
+            props.insert("minify".into(), json!({ "type": "boolean", "description": "Return minified HTML instead (default false); indent is then ignored" }));
         }
     }
     json!({
@@ -174,6 +229,7 @@ pub fn definitions() -> Value {
     let mut all = base_definitions();
     if let Value::Array(list) = &mut all {
         list.extend(editing::definitions());
+        list.extend(control::definitions());
     }
     all
 }
@@ -342,11 +398,22 @@ fn base_definitions() -> Value {
         },
         format_tool("format_json", "JSON", " Fails on invalid JSON."),
         format_tool("format_sql", "SQL", ""),
-        format_tool("format_html", "HTML", ""),
+        format_tool(
+            "format_html",
+            "HTML",
+            " Never changes the document's meaning: when the formatter cannot prove that, the call fails with the reason and its line:column, and nothing is returned.",
+        ),
         {
             "name": "list_notes",
-            "description": "List the user's Noter notes with title, file name, and last-modified time. Use before read_note to discover which notes exist.",
-            "inputSchema": no_args_schema()
+            "description": "List the user's Noter notes with title, file name, and last-modified time. Use before read_note to discover which notes exist. With include_trash, notes in the Noter Trash are listed too, marked trashed:true (restore_note / delete_note_permanently take those paths).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "include_trash": { "type": "boolean", "description": "Also list notes in the Noter Trash (default false)" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
         },
         {
             "name": "read_note",
@@ -457,11 +524,12 @@ fn base_definitions() -> Value {
         },
         {
             "name": "git_diff",
-            "description": "Get the Git diff of the workspace repository (all changes, or just one path). Use after git_status to inspect exactly what changed.",
+            "description": "Get the Git diff of the workspace repository (all changes, or just one path): the unstaged working-tree changes, or with staged:true what is staged for the next commit. Use after git_status to inspect exactly what changed; files on the credential deny-list are redacted.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Restrict the diff to this repo-relative or absolute path (default: the whole working tree)" }
+                    "path": { "type": "string", "description": "Restrict the diff to this repo-relative or absolute path (default: the whole working tree)" },
+                    "staged": { "type": "boolean", "description": "Diff the index against HEAD (git diff --cached) instead of the working tree (default false)" }
                 },
                 "required": [],
                 "additionalProperties": false
@@ -512,12 +580,12 @@ fn base_definitions() -> Value {
         },
         {
             "name": "run_sql",
-            "description": "Run a read-only SQL query against the editor's data engine and return columns and rows. SELECT-only: any non-read statement (INSERT/UPDATE/DELETE/DDL) is rejected by the editor and returns an error. Optionally query a CSV file by path instead of the open database.",
+            "description": "Run a read-only SQL query against the editor's data engine and return columns and rows. SELECT-only: any non-read statement (INSERT/UPDATE/DELETE/DDL) is rejected by the editor and returns an error. Optionally query a CSV file inside the workspace folder by path instead (as table `data`; Lite loads it into in-memory SQLite, Full into DuckDB).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "sql": { "type": "string", "description": "A read-only SQL SELECT (or WITH) statement; non-read statements are rejected by the editor" },
-                    "csv_path": { "type": "string", "description": "Absolute path of a CSV file to query instead of the open database (default: the editor's current data source)" }
+                    "csv_path": { "type": "string", "description": "Path of a CSV file inside the workspace folder to query as table `data` (default: an empty in-memory database)" }
                 },
                 "required": ["sql"],
                 "additionalProperties": false
@@ -787,7 +855,7 @@ pub fn call(
         "format_json" => format_text(transport, args, "json"),
         "format_sql" => format_text(transport, args, "sql"),
         "format_html" => format_text(transport, args, "html"),
-        "list_notes" => no_arg_json(args, || transport.list_notes()),
+        "list_notes" => list_notes(transport, args),
         "read_note" => read_note(transport, args),
         "insert_text" => insert_text(transport, args),
         "replace_selection" => replace_selection(transport, args),
@@ -854,6 +922,47 @@ pub fn call(
         "mermaid_to_npd" => editing::mermaid_to_npd(transport, args),
         "list_symbols" => editing::list_symbols(transport, args),
         "generate_password" => editing::generate_password(transport, args),
+        // v0.1.133 phase 3
+        "list_hunks" => control::call(transport, "list_hunks", args),
+        "list_conflicts" => control::call(transport, "list_conflicts", args),
+        "git_stage" => control::call(transport, "git_stage", args),
+        "git_unstage" => control::call(transport, "git_unstage", args),
+        "git_commit" => control::call(transport, "git_commit", args),
+        "git_branch_create" => control::call(transport, "git_branch_create", args),
+        "git_checkout" => control::call(transport, "git_checkout", args),
+        "git_stash" => control::call(transport, "git_stash", args),
+        "git_discard" => control::call(transport, "git_discard", args),
+        "git_fetch" => control::call(transport, "git_fetch", args),
+        "git_pull" => control::call(transport, "git_pull", args),
+        "git_push" => control::call(transport, "git_push", args),
+        "git_hunk" => control::call(transport, "git_hunk", args),
+        "resolve_conflict" => control::call(transport, "resolve_conflict", args),
+        "search_notes" => control::call(transport, "search_notes", args),
+        "rename_note" => control::call(transport, "rename_note", args),
+        "trash_note" => control::call(transport, "trash_note", args),
+        "restore_note" => control::call(transport, "restore_note", args),
+        "delete_note_permanently" => control::call(transport, "delete_note_permanently", args),
+        "delete_reminder" => control::call(transport, "delete_reminder", args),
+        "snooze_reminder" => control::call(transport, "snooze_reminder", args),
+        "dismiss_reminder" => control::call(transport, "dismiss_reminder", args),
+        "export_note" => control::call(transport, "export_note", args),
+        "get_preferences" => control::call(transport, "get_preferences", args),
+        "set_preference" => control::call(transport, "set_preference", args),
+        "set_workspace_folder" => control::call(transport, "set_workspace_folder", args),
+        "describe_table" => control::call(transport, "describe_table", args),
+        "test_connection" => control::call(transport, "test_connection", args),
+        "execute_sql" => control::call(transport, "execute_sql", args),
+        "add_connection" => control::call(transport, "add_connection", args),
+        "update_connection" => control::call(transport, "update_connection", args),
+        "delete_connection" => control::call(transport, "delete_connection", args),
+        "open_connections_dialog" => control::call(transport, "open_connections_dialog", args),
+        "open_schema_browser" => control::call(transport, "open_schema_browser", args),
+        "parse_http_file" => control::call(transport, "parse_http_file", args),
+        "curl_to_request" => control::call(transport, "curl_to_request", args),
+        "request_to_curl" => control::call(transport, "request_to_curl", args),
+        "rest_request" => control::call(transport, "rest_request", args),
+        "hex_dump" => control::call(transport, "hex_dump", args),
+        "clear_recent_files" => control::call(transport, "clear_recent_files", args),
         other => CallOutcome::UnknownTool(other.to_string()),
     }
 }
@@ -1515,14 +1624,30 @@ const GIT_LOG_DEFAULT_LIMIT: usize = 20;
 const GIT_LOG_MAX_LIMIT: usize = 100;
 
 fn git_diff(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["path"]) {
+    if let Err(e) = reject_extras(args, &["path", "staged"]) {
         return e;
     }
     let path = match optional_str(args, "path") {
         Ok(p) => p,
         Err(e) => return e,
     };
-    to_outcome(transport.git_diff(path))
+    match optional_bool(args, "staged", false) {
+        Err(e) => e,
+        // v0.1.133: staged rides the generic verb channel.
+        Ok(true) => to_outcome(transport.call_verb("git_diff", Value::Object(args.clone()))),
+        Ok(false) => to_outcome(transport.git_diff(path)),
+    }
+}
+
+fn list_notes(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["include_trash"]) {
+        return e;
+    }
+    match optional_bool(args, "include_trash", false) {
+        Err(e) => e,
+        Ok(true) => to_outcome(transport.call_verb("list_notes", Value::Object(args.clone()))),
+        Ok(false) => to_outcome(transport.list_notes()),
+    }
 }
 
 fn git_log(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use serde_json::{json, Value};
 
+mod control;
 mod verbs;
 
 use super::{
@@ -92,6 +93,7 @@ struct MockNote {
 }
 
 struct MockReminder {
+    id: String,
     file: String,
     title: String,
     due_iso: String,
@@ -99,9 +101,13 @@ struct MockReminder {
 }
 
 struct MockConnection {
-    name: &'static str,
-    driver: &'static str,
-    database: &'static str,
+    name: String,
+    driver: String,
+    host: String,
+    port: i64,
+    database: String,
+    username: String,
+    has_password: bool,
 }
 
 /// In-memory fake editor used by default and in tests.
@@ -115,6 +121,8 @@ pub struct MockEditor {
     /// v0.1.133 per-tab state (read-only, bookmarks, EOL, encoding, undo)
     /// keyed by tab id, plus app-wide view state. See mock/verbs.rs.
     v133: verbs::State,
+    /// v0.1.133 phase 3: git, Noter trash, preferences, workspace (mock/control.rs).
+    control: control::State,
     approval: ApprovalMode,
     /// Test hook: list_notes fails with this text (blocked Noter folder).
     notes_error: Option<String>,
@@ -224,24 +232,28 @@ impl Default for MockEditor {
             // list_reminders demos the full bucketing without a real clock.
             reminders: vec![
                 MockReminder {
+                    id: "r1".into(),
                     file: "/home/user/Documents/Notepatra/Noter/release-checklist.html".into(),
                     title: "Release checklist".into(),
                     due_iso: "2026-07-16T09:00:00Z".into(),
                     bucket: "Overdue",
                 },
                 MockReminder {
+                    id: "r2".into(),
                     file: "/home/user/Documents/Notepatra/Noter/standup-2026-07-15.html".into(),
                     title: "Standup 2026-07-15".into(),
                     due_iso: "2026-07-17T17:00:00Z".into(),
                     bucket: "Today",
                 },
                 MockReminder {
+                    id: "r3".into(),
                     file: "/home/user/Documents/Notepatra/Noter/meeting-design.html".into(),
                     title: "Meeting with design".into(),
                     due_iso: "2026-07-20T15:00:00Z".into(),
                     bucket: "This week",
                 },
                 MockReminder {
+                    id: "r4".into(),
                     file: "/home/user/Documents/Notepatra/Noter/old-scratch.html".into(),
                     title: "Old scratch".into(),
                     due_iso: "2026-08-30T08:00:00Z".into(),
@@ -251,10 +263,15 @@ impl Default for MockEditor {
             // One saved connection so the phase-2 data verbs demo believably
             // offline (in-memory SQLite; no real database needed).
             v133: verbs::State::default(),
+            control: control::State::default(),
             connections: vec![MockConnection {
-                name: "demo",
-                driver: "QSQLITE",
-                database: ":memory:",
+                name: "demo".into(),
+                driver: "QSQLITE".into(),
+                host: String::new(),
+                port: 0,
+                database: ":memory:".into(),
+                username: String::new(),
+                has_password: false,
             }],
             approval: ApprovalMode::Approve,
             notes_error: None,
@@ -837,6 +854,7 @@ impl EditorTransport for MockEditor {
             .iter()
             .map(|r| {
                 json!({
+                    "id": r.id,
                     "note_file": r.file,
                     "note_title": r.title,
                     "due_iso": r.due_iso,
@@ -1040,7 +1058,9 @@ impl EditorTransport for MockEditor {
             .iter()
             .find(|n| n.file == file)
             .ok_or_else(|| TransportError(format!("no note named {file:?}")))?;
+        let id = self.control.next_reminder_id();
         self.reminders.push(MockReminder {
+            id,
             file: file.to_string(),
             title: note.title.clone(),
             due_iso: due_iso.to_string(),

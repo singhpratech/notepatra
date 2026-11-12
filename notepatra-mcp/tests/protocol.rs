@@ -188,10 +188,50 @@ fn tools_list_shape() {
             "markdown_convert",
             "mermaid_to_npd",
             "list_symbols",
-            "generate_password"
+            "generate_password",
+            "list_hunks",
+            "list_conflicts",
+            "git_stage",
+            "git_unstage",
+            "git_commit",
+            "git_branch_create",
+            "git_checkout",
+            "git_stash",
+            "git_discard",
+            "git_fetch",
+            "git_pull",
+            "git_push",
+            "git_hunk",
+            "resolve_conflict",
+            "search_notes",
+            "rename_note",
+            "trash_note",
+            "restore_note",
+            "delete_note_permanently",
+            "delete_reminder",
+            "snooze_reminder",
+            "dismiss_reminder",
+            "export_note",
+            "get_preferences",
+            "set_preference",
+            "set_workspace_folder",
+            "describe_table",
+            "test_connection",
+            "execute_sql",
+            "add_connection",
+            "update_connection",
+            "delete_connection",
+            "open_connections_dialog",
+            "open_schema_browser",
+            "parse_http_file",
+            "curl_to_request",
+            "request_to_curl",
+            "rest_request",
+            "hex_dump",
+            "clear_recent_files"
         ]
     );
-    assert_eq!(names.len(), 79);
+    assert_eq!(names.len(), 119);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -730,7 +770,7 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 79);
+    assert_eq!(tools.len(), 119);
     // Derived from the tier table, so a new write tool is covered by default.
     let write_tools = notepatra_mcp::tools::WRITE_TOOLS;
     for tool in tools {
@@ -1434,11 +1474,11 @@ fn p0a_list_languages_and_get_capabilities() {
         .unwrap()
         .len();
     assert_eq!(caps["tool_count"], expected as u64);
-    assert_eq!(caps["tool_count"], 79);
-    assert_eq!(caps["tiers"]["read"], 37); // v0.1.133: +format_* from act, +10 pure
-    assert_eq!(caps["tiers"]["act"], 19);
-    assert_eq!(caps["tiers"]["write"], 23);
-    // v0.1.133: export_diagram's accepted formats come from the editor.
+    assert_eq!(caps["tool_count"], 119);
+    assert_eq!(caps["tiers"]["read"], 47); // v0.1.133 phase 3: +10
+    assert_eq!(caps["tiers"]["act"], 21); // +2 non-modal windows
+    assert_eq!(caps["tiers"]["write"], 51); // +28
+                                            // v0.1.133: export_diagram's accepted formats come from the editor.
     assert!(caps["diagram_export_formats"]
         .as_array()
         .is_some_and(|a| !a.is_empty()));

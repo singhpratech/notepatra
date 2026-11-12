@@ -112,7 +112,7 @@ fn every_new_tool_is_listed_tiered_and_well_formed() {
             "{name}: approval wording vs tier"
         );
     }
-    assert_eq!(tools.len(), 79);
+    assert_eq!(tools.len(), 119);
 }
 
 #[test]
@@ -469,10 +469,30 @@ fn extended_existing_tools() {
         .all(|h| h["column"].is_u64()));
     assert_eq!(text(&r[6]), "{\"a\":1}");
     assert_eq!(text(&r[7]).trim_end(), "select 1");
-    invalid(&r[8]); // html has no minify option
+    assert_eq!(text(&r[8]), "<p>x</p>"); // html minify (safe minifier, v0.1.133)
     assert_eq!(ok(&r[9])["count"], 1);
     // A literal replacement is inserted as-is: "$1" stays "$1".
     assert!(text(&r[10]).contains("fn $1()"), "{}", text(&r[10]));
     assert!(!ok(&r[11])["tabs"].as_array().unwrap().is_empty());
     invalid(&r[12]);
+}
+
+#[test]
+fn repair_json_repairs_only_unambiguous_faults() {
+    let r = run(
+        MockEditor::default(),
+        &[
+            ("repair_json", json!({ "text": "[1,2" })),
+            ("repair_json", json!({ "text": "[1,2,]" })),
+            ("repair_json", json!({ "text": "[1,2]" })),
+        ],
+    );
+    let declined = ok(&r[0]);
+    assert_eq!(declined["repaired"], false);
+    assert_eq!(declined["fixed"], "[1,2");
+    assert!(!declined["report"].as_str().unwrap().is_empty());
+    let fixed = ok(&r[1]);
+    assert_eq!(fixed["repaired"], true);
+    assert_eq!(fixed["fixed"], "[1,2]");
+    assert_eq!(ok(&r[2])["repaired"], false);
 }

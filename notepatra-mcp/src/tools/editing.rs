@@ -30,6 +30,10 @@ pub(super) enum Kind {
     Object,
     /// Non-empty array whose items are all in the list.
     EnumArray(&'static [&'static str]),
+    /// 1..=100 non-empty strings (file paths).
+    StrArray,
+    /// Any JSON value (validated by the editor).
+    Any,
 }
 
 pub(super) struct Arg {
@@ -38,7 +42,7 @@ pub(super) struct Arg {
     pub required: bool,
 }
 
-const fn opt(key: &'static str, kind: Kind) -> Arg {
+pub(super) const fn opt(key: &'static str, kind: Kind) -> Arg {
     Arg {
         key,
         kind,
@@ -46,7 +50,7 @@ const fn opt(key: &'static str, kind: Kind) -> Arg {
     }
 }
 
-const fn req(key: &'static str, kind: Kind) -> Arg {
+pub(super) const fn req(key: &'static str, kind: Kind) -> Arg {
     Arg {
         key,
         kind,
@@ -54,9 +58,9 @@ const fn req(key: &'static str, kind: Kind) -> Arg {
     }
 }
 
-const TAB_SEL: [Arg; 2] = [opt("tab_id", Kind::Id), opt("tab_index", Kind::Index)];
+pub(super) const TAB_SEL: [Arg; 2] = [opt("tab_id", Kind::Id), opt("tab_index", Kind::Index)];
 
-fn bad(msg: String) -> CallOutcome {
+pub(super) fn bad(msg: String) -> CallOutcome {
     CallOutcome::InvalidParams(msg)
 }
 
@@ -85,6 +89,14 @@ pub(super) fn check(map: &Map<String, Value>, spec: &[Arg]) -> Result<(), CallOu
                         .iter()
                         .all(|i| i.as_str().is_some_and(|s| list.contains(&s)))
             }),
+            Kind::StrArray => v.as_array().is_some_and(|items| {
+                !items.is_empty()
+                    && items.len() <= 100
+                    && items
+                        .iter()
+                        .all(|i| i.as_str().is_some_and(|s| !s.is_empty()))
+            }),
+            Kind::Any => true,
         };
         if !ok {
             return Err(bad(match a.kind {
@@ -98,6 +110,10 @@ pub(super) fn check(map: &Map<String, Value>, spec: &[Arg]) -> Result<(), CallOu
                 Kind::EnumArray(list) => {
                     format!("{} must be a non-empty array of {}", a.key, list.join("|"))
                 }
+                Kind::StrArray => {
+                    format!("{} must be an array of 1 to 100 non-empty strings", a.key)
+                }
+                Kind::Any => unreachable!(),
             }));
         }
     }
@@ -120,7 +136,7 @@ pub(super) fn one_of(
     Ok(())
 }
 
-fn with(base: &[Arg], more: impl IntoIterator<Item = Arg>) -> Vec<Arg> {
+pub(super) fn with(base: &[Arg], more: impl IntoIterator<Item = Arg>) -> Vec<Arg> {
     let mut v: Vec<Arg> = base
         .iter()
         .map(|a| Arg {
@@ -134,7 +150,7 @@ fn with(base: &[Arg], more: impl IntoIterator<Item = Arg>) -> Vec<Arg> {
 }
 
 /// Validate, then forward the same arguments to the bridge verb `verb`.
-fn forward(
+pub(super) fn forward(
     transport: &mut dyn EditorTransport,
     verb: &str,
     args: &Map<String, Value>,
@@ -157,7 +173,7 @@ fn forward(
 }
 
 #[derive(Clone, Copy)]
-enum TabRule {
+pub(super) enum TabRule {
     None,
     Optional,
     Required,
@@ -166,7 +182,7 @@ enum TabRule {
 
 // ── schemas ─────────────────────────────────────────────────────────────
 
-fn tab_props(default_active: bool) -> Map<String, Value> {
+pub(super) fn tab_props(default_active: bool) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert(
         "tab_id".into(),
@@ -183,7 +199,7 @@ fn tab_props(default_active: bool) -> Map<String, Value> {
     m
 }
 
-fn text_or_tab_props() -> Map<String, Value> {
+pub(super) fn text_or_tab_props() -> Map<String, Value> {
     let mut m = tab_props(false);
     m.insert(
         "text".into(),
@@ -192,7 +208,12 @@ fn text_or_tab_props() -> Map<String, Value> {
     m
 }
 
-fn tool(name: &str, description: String, props: Map<String, Value>, required: &[&str]) -> Value {
+pub(super) fn tool(
+    name: &str,
+    description: String,
+    props: Map<String, Value>,
+    required: &[&str],
+) -> Value {
     json!({
         "name": name,
         "description": description,
@@ -205,7 +226,7 @@ fn tool(name: &str, description: String, props: Map<String, Value>, required: &[
     })
 }
 
-fn add(mut m: Map<String, Value>, key: &str, schema: Value) -> Map<String, Value> {
+pub(super) fn add(mut m: Map<String, Value>, key: &str, schema: Value) -> Map<String, Value> {
     m.insert(key.into(), schema);
     m
 }
@@ -276,7 +297,11 @@ const FORMAT_SQL_ARGS: [Arg; 3] = [
     opt("indent", Kind::Int(1, 8)),
     opt("keyword_case", Kind::Enum(&["upper", "lower"])),
 ];
-const FORMAT_HTML_ARGS: [Arg; 2] = [req("text", Kind::Str), opt("indent", Kind::Int(0, 8))];
+const FORMAT_HTML_ARGS: [Arg; 3] = [
+    req("text", Kind::Str),
+    opt("indent", Kind::Int(0, 8)),
+    opt("minify", Kind::Bool),
+];
 
 /// format_json / format_sql / format_html arguments (v0.1.133 options).
 pub(super) fn format_spec(kind: &str) -> &'static [Arg] {
@@ -564,7 +589,7 @@ pub(super) fn definitions() -> Vec<Value> {
         ),
         tool(
             "repair_json",
-            "EXPLICIT opt-in JSON repair (JSON Tools > Fix): closes brackets, strips trailing commas, quotes bare keys. Returns {fixed, report}. The repaired text may contain structure the input never had; format_json never repairs and fails on invalid JSON instead.".into(),
+            "EXPLICIT opt-in JSON repair (JSON Tools > Fix). Repairs only unambiguous faults (trailing commas, bare keys and the like); anything ambiguous, such as a truncated document whose missing closers could be a forgotten bracket or a cut-off file, is DECLINED: fixed is the input unchanged and report says what is wrong and where. Returns {fixed, repaired, report}; repaired is true only when fixed differs from the input and is valid JSON. format_json never repairs and fails on invalid JSON instead.".into(),
             text_or_tab_props(),
             &[],
         ),

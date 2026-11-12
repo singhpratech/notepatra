@@ -62,8 +62,19 @@ pub const NOT_RUNNING: &str = "Notepatra is not running (start the editor first)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// Write verbs block inside the editor on a human approval card for up to
-/// 120 s, so the socket read must outlast that window.
-const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
+/// 120 s, then may run up to 60 s more (a git remote, a database, an HTTP
+/// request), so the socket read must outlast both.
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(200);
+/// Reads that open a database connection (the editor times them out at 20 s).
+const DB_READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// Reads that run git or scan Noter / a file (the editor caps each at 15 s).
+const SLOW_READS: &[&str] = &[
+    "list_hunks",
+    "list_conflicts",
+    "search_notes",
+    "hex_dump",
+    "git_diff",
+];
 /// How often a wait on the approval card is reported as MCP progress.
 const PROGRESS_TICK: Duration = Duration::from_secs(5);
 
@@ -230,8 +241,10 @@ impl SocketEditor {
     #[cfg(any(unix, windows))]
     fn call(&self, verb: &str, args: Value) -> Result<Value, TransportError> {
         let card = WRITE_VERBS.contains(&verb) || crate::tools::WRITE_TOOLS.contains(&verb);
-        let timeout = if verb == "search_project" {
+        let timeout = if verb == "search_project" || SLOW_READS.contains(&verb) {
             self.search_timeout
+        } else if verb == "test_connection" || verb == "describe_table" {
+            DB_READ_TIMEOUT.max(self.base_timeout)
         } else if card {
             // The editor holds the response until the user answers the
             // approval card (up to 120 s) — wait it out.

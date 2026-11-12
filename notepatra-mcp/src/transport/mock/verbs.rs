@@ -44,7 +44,7 @@ fn n(a: &Value, k: &str, def: i64) -> i64 {
 }
 
 /// tab_id / tab_index (or the bridge's "index") from an args object.
-fn tab_ref(a: &Value) -> TabRef {
+pub(super) fn tab_ref(a: &Value) -> TabRef {
     TabRef {
         index: a
             .get("tab_index")
@@ -377,6 +377,10 @@ impl MockEditor {
             "format_text" => {
                 let kind = s(a, "kind").to_string();
                 let text = s(a, "text").to_string();
+                if kind == "html" && b(a, "minify", false) {
+                    let min: Vec<&str> = text.lines().map(str::trim).collect();
+                    return Ok(json!({ "text": min.concat() }));
+                }
                 if kind == "json" && b(a, "minify", false) {
                     let v: Value = serde_json::from_str(&text)
                         .map_err(|e| err(format!("invalid JSON: {e}")))?;
@@ -848,14 +852,24 @@ impl MockEditor {
             }
             "repair_json" => {
                 let (t, i) = self.text_or_tab(a)?;
+                // Like the editor: only an unambiguous fault (a trailing comma)
+                // is repaired; missing closers are declined with a report.
                 let (fixed, report) = match serde_json::from_str::<Value>(&t) {
                     Ok(_) => (t.clone(), "No problems found.".to_string()),
-                    Err(_) => (
-                        fix_brackets(t.trim_end().trim_end_matches(',')),
-                        "Closed unbalanced brackets.".to_string(),
-                    ),
+                    Err(_) => {
+                        let trimmed = t.replace(",]", "]").replace(",}", "}");
+                        if serde_json::from_str::<Value>(&trimmed).is_ok() {
+                            (trimmed, "Removed trailing commas.".to_string())
+                        } else {
+                            (t.clone(), format!("Declined: {}", bracket_report(&t)))
+                        }
+                    }
                 };
-                self.pure(json!({ "fixed": fixed, "report": report }), i)
+                let repaired = fixed != t && serde_json::from_str::<Value>(&fixed).is_ok();
+                self.pure(
+                    json!({ "fixed": fixed, "repaired": repaired, "report": report }),
+                    i,
+                )
             }
             "markdown_convert" => {
                 let (t, i) = self.text_or_tab(a)?;
@@ -976,7 +990,14 @@ impl MockEditor {
                     .collect();
                 Ok(json!({ "passwords": pw }))
             }
-            other => Err(err(format!("unknown verb: {other}"))),
+            "git_diff" => {
+                let mut r = self.git_diff(a.get("path").and_then(Value::as_str))?;
+                if b(a, "staged", false) {
+                    r["staged"] = json!(true);
+                }
+                Ok(r)
+            }
+            other => self.mock_control(other, a),
         }
     }
 
