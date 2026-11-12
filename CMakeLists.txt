@@ -3740,6 +3740,25 @@ if(NOTEPATRA_BUILD_TESTS)
         set_tests_properties(${_sec_t} PROPERTIES
             LABELS "unit;ai;tools;security" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
     endforeach()
+
+    add_executable(test_mcp_search_symlink
+        test_mcp_search_symlink.cpp
+        src/mcp_bridge.cpp
+        src/path_denylist.cpp
+        src/singleinstance.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/diagram/npd_parser.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_mcp_search_symlink PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_search_symlink PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test_mcp_search_symlink PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Test)
+    notepatra_add_qt_test(test_mcp_search_symlink)
+    set_tests_properties(test_mcp_search_symlink PROPERTIES
+        LABELS "unit;mcp;security" TIMEOUT 120)
 endif()
 
 # ── Install ──

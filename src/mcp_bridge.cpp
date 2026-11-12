@@ -249,7 +249,11 @@ QString credentialRefusal(const QString &path) {
     // Check the absolute form: a relative path would slip every segment-
     // anchored rule in the deny-list.
     const QString abs = fi.absoluteFilePath();
-    if (!PathDenylist::isSecretPath(abs)) return QString();
+    // A symlink is judged by its target too (notes.txt -> ~/.ssh/id_rsa).
+    const QString real = fi.canonicalFilePath();
+    if (!PathDenylist::isSecretPath(abs)
+        && (real.isEmpty() || !PathDenylist::isSecretPath(real)))
+        return QString();
     return QStringLiteral(
                "refusing to read %1: it matches the credential deny-list "
                "(SSH/GPG/AWS keys, .env, keystores, Terraform state). Open it "
@@ -289,6 +293,9 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
     bool truncated = false;
     int scanned = 0;
     const QRegularExpression re(useRegex ? query : QString());
+    const QString rootCanon = QDir(root).canonicalPath();
+    const QString rootPrefix = rootCanon.endsWith(QLatin1Char('/')) ? rootCanon
+                                                                    : rootCanon + QLatin1Char('/');
     QDirIterator it(root, QDir::Files | QDir::NoDotAndDotDot | QDir::Readable,
                     QDirIterator::Subdirectories);
     while (it.hasNext() && hits.size() < maxResults) {
@@ -326,7 +333,12 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
         // was guarding the front door while this verb held the back one open.
         // Same list, same thread-safe pure function, applied per file.
         if (PathDenylist::isSecretPath(fi.absoluteFilePath())) continue;
-        QFile f(path);
+        // Judge (and read) the symlink TARGET: it must stay in the root and off the list.
+        const QString real = fi.canonicalFilePath();
+        if (real.isEmpty() || rootCanon.isEmpty() || !real.startsWith(rootPrefix)
+            || PathDenylist::isSecretPath(real))
+            continue;
+        QFile f(real);
         if (!f.open(QIODevice::ReadOnly)) continue;
         if (f.peek(8192).contains('\0')) continue; // binary-looking
         int lineNo = 0;
