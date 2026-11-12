@@ -228,11 +228,14 @@ QString formatSqlCompact(const QString &text, int indentWidth, bool uppercase,
 }
 
 // ── JSON ──
-// Report text from Rust is multi-line; the panel status is one line.
-static QString firstLines(const QString &report, int maxLines) {
-    QStringList lines = report.split('\n', Qt::SkipEmptyParts);
-    while (lines.size() > maxLines) lines.removeLast();
-    return lines.join(QStringLiteral(" \u2014 "));
+// Report text from Rust is multi-line: the banner gets a one-line summary
+// (TransformNote::summarize), the tooltip the whole report. Positions in a
+// fix report are in the text BEFORE the fix, which the output pane no longer
+// shows, so say so.
+static QString fixDetails(const QString &report) {
+    return report.trimmed() +
+           QStringLiteral("\n\nLine and column numbers refer to the text before the fix; "
+                          "Show Diff shows both sides.");
 }
 
 QString formatJson(const QString &text, int indent) {
@@ -240,7 +243,7 @@ QString formatJson(const QString &text, int indent) {
     const QString err = textFromResult(npc_json_parse_error(b.constData(), b.size()));
     if (!err.isEmpty()) {
         TransformNote::post(TransformNote::Kind::Error,
-                            QStringLiteral("not valid JSON, nothing changed: %1").arg(err));
+                            QStringLiteral("not valid JSON: %1").arg(err));
         return text;
     }
     return textFromResult(npc_format_json(b.constData(), b.size(), indent));
@@ -254,7 +257,7 @@ QString minifyJson(const QString &text) {
     const QString err = textFromResult(npc_json_parse_error(b.constData(), b.size()));
     if (!err.isEmpty()) {
         TransformNote::post(TransformNote::Kind::Error,
-                            QStringLiteral("not valid JSON, nothing changed: %1").arg(err));
+                            QStringLiteral("not valid JSON: %1").arg(err));
         return text;
     }
     return textFromResult(npc_minify_json(b.constData(), b.size()));
@@ -264,12 +267,14 @@ QString fixJson(const QString &text) {
     const QString out = textFromResult(npc_fix_json(b.constData(), b.size()));
     const QString report = textFromResult(npc_fix_json_report(b.constData(), b.size()));
     if (report.startsWith(QLatin1String("Repaired")))
-        TransformNote::post(TransformNote::Kind::Info, firstLines(report, 3));
+        TransformNote::post(TransformNote::Kind::Info, TransformNote::summarize(report),
+                            fixDetails(report));
     else if (report.startsWith(QLatin1String("JSON is already valid")))
-        TransformNote::post(TransformNote::Kind::Info, report);
-    else if (report.startsWith(QLatin1String("No changes made")) ||
-             report.startsWith(QLatin1String("input too large")))
-        TransformNote::post(TransformNote::Kind::Error, firstLines(report, 2));
+        TransformNote::post(TransformNote::Kind::Info, report.trimmed());
+    else if (out == text)
+        // "No changes made: ...", "input too large ... No changes made."
+        TransformNote::post(TransformNote::Kind::Error, TransformNote::summarize(report),
+                            report.trimmed());
     return out;
 }
 QString fixJsonReport(const QString &text) {
@@ -304,11 +309,14 @@ QString fixBrackets(const QString &text) {
     QByteArray b = text.toUtf8();
     const QString out = textFromResult(npc_fix_brackets(b.constData(), b.size()));
     const QString report = textFromResult(npc_fix_brackets_report(b.constData(), b.size()));
-    if (report.startsWith(QLatin1String("Fixed")) ||
-        report.startsWith(QLatin1String("All brackets matched")))
-        TransformNote::post(TransformNote::Kind::Info, firstLines(report, 3));
+    if (report.startsWith(QLatin1String("Fixed")))
+        TransformNote::post(TransformNote::Kind::Info, TransformNote::summarize(report),
+                            fixDetails(report));
+    else if (report.startsWith(QLatin1String("All brackets matched")))
+        TransformNote::post(TransformNote::Kind::Info, report.trimmed());
     else
-        TransformNote::post(TransformNote::Kind::Error, firstLines(report, 2));
+        TransformNote::post(TransformNote::Kind::Error, TransformNote::summarize(report),
+                            report.trimmed());
     return out;
 }
 QString fixBracketsReport(const QString &text) {

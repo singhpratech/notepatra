@@ -262,6 +262,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include "hexeditor.h"
 #include "gitgutter.h"
 #include "fmtpanel.h"
+#include "formatter_tools.h"
 #include "ollama.h"
 #include "ollamastatus.h"
 #include "notes.h"
@@ -5510,14 +5511,10 @@ void MainWindow::buildMenus() {
     pluginsMenu->addAction("JSON Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("JSON Tools", "JSON");
         connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
-        p->addButton("Format", [](const QString &s) { return RustCore::formatJson(s, 4); });
-        p->addButton("Minify", [](const QString &s) { return RustCore::minifyJson(s); });
-        p->addButton("Fix + Format", [](const QString &s) {
-            QString report = RustCore::fixJsonReport(s);
-            QString fixed = RustCore::fixJson(s);
-            QString formatted = RustCore::formatJson(fixed, 4);
-            return "/* ═══ FIX REPORT ═══\n" + report + "\n═══════════════════ */\n\n" + formatted;
-        });
+        // Format / Minify / Fix + Format (formatter_tools.cpp). The output is
+        // only JSON; what a fix changed (or why it declined) is in the banner
+        // and its tooltip.
+        FormatterTools::addJsonButtons(p);
 
         // Ollama status + model selector + AI Fix button
         auto *ollamaBar = new OllamaStatus(p);
@@ -5710,42 +5707,51 @@ void MainWindow::buildMenus() {
                 firstStruct = firstBracket;
             if (firstStruct > 0) cleaned = cleaned.mid(firstStruct);
 
-            // 4. Try to format the result — if formatJson returns something
-            //    sensible (>2 chars, more than just "{}"), use it. Otherwise
-            //    show the raw cleaned text so the user can at least see what
-            //    the model returned.
-            QString formatted = RustCore::formatJson(cleaned, 4);
-            QString result = formatted.length() > 2 ? formatted : cleaned;
-
-            if (result.isEmpty()) {
+            // 4. The reply must be valid JSON to count as a fix. formatJson is
+            //    strict (invalid input comes back unchanged), so validate
+            //    first: an invalid reply is shown as is, with the parser's
+            //    position, and is NOT recorded as a fix.
+            if (cleaned.isEmpty()) {
                 p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
-                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
-            } else {
-                p->setOutput(result);
-                // Smart description of WHAT actually changed (commas, braces,
-                // brackets, quotes etc.) — same helper Format / Minify use.
-                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
-                int origChars = fixState->originalInput.length();
-                int newChars = result.length();
-                int newLines = result.count('\n') + 1;
-                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
-                             .arg(newChars).arg(newLines).arg(desc), false);
-                // Log to session history with the change description
-                p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
-
-                // Stash result + enable the FormatterPanel's built-in Show
-                // Diff button via recordFix(). The panel emits
-                // showDiffRequested() which we connected above to open a
-                // CompareWidget tab — same code path as Format/Minify/Fix.
-                fixState->fixedOutput = result;
-                fixState->hasResult = true;
-                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+                p->setStatus("Failed: AI Fix returned an empty reply — try a different model or enable Show thinking", true);
+                return;
             }
+            const FormatterTools::AiJsonReply reply = FormatterTools::checkAiJsonReply(cleaned);
+            if (!reply.ok) {
+                p->setOutput(reply.text);
+                p->setStatus(QString("Failed: AI Fix — the model's reply is not valid JSON: %1 "
+                                     "(the reply is shown below)").arg(reply.error),
+                             true);
+                p->logAction("AI Fix (Ollama)", fixState->originalInput.length(),
+                             reply.text.length(),
+                             QStringLiteral("reply is not valid JSON: ") + reply.error);
+                return;
+            }
+            const QString result = reply.text;
+            p->setOutput(result);
+            // Smart description of WHAT actually changed (commas, braces,
+            // brackets, quotes etc.) — same helper Format / Minify use.
+            QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+            int origChars = fixState->originalInput.length();
+            int newChars = result.length();
+            int newLines = result.count('\n') + 1;
+            p->setStatus(QString("Done: AI Fix — %1 chars, %2 lines (%3). Click Show Diff to see changes.")
+                         .arg(newChars).arg(newLines).arg(desc), false);
+            // Log to session history with the change description
+            p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
+
+            // Stash result + enable the FormatterPanel's built-in Show
+            // Diff button via recordFix(). The panel emits
+            // showDiffRequested() which we connected above to open a
+            // CompareWidget tab — same code path as Format/Minify/Fix.
+            fixState->fixedOutput = result;
+            fixState->hasResult = true;
+            p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setStatus("Failed: AI Fix — " + msg, true);
             p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
@@ -5759,65 +5765,13 @@ void MainWindow::buildMenus() {
     pluginsMenu->addAction("HTML Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("HTML Tools", "HTML");
         connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
-        p->addButton("Format (2 spaces)", [](const QString &s) { return RustCore::formatHtml(s, 2); });
-        p->addButton("Format (4 spaces)", [](const QString &s) { return RustCore::formatHtml(s, 4); });
-        p->addButton("Minify", [](const QString &s) {
-            // Strip newlines and extra spaces between tags
-            QString result = s;
-            result.replace(QRegularExpression("\\s*\\n\\s*"), "");
-            result.replace(QRegularExpression(">\\s+<"), "><");
-            return result;
-        });
-        p->addButton("Fix + Format", [](const QString &s) {
-            // Fix common HTML issues then format
-            QString fixed = s;
-            // Close unclosed self-closing tags
-            QRegularExpression re_img("<img([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_img, "<img\\1 />");
-            QRegularExpression re_br("<br\\s*>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_br, "<br />");
-            QRegularExpression re_hr("<hr\\s*>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_hr, "<hr />");
-            QRegularExpression re_input("<input([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_input, "<input\\1 />");
-            QRegularExpression re_meta("<meta([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_meta, "<meta\\1 />");
-            QRegularExpression re_link("<link([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_link, "<link\\1 />");
-
-            // Count open/close tags to detect missing closers
-            QString report = "/* ═══ HTML FIX REPORT ═══\n";
-            QRegularExpression re_open("<([a-zA-Z][a-zA-Z0-9]*)(?:\\s[^>]*)?>");
-            QRegularExpression re_close("</([a-zA-Z][a-zA-Z0-9]*)>");
-            QStringList voidTags = {"br","hr","img","input","meta","link","area","base","col","embed","source","track","wbr"};
-
-            QMap<QString, int> openCount, closeCount;
-            auto openMatches = re_open.globalMatch(fixed);
-            while (openMatches.hasNext()) {
-                auto m = openMatches.next();
-                QString tag = m.captured(1).toLower();
-                if (!voidTags.contains(tag)) openCount[tag]++;
-            }
-            auto closeMatches = re_close.globalMatch(fixed);
-            while (closeMatches.hasNext()) {
-                auto m = closeMatches.next();
-                closeCount[m.captured(1).toLower()]++;
-            }
-            int issues = 0;
-            for (auto it = openCount.begin(); it != openCount.end(); ++it) {
-                int diff = it.value() - closeCount.value(it.key(), 0);
-                if (diff > 0) {
-                    report += QString("Missing %1 </%2> closing tag(s)\n").arg(diff).arg(it.key());
-                    // Add missing closing tags at the end
-                    for (int i = 0; i < diff; i++) fixed += "</" + it.key() + ">";
-                    issues++;
-                }
-            }
-            if (issues == 0) report += "No issues found.\n";
-            report += "═══════════════════════ */\n\n";
-
-            return report + RustCore::formatHtml(fixed, 2);
-        });
+        // Format (2/4 spaces), Minify and Check + Format all go through the
+        // DOM-preserving Rust formatter (formatter_tools.cpp): they change
+        // only whitespace a browser does not render, and a document they
+        // cannot follow is left unchanged with what and where in the banner.
+        // (The old regex Minify / "Fix + Format" changed rendered text,
+        // prepended a report comment and appended guessed end tags.)
+        FormatterTools::addHtmlButtons(p);
 
         // Ollama status + AI Fix
         auto *ollamaBar = new OllamaStatus(p);
@@ -5971,31 +5925,43 @@ void MainWindow::buildMenus() {
             int firstAngle = cleaned.indexOf('<');
             if (firstAngle > 0) cleaned = cleaned.mid(firstAngle);
 
-            // 4. Format the result; fall back to cleaned text if formatHtml
-            //    returns something useless (empty / single space).
-            QString formatted = RustCore::formatHtml(cleaned, 2);
-            QString result = formatted.length() > 1 ? formatted : cleaned;
-
-            if (result.isEmpty()) {
+            // 4. Re-indent the reply with the DOM-preserving formatter. When
+            //    it declines (the reply is still mis-nested, has stray end
+            //    tags, ...) the reply is shown as is and the banner says
+            //    what and where: that is not a successful fix.
+            if (cleaned.isEmpty()) {
                 p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
-                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
-            } else {
-                p->setOutput(result);
-                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
-                int origChars = fixState->originalInput.length();
-                int newChars  = result.length();
-                int newLines  = result.count('\n') + 1;
-                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                p->setStatus("Failed: AI Fix returned an empty reply — try a different model or enable Show thinking", true);
+                return;
+            }
+            const FormatterTools::AiJsonReply reply = FormatterTools::checkAiHtmlReply(cleaned);
+            const QString result = reply.text;
+            p->setOutput(result);
+            QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+            int origChars = fixState->originalInput.length();
+            int newChars  = result.length();
+            int newLines  = result.count('\n') + 1;
+            if (reply.ok) {
+                p->setStatus(QString("Done: AI Fix — %1 chars, %2 lines (%3). Click Show Diff to see changes.")
                              .arg(newChars).arg(newLines).arg(desc), false);
                 p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
-                fixState->hasResult = true;
-                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+            } else {
+                // Still a candidate the user may want to compare, so Show
+                // Diff stays available, but it is not reported as fixed.
+                p->setStatus(QString("Not formatted: AI Fix — the formatter could not follow "
+                                     "the model's HTML: %1 (the reply is shown below as is)")
+                                 .arg(reply.error),
+                             true);
+                p->logAction("AI Fix (Ollama)", origChars, newChars,
+                             QStringLiteral("reply not formatted: ") + reply.error);
             }
+            fixState->hasResult = true;
+            p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setStatus("Failed: AI Fix — " + msg, true);
             p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
@@ -6007,10 +5973,17 @@ void MainWindow::buildMenus() {
 
     // Bracket Tools (inbuilt) — check, fix, AI fix
     pluginsMenu->addAction("Bracket Tools (inbuilt)", this, [this, E]() {
-        auto *p = new FormatterPanel("Bracket Tools", "JavaScript");
+        // The Rust checker/fixer works out how to read the text itself
+        // (C-style, script, SQL/Lua, plain text); the panel language only
+        // picks the highlighting, so take it from the tab instead of
+        // painting every file as JavaScript (no lexer when the panel has
+        // none for that language).
+        auto *p = new FormatterPanel("Bracket Tools",
+                                     E() ? E()->language() : QStringLiteral("Plain Text"));
         connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
-        p->addButton("Check", [](const QString &s) { return RustCore::checkBrackets(s); });
-        p->addButton("Auto-Fix", [](const QString &s) { return RustCore::fixBrackets(s); });
+        // Check reports in the banner and leaves the text alone; Auto-Fix
+        // says what it inserted/removed and where (formatter_tools.cpp).
+        FormatterTools::addBracketButtons(p);
 
         // Ollama status + AI Fix
         auto *ollamaBar = new OllamaStatus(p);
@@ -6170,14 +6143,14 @@ void MainWindow::buildMenus() {
 
             if (result.isEmpty()) {
                 p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
-                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
+                p->setStatus("Failed: AI Fix returned an empty reply — try a different model or enable Show thinking", true);
             } else {
                 p->setOutput(result);
                 QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
                 int origChars = fixState->originalInput.length();
                 int newChars  = result.length();
                 int newLines  = result.count('\n') + 1;
-                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                p->setStatus(QString("Done: AI Fix — %1 chars, %2 lines (%3). Click Show Diff to see changes.")
                              .arg(newChars).arg(newLines).arg(desc), false);
                 p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
                 fixState->hasResult = true;
@@ -6187,7 +6160,7 @@ void MainWindow::buildMenus() {
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setStatus("Failed: AI Fix — " + msg, true);
             p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 

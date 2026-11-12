@@ -14,6 +14,8 @@
 #include <QClipboard>
 #include <QDateTime>
 #include <QListWidgetItem>
+#include <QEvent>
+#include <QTextDocument>   // Qt::convertFromPlainText
 
 // ═══════════════════════════════════════════════════════════════════════
 // Theme-aware palette for the formatter panels (JSON / HTML / SQL /
@@ -157,7 +159,7 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
             return;
         }
         QApplication::clipboard()->setText(text);
-        setStatus(QString("✓ Copied %1 chars to clipboard").arg(text.length()), false);
+        setStatus(QString("Copied %1 chars to clipboard").arg(text.length()), false);
     });
 
     m_btnRow->addStretch();
@@ -173,6 +175,13 @@ FormatterPanel::FormatterPanel(const QString &title, const QString &language, QW
         .arg(fp.statusBg.name(), fp.statusFg.name(), fp.statusAccent.name()));
     m_statusLabel->setFixedHeight(36);
     m_statusLabel->setWordWrap(false);
+    // Reports can be long (every change with its position): the banner shows
+    // one elided line (refreshStatusLabel) and must never widen the panel.
+    // Plain text: reports quote the user's own text, which may contain '<'.
+    m_statusLabel->setTextFormat(Qt::PlainText);
+    m_statusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_statusText = m_statusLabel->text();
+    m_statusLabel->installEventFilter(this);
     layout->addWidget(m_statusLabel);
 
     // Real Scintilla editor with syntax highlighting
@@ -306,8 +315,7 @@ void FormatterPanel::applyPalette() {
     }
     // Re-apply the status banner so its colours track the theme — preserving
     // whether the last message was an error.
-    setStatus(m_statusLabel ? m_statusLabel->text() : QString(),
-              m_lastStatusWasError);
+    setStatus(m_statusText, m_lastStatusWasError, m_statusDetails);
 }
 
 void FormatterPanel::onThemeChanged() {
@@ -375,29 +383,38 @@ void FormatterPanel::addButton(const QString &label, std::function<QString(const
             output = fn(input);
         } catch (const std::exception &e) {
             TransformNote::clear();
-            setStatus(QString("✗ %1 failed: %2").arg(label).arg(e.what()), true);
+            setStatus(QString("Failed: %1 — %2").arg(label).arg(e.what()), true);
             return;
         } catch (...) {
             TransformNote::clear();
-            setStatus(QString("✗ %1 failed (unknown error)").arg(label), true);
+            setStatus(QString("Failed: %1 (unknown error)").arg(label), true);
             return;
         }
         // The JSON / bracket wrappers report outcomes they cannot express in
-        // the returned text (transform_note.h). An Error means the input was
-        // NOT transformed (invalid JSON, a repair that would be a guess):
-        // say exactly why and where, and leave the user's text untouched
-        // instead of presenting it as a "✓ done" result.
+        // the returned text (transform_note.h). The banner gets one line, its
+        // tooltip the full report (every change / issue with its position).
         const TransformNote::Note note = TransformNote::take();
+        if (note.keepText) {
+            // A report ABOUT the text (Bracket Tools > Check): the text stays
+            // exactly as it was, so the next action still runs on the code.
+            setStatus(QString("%1: %2").arg(label, note.text),
+                      note.kind == TransformNote::Kind::Error, note.details);
+            logAction(label, input.length(), input.length(), note.text, note.details);
+            return;
+        }
+        // An Error means the input was NOT transformed (invalid JSON, a
+        // repair that would be a guess): say exactly why and where, and leave
+        // the user's text untouched instead of presenting it as a result.
         if (note.kind == TransformNote::Kind::Error) {
-            setStatus(QString("✗ %1: %2").arg(label, note.text), true);
-            if (m_statusLabel) m_statusLabel->setToolTip(note.text);
+            setStatus(QString("Not changed: %1 — %2").arg(label, note.text), true,
+                      note.details);
             logAction(label, input.length(), input.length(),
-                      QStringLiteral("not changed: ") + note.text);
+                      QStringLiteral("not changed: ") + note.text, note.details);
             return;
         }
 
         if (output.isEmpty()) {
-            setStatus(QString("✗ %1 returned empty output").arg(label), true);
+            setStatus(QString("Failed: %1 returned empty output").arg(label), true);
             return;
         }
 
@@ -412,15 +429,12 @@ void FormatterPanel::addButton(const QString &label, std::function<QString(const
         // Compute a short description of what actually changed
         QString desc = describeChanges(input, output);
         if (note.kind == TransformNote::Kind::Info) {
-            // What the fix actually did, with positions (full text in the
-            // tooltip; the banner is a single line).
-            setStatus(QString("✓ %1: %2").arg(label, note.text), false);
-            if (m_statusLabel) m_statusLabel->setToolTip(note.text);
-            logAction(label, beforeLen, output.length(), note.text);
+            // What the fix actually did, with positions.
+            setStatus(QString("Done: %1 — %2").arg(label, note.text), false, note.details);
+            logAction(label, beforeLen, output.length(), note.text, note.details);
             return;
         }
-        if (m_statusLabel) m_statusLabel->setToolTip(QString());
-        setStatus(QString("✓ %1 done — %2 chars, %3 lines (%4). Click Show Diff to see changes.")
+        setStatus(QString("Done: %1 — %2 chars, %3 lines (%4). Click Show Diff to see changes.")
                   .arg(label).arg(output.length()).arg(output.count('\n') + 1).arg(desc), false);
         // Log to session history with the change description
         logAction(label, beforeLen, output.length(), desc);
@@ -500,12 +514,15 @@ void FormatterPanel::appendOutput(const QString &text) {
     m_output->append(text);
 }
 
-void FormatterPanel::setStatus(const QString &text, bool isError) {
+void FormatterPanel::setStatus(const QString &text, bool isError, const QString &details) {
     if (!m_statusLabel) return;
-    m_statusLabel->setText(text);
+    m_statusText = text;
+    m_statusDetails = details;
     m_lastStatusWasError = isError;
     // Use the shared fmtPalette so the banner colours track the current
-    // theme instead of freezing at dark-mode literals.
+    // theme instead of freezing at dark-mode literals. Success / failure is
+    // carried by the colours and a leading word ("Done:", "Not changed:",
+    // "Failed:"), not by symbol glyphs the UI font may not have.
     const FmtPalette fp = fmtPalette();
     QColor bg     = isError ? fp.errorBg : fp.statusBg;
     QColor accent = isError ? fp.errorFg : fp.statusAccent;
@@ -513,10 +530,37 @@ void FormatterPanel::setStatus(const QString &text, bool isError) {
         QString("background: %1; color: %2; padding: 8px 12px; "
                 "font-size: 13px; font-weight: 600; border-left: 4px solid %2;")
         .arg(bg.name(), accent.name()));
+    refreshStatusLabel();
+}
+
+void FormatterPanel::refreshStatusLabel() {
+    if (!m_statusLabel) return;
+    m_statusLabel->ensurePolished();
+    // 12 px padding each side + the 4 px accent border (setStatus QSS).
+    const int avail = m_statusLabel->width() - 2 * 12 - 4 - 4;
+    QString shown = m_statusText;
+    if (avail > 40)
+        shown = m_statusLabel->fontMetrics().elidedText(m_statusText, Qt::ElideRight, avail);
+    m_statusLabel->setText(shown);
+    // The full report (or, when the banner is cut, the whole banner line) is
+    // one hover away. convertFromPlainText: reports quote the user's text.
+    QString tip = m_statusDetails;
+    if (tip.isEmpty() && shown != m_statusText) tip = m_statusText;
+    m_statusLabel->setToolTip(tip.isEmpty()
+                                  ? QString()
+                                  : Qt::convertFromPlainText(tip, Qt::WhiteSpaceNormal));
+}
+
+bool FormatterPanel::eventFilter(QObject *watched, QEvent *event) {
+    // Re-elide whenever the banner itself changes width (panel resize, tab
+    // shown for the first time, dock/splitter moves).
+    if (watched == m_statusLabel && event->type() == QEvent::Resize)
+        refreshStatusLabel();
+    return QWidget::eventFilter(watched, event);
 }
 
 void FormatterPanel::logAction(const QString &action, int beforeChars, int afterChars,
-                               const QString &extra) {
+                               const QString &extra, const QString &details) {
     if (!m_sessionLog) return;
     int delta = afterChars - beforeChars;
     QString deltaStr = (delta == 0)
@@ -527,6 +571,8 @@ void FormatterPanel::logAction(const QString &action, int beforeChars, int after
         .arg(timestamp).arg(action).arg(beforeChars).arg(afterChars).arg(deltaStr);
     if (!extra.isEmpty()) line += "  " + extra;
     auto *item = new QListWidgetItem(line);
+    if (!details.isEmpty())
+        item->setToolTip(Qt::convertFromPlainText(details, Qt::WhiteSpaceNormal));
     // Color the entry based on whether it changed anything, using the
     // theme-aware fmtPalette instead of dark-mode-only hex literals.
     const FmtPalette fp = fmtPalette();

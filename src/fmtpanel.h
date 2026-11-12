@@ -31,12 +31,20 @@ public:
     // Scintilla content (so users can paste directly into the panel), falls
     // back to whatever was passed via setInput() at panel open time.
     QString inputText() const;
-    void setStatus(const QString &text, bool error = false);
+    // One-line status banner (elided to the panel width). `details`, when
+    // given, is the full report (every change / issue with line and column)
+    // and becomes the banner's tooltip.
+    void setStatus(const QString &text, bool error = false, const QString &details = QString());
+    // The banner's full text (before eliding) and its details, as set.
+    QString statusText() const { return m_statusText; }
+    QString statusDetails() const { return m_statusDetails; }
+    bool statusIsError() const { return m_lastStatusWasError; }
     // Append an entry to the panel's per-session history log. Each row
     // shows what action was taken and the size delta, so users can see
-    // every change made during the session at a glance.
+    // every change made during the session at a glance; `details` becomes
+    // the row's tooltip.
     void logAction(const QString &action, int beforeChars, int afterChars,
-                   const QString &extra = QString());
+                   const QString &extra = QString(), const QString &details = QString());
     // Compute a short human description of what changed between two
     // strings: "+3 commas, +2 braces, -1 trailing comma". Used by the
     // session log so users can see WHAT the action fixed at a glance.
@@ -77,9 +85,15 @@ private:
     // log header, and button row when the theme flips.
     QLabel *m_logHeader = nullptr;
     bool m_lastStatusWasError = false;
+    QString m_statusText;
+    QString m_statusDetails;
 
     void applyLexer();
     void applyPalette();
+    void refreshStatusLabel();
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 };
 
 #endif

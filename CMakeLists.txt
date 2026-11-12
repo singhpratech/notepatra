@@ -3345,13 +3345,15 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp"
     message(STATUS "Regression test enabled — target: test_fmtpanel_diff")
 endif()
 
-# JSON Tools / Bracket Tools end to end: real FormatterPanel buttons over the
-# real rustbridge wrappers and Rust core. Invalid JSON must be left untouched
-# with a "line L, column C" error; fixes must say what they changed and where.
+# JSON / HTML / Bracket Tools end to end: the same FormatterPanel buttons
+# MainWindow adds (src/formatter_tools.cpp) over the real rustbridge wrappers
+# and Rust core. Invalid input must be left untouched with a "line L, column
+# C" reason; reports go to the banner, never into the text.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_json_bracket_tools.cpp")
     add_executable(test_json_bracket_tools
         test_json_bracket_tools.cpp
         src/fmtpanel.cpp
+        src/formatter_tools.cpp
         src/npp_palette.cpp
         src/editor_symbols.cpp
         src/rustbridge.cpp
