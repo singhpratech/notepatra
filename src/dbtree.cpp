@@ -45,6 +45,8 @@ struct TableEntry {
     QString name;
     QString type;          // BASE TABLE / VIEW / etc.
     QVector<QPair<QString, QString>> columns;  // (name, type)
+    QStringList pkColumns;  // SQLite only (PRAGMA table_info's pk column)
+    bool keysKnown = false;
 };
 
 QVector<TableEntry> introspectViaQSql(const DbConnections::Record &r,
@@ -80,7 +82,9 @@ QVector<TableEntry> introspectViaQSql(const DbConnections::Record &r,
             while (qc.next()) {
                 e.columns.append(qMakePair(qc.value(1).toString(),
                                            qc.value(2).toString()));
+                if (qc.value(5).toInt() > 0) e.pkColumns << qc.value(1).toString();
             }
+            e.keysKnown = true;
         }
     } else {
         // Standard INFORMATION_SCHEMA path — works for PostgreSQL, MySQL,
@@ -179,7 +183,24 @@ QVector<TableEntry> introspect(const DbConnections::Record &r, QString *outError
     return introspectViaQSql(r, outError);
 }
 
+
 }  // namespace
+
+QVector<DbSchema::Table> DbSchema::introspect(const DbConnections::Record &r,
+                                              QString *outError) {
+    QVector<Table> out;
+    for (const TableEntry &e : ::introspect(r, outError)) {
+        Table t;
+        t.schema = e.schema;
+        t.name = e.name;
+        t.type = e.type;
+        t.keysKnown = e.keysKnown;
+        for (const auto &c : e.columns)
+            t.columns.append({c.first, c.second, e.pkColumns.contains(c.first)});
+        out.append(t);
+    }
+    return out;
+}
 
 DbTreeDialog::DbTreeDialog(QWidget *parent) : QDialog(parent) {
     setWindowTitle(tr("Database Browser"));
