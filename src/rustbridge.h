@@ -89,20 +89,26 @@ QString formatSqlCompact(const QString &text, int indentWidth = 4, bool uppercas
                          const QString &dialect = QStringLiteral("ansi"));
 
 // JSON
+// formatJson / minifyJson change whitespace only and never repair: invalid
+// input comes back unchanged and a TransformNote Error (transform_note.h)
+// carries "line L, column C: ..." for the formatter panel.
 QString formatJson(const QString &text, int indent = 4);
-// Strict validation — "" when the text is valid JSON, otherwise a parse error
-// with line/column. formatJson REPAIRS its input (that is the JSON panel's
-// job); callers with no human in the loop validate through here first.
+// Strict validation — "" when the text is valid JSON, otherwise
+// "line L, column C: <found / expected>".
 QString jsonParseError(const QString &text);
 QString minifyJson(const QString &text);
+// Conservative repair. Unchanged text + a TransformNote Error when the
+// repair would be a guess; an Info note summarising the changes otherwise.
 QString fixJson(const QString &text);
 QString fixJsonReport(const QString &text);
 
 // HTML
 QString formatHtml(const QString &text, int indent = 2);
 
-// Brackets
+// Brackets. fixBrackets posts a TransformNote: Info listing each inserted /
+// removed bracket with line and column, or Error when it declined.
 QString fixBrackets(const QString &text);
+QString fixBracketsReport(const QString &text);
 QString checkBrackets(const QString &text);
 
 } // namespace RustCore

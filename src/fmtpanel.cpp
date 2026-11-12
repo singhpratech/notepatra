@@ -6,6 +6,7 @@
 #include "theme_detect.h"   // npIsDarkTheme / npResolvedThemeName
 #include "fonts.h"
 #include "config.h"
+#include "transform_note.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFont>
@@ -369,13 +370,29 @@ void FormatterPanel::addButton(const QString &label, std::function<QString(const
         // Catch any exception from the formatter (Rust panic, std::exception)
         // and surface it instead of letting it crash the app or fail silently.
         QString output;
+        TransformNote::clear();
         try {
             output = fn(input);
         } catch (const std::exception &e) {
+            TransformNote::clear();
             setStatus(QString("✗ %1 failed: %2").arg(label).arg(e.what()), true);
             return;
         } catch (...) {
+            TransformNote::clear();
             setStatus(QString("✗ %1 failed (unknown error)").arg(label), true);
+            return;
+        }
+        // The JSON / bracket wrappers report outcomes they cannot express in
+        // the returned text (transform_note.h). An Error means the input was
+        // NOT transformed (invalid JSON, a repair that would be a guess):
+        // say exactly why and where, and leave the user's text untouched
+        // instead of presenting it as a "✓ done" result.
+        const TransformNote::Note note = TransformNote::take();
+        if (note.kind == TransformNote::Kind::Error) {
+            setStatus(QString("✗ %1: %2").arg(label, note.text), true);
+            if (m_statusLabel) m_statusLabel->setToolTip(note.text);
+            logAction(label, input.length(), input.length(),
+                      QStringLiteral("not changed: ") + note.text);
             return;
         }
 
@@ -394,6 +411,15 @@ void FormatterPanel::addButton(const QString &label, std::function<QString(const
         m_inputText = output;
         // Compute a short description of what actually changed
         QString desc = describeChanges(input, output);
+        if (note.kind == TransformNote::Kind::Info) {
+            // What the fix actually did, with positions (full text in the
+            // tooltip; the banner is a single line).
+            setStatus(QString("✓ %1: %2").arg(label, note.text), false);
+            if (m_statusLabel) m_statusLabel->setToolTip(note.text);
+            logAction(label, beforeLen, output.length(), note.text);
+            return;
+        }
+        if (m_statusLabel) m_statusLabel->setToolTip(QString());
         setStatus(QString("✓ %1 done — %2 chars, %3 lines (%4). Click Show Diff to see changes.")
                   .arg(label).arg(output.length()).arg(output.count('\n') + 1).arg(desc), false);
         // Log to session history with the change description

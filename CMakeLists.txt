@@ -3293,6 +3293,50 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp"
     message(STATUS "Regression test enabled — target: test_fmtpanel_diff")
 endif()
 
+# JSON Tools / Bracket Tools end to end: real FormatterPanel buttons over the
+# real rustbridge wrappers and Rust core. Invalid JSON must be left untouched
+# with a "line L, column C" error; fixes must say what they changed and where.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_json_bracket_tools.cpp")
+    add_executable(test_json_bracket_tools
+        test_json_bracket_tools.cpp
+        src/fmtpanel.cpp
+        src/npp_palette.cpp
+        src/editor_symbols.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_json_bracket_tools rust_core)
+    target_include_directories(test_json_bracket_tools PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_json_bracket_tools PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_json_bracket_tools PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_json_bracket_tools PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_json_bracket_tools PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_json_bracket_tools PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_json_bracket_tools)
+    set_tests_properties(test_json_bracket_tools PROPERTIES
+        LABELS "regression;ui;json;brackets" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_json_bracket_tools")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp")
     add_executable(test_compare_widget
         test_compare_widget.cpp

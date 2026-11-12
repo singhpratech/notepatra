@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "rustbridge.h"
+#include "transform_note.h"
+
+#include <QStringList>
 
 namespace RustCore {
 
@@ -225,8 +228,21 @@ QString formatSqlCompact(const QString &text, int indentWidth, bool uppercase,
 }
 
 // ── JSON ──
+// Report text from Rust is multi-line; the panel status is one line.
+static QString firstLines(const QString &report, int maxLines) {
+    QStringList lines = report.split('\n', Qt::SkipEmptyParts);
+    while (lines.size() > maxLines) lines.removeLast();
+    return lines.join(QStringLiteral(" \u2014 "));
+}
+
 QString formatJson(const QString &text, int indent) {
     QByteArray b = text.toUtf8();
+    const QString err = textFromResult(npc_json_parse_error(b.constData(), b.size()));
+    if (!err.isEmpty()) {
+        TransformNote::post(TransformNote::Kind::Error,
+                            QStringLiteral("not valid JSON, nothing changed: %1").arg(err));
+        return text;
+    }
     return textFromResult(npc_format_json(b.constData(), b.size(), indent));
 }
 QString jsonParseError(const QString &text) {
@@ -235,11 +251,26 @@ QString jsonParseError(const QString &text) {
 }
 QString minifyJson(const QString &text) {
     QByteArray b = text.toUtf8();
+    const QString err = textFromResult(npc_json_parse_error(b.constData(), b.size()));
+    if (!err.isEmpty()) {
+        TransformNote::post(TransformNote::Kind::Error,
+                            QStringLiteral("not valid JSON, nothing changed: %1").arg(err));
+        return text;
+    }
     return textFromResult(npc_minify_json(b.constData(), b.size()));
 }
 QString fixJson(const QString &text) {
     QByteArray b = text.toUtf8();
-    return textFromResult(npc_fix_json(b.constData(), b.size()));
+    const QString out = textFromResult(npc_fix_json(b.constData(), b.size()));
+    const QString report = textFromResult(npc_fix_json_report(b.constData(), b.size()));
+    if (report.startsWith(QLatin1String("Repaired")))
+        TransformNote::post(TransformNote::Kind::Info, firstLines(report, 3));
+    else if (report.startsWith(QLatin1String("JSON is already valid")))
+        TransformNote::post(TransformNote::Kind::Info, report);
+    else if (report.startsWith(QLatin1String("No changes made")) ||
+             report.startsWith(QLatin1String("input too large")))
+        TransformNote::post(TransformNote::Kind::Error, firstLines(report, 2));
+    return out;
 }
 QString fixJsonReport(const QString &text) {
     QByteArray b = text.toUtf8();
@@ -255,7 +286,18 @@ QString formatHtml(const QString &text, int indent) {
 // ── Brackets ──
 QString fixBrackets(const QString &text) {
     QByteArray b = text.toUtf8();
-    return textFromResult(npc_fix_brackets(b.constData(), b.size()));
+    const QString out = textFromResult(npc_fix_brackets(b.constData(), b.size()));
+    const QString report = textFromResult(npc_fix_brackets_report(b.constData(), b.size()));
+    if (report.startsWith(QLatin1String("Fixed")) ||
+        report.startsWith(QLatin1String("All brackets matched")))
+        TransformNote::post(TransformNote::Kind::Info, firstLines(report, 3));
+    else
+        TransformNote::post(TransformNote::Kind::Error, firstLines(report, 2));
+    return out;
+}
+QString fixBracketsReport(const QString &text) {
+    QByteArray b = text.toUtf8();
+    return textFromResult(npc_fix_brackets_report(b.constData(), b.size()));
 }
 QString checkBrackets(const QString &text) {
     QByteArray b = text.toUtf8();
