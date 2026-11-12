@@ -3556,6 +3556,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_config_permissions
     set_tests_properties(test_config_permissions PROPERTIES
         LABELS "unit;config;security" TIMEOUT 60)
     message(STATUS "Regression test enabled — target: test_config_permissions")
+endif()
 
 # v0.1.133 — coding-agent write-path regressions: encoding/EOL/BOM round-trip
 # (apply_diff/write_file), search deny-list + symlink escape, Compose same-file
