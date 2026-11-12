@@ -3,6 +3,8 @@ use serde_json::{json, Map, Value};
 
 use crate::transport::{EditorTransport, TabRef, TabSelector};
 
+mod editing;
+
 const DEFAULT_MAX_RESULTS: usize = 50;
 /// Server-side cap mirrored from the C++ bridge: search_project never
 /// returns more than this many matches, so larger requests are clamped
@@ -42,6 +44,17 @@ pub const READ_TOOLS: &[&str] = &[
     "list_connections",
     "run_query",
     "list_tables",
+    // v0.1.133: pure text tools (nothing in the editor changes)
+    "check_brackets",
+    "fix_brackets",
+    "hash_text",
+    "encode_text",
+    "diff_text",
+    "repair_json",
+    "markdown_convert",
+    "mermaid_to_npd",
+    "list_symbols",
+    "generate_password",
 ];
 pub const ACT_TOOLS: &[&str] = &[
     "open_file",
@@ -56,6 +69,15 @@ pub const ACT_TOOLS: &[&str] = &[
     // phase 2
     "open_data_analyst",
     "render_chart",
+    // v0.1.133: view / navigation only
+    "activate_tab",
+    "set_read_only",
+    "bookmarks",
+    "fold",
+    "set_view",
+    "set_theme",
+    "set_preview",
+    "compare_with_file",
 ];
 pub const WRITE_TOOLS: &[&str] = &[
     "insert_text",
@@ -70,6 +92,20 @@ pub const WRITE_TOOLS: &[&str] = &[
     // phase 2
     "export_query_results",
     "export_chart",
+    // v0.1.133. close_tab and reload_tab need no card when nothing unsaved
+    // is lost, but they CAN discard edits, so they are tiered as writes.
+    "close_tab",
+    "reload_tab",
+    "rename_file",
+    "save_all",
+    "undo",
+    "redo",
+    "transform_lines",
+    "convert_case",
+    "comment_lines",
+    "line_edit",
+    "set_eol",
+    "set_encoding",
 ];
 
 /// Mandatory sentence on every write tool's description: these tools are
@@ -99,18 +135,35 @@ fn no_args_schema() -> Value {
 }
 
 fn format_tool(name: &str, kind_label: &str, extra: &str) -> Value {
+    let mut props = Map::new();
+    props.insert(
+        "text".into(),
+        json!({ "type": "string", "description": format!("The raw {kind_label} text to format") }),
+    );
+    // v0.1.133: only the options the underlying formatter really has.
+    match kind_label {
+        "JSON" => {
+            props.insert("indent".into(), json!({ "type": "integer", "minimum": 0, "maximum": 8, "description": "Spaces per indent level (default 4)" }));
+            props.insert("minify".into(), json!({ "type": "boolean", "description": "Return compact one-line JSON instead (default false); indent is then ignored" }));
+        }
+        "SQL" => {
+            props.insert("indent".into(), json!({ "type": "integer", "minimum": 1, "maximum": 8, "description": "Spaces per indent level (default 4)" }));
+            props.insert("keyword_case".into(), json!({ "type": "string", "enum": ["upper", "lower"], "description": "Keyword case (default upper)" }));
+        }
+        _ => {
+            props.insert("indent".into(), json!({ "type": "integer", "minimum": 0, "maximum": 8, "description": "Spaces per indent level (default 2)" }));
+        }
+    }
     json!({
         "name": name,
         "description": format!(
             "Format {kind_label} text and return the formatted result.{extra} \
              Use before inserting {kind_label} into the editor, or to clean up \
-             {kind_label} the user pasted."
+             {kind_label} the user pasted. Pure: nothing in the editor changes."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "text": { "type": "string", "description": format!("The raw {kind_label} text to format") }
-            },
+            "properties": Value::Object(props),
             "required": ["text"],
             "additionalProperties": false
         }
@@ -118,6 +171,14 @@ fn format_tool(name: &str, kind_label: &str, extra: &str) -> Value {
 }
 
 pub fn definitions() -> Value {
+    let mut all = base_definitions();
+    if let Value::Array(list) = &mut all {
+        list.extend(editing::definitions());
+    }
+    all
+}
+
+fn base_definitions() -> Value {
     json!([
         {
             "name": "open_file",
@@ -153,13 +214,15 @@ pub fn definitions() -> Value {
         },
         {
             "name": "search_project",
-            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive); returns matching lines with file path and line number, plus workspace_searched and scope so you can tell a project-wide search from an open-tabs-only one. Zero matches is a successful search with an empty results list, not an error. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
+            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive unless match_case) or a regex; returns matching lines with file path, 1-based line and 1-based column, plus workspace_searched and scope so you can tell a project-wide search from an open-tabs-only one. Zero matches is a successful search with an empty results list, not an error. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
                     "max_results": { "type": "integer", "minimum": 1, "description": "Maximum matches to return (default 50; values above 200 are clamped to the editor's 200-result cap)" },
-                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
+                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" },
+                    "match_case": { "type": "boolean", "description": "Case-sensitive matching (default: false for a literal query, true for a regex — the historical behaviour)" },
+                    "whole_word": { "type": "boolean", "description": "Match whole words only (default false)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -187,7 +250,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "find_in_tab",
-            "description": "Find a literal substring inside ONE open tab (defaults to the active tab); returns matching lines and a truncation flag. Use search_project instead to search across all tabs.",
+            "description": "Find a literal substring (case-insensitive unless match_case) or a regex inside ONE open tab (defaults to the active tab); returns matching lines with 1-based line and column, and a truncation flag. Use search_project instead to search across all tabs.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -195,7 +258,9 @@ pub fn definitions() -> Value {
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
                     "title": { "type": "string", "description": "Exact tab title, as read_tab accepts" },
                     "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
-                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
+                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" },
+                    "match_case": { "type": "boolean", "description": "Case-sensitive matching (default: false for a literal query, true for a regex — the historical behaviour)" },
+                    "whole_word": { "type": "boolean", "description": "Match whole words only (default false)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -203,11 +268,13 @@ pub fn definitions() -> Value {
         },
         {
             "name": "new_tab",
-            "description": "Create a new untitled tab, optionally pre-filled with text. Use to hand generated or transformed content to the user inside the editor instead of pasting it into chat.",
+            "description": "Create a new untitled tab, optionally pre-filled with text, a syntax language and a tab title, and focus it. Returns {tab_index, tab_id, language?, title?}. Use to hand generated or transformed content to the user inside the editor instead of pasting it into chat.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "text": { "type": "string", "description": "Initial content for the new tab (default: empty)" }
+                    "text": { "type": "string", "description": "Initial content for the new tab (default: empty)" },
+                    "language": { "type": "string", "description": "Syntax-highlighting language, as list_languages names it or a common alias such as \"python\" (default: Plain Text); an unknown name is an error and no tab is created" },
+                    "title": { "type": "string", "description": "Tab title (default: the next \"Untitled N\")" }
                 },
                 "required": [],
                 "additionalProperties": false
@@ -332,9 +399,14 @@ pub fn definitions() -> Value {
         {
             "name": "apply_edit",
             "description": format!(
-                "Find-and-replace a literal string in one open tab (default: the active \
-                 tab): replaces the first occurrence, or every occurrence with all=true, \
-                 and returns the replacement count. {APPROVAL_NOTE}"
+                "Find-and-replace in one open tab (default: the active tab) or, with \
+                 scope all_open, in every open tab behind one card that lists each tab \
+                 and its match count. Replaces the first occurrence, or every one with \
+                 all=true, and returns the count. Default: literal and case-sensitive; a \
+                 literal replacement is inserted as-is ($1 stays $1). regex=true uses the \
+                 Replace dialog's engine, where $1 / ${{name}} in replace refer to groups. \
+                 If the document changes while the card waits, nothing is replaced. \
+                 {APPROVAL_NOTE}"
             ),
             "inputSchema": {
                 "type": "object",
@@ -343,7 +415,11 @@ pub fn definitions() -> Value {
                     "replace": { "type": "string", "description": "Replacement text" },
                     "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
-                    "all": { "type": "boolean", "description": "Replace every occurrence (default false: first occurrence only)" }
+                    "all": { "type": "boolean", "description": "Replace every occurrence (default false: first occurrence only)" },
+                    "regex": { "type": "boolean", "description": "find is a regular expression (default false: literal)" },
+                    "match_case": { "type": "boolean", "description": "Case-sensitive matching (default true)" },
+                    "whole_word": { "type": "boolean", "description": "Match whole words only (default false)" },
+                    "scope": { "type": "string", "enum": ["tab", "all_open"], "description": "tab (default: the selected or active tab) or all_open (every open text tab; do not name a tab)" }
                 },
                 "required": ["find", "replace"],
                 "additionalProperties": false
@@ -551,6 +627,7 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "source": { "type": "string", "description": "Initial .npd document text (default: an empty diagram)" },
+                    "template": { "type": "string", "enum": ["flow", "er", "system"], "description": "Start from the Diagram tab's New starter template instead of source: flow chart, ER diagram or system design" },
                     "title": { "type": "string", "description": "Tab title (default \"Diagram\")" }
                 },
                 "required": [],
@@ -746,6 +823,37 @@ pub fn call(
         "render_chart" => render_chart(transport, args),
         "export_query_results" => export_query_results(transport, args),
         "export_chart" => export_chart(transport, args),
+        // v0.1.133
+        "activate_tab" => editing::activate_tab(transport, args),
+        "close_tab" => editing::close_tab(transport, args),
+        "reload_tab" => editing::reload_tab(transport, args),
+        "rename_file" => editing::rename_file(transport, args),
+        "save_all" => editing::save_all(transport, args),
+        "set_read_only" => editing::set_read_only(transport, args),
+        "undo" => editing::undo(transport, args),
+        "redo" => editing::redo(transport, args),
+        "transform_lines" => editing::transform_lines(transport, args),
+        "convert_case" => editing::convert_case(transport, args),
+        "comment_lines" => editing::comment_lines(transport, args),
+        "line_edit" => editing::line_edit(transport, args),
+        "set_eol" => editing::set_eol(transport, args),
+        "set_encoding" => editing::set_encoding(transport, args),
+        "bookmarks" => editing::bookmarks(transport, args),
+        "fold" => editing::fold(transport, args),
+        "set_view" => editing::set_view(transport, args),
+        "set_theme" => editing::set_theme(transport, args),
+        "set_preview" => editing::set_preview(transport, args),
+        "compare_with_file" => editing::compare_with_file(transport, args),
+        "check_brackets" => editing::check_brackets(transport, args),
+        "fix_brackets" => editing::fix_brackets(transport, args),
+        "hash_text" => editing::hash_text(transport, args),
+        "encode_text" => editing::encode_text(transport, args),
+        "diff_text" => editing::diff_text(transport, args),
+        "repair_json" => editing::repair_json(transport, args),
+        "markdown_convert" => editing::markdown_convert(transport, args),
+        "mermaid_to_npd" => editing::mermaid_to_npd(transport, args),
+        "list_symbols" => editing::list_symbols(transport, args),
+        "generate_password" => editing::generate_password(transport, args),
         other => CallOutcome::UnknownTool(other.to_string()),
     }
 }
@@ -995,8 +1103,16 @@ fn read_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> C
 }
 
 fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["query", "max_results", "regex"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &["query", "max_results", "regex", "match_case", "whole_word"],
+    ) {
         return e;
+    }
+    for k in ["match_case", "whole_word"] {
+        if let Err(e) = optional_bool(args, k, false) {
+            return e;
+        }
     }
     let query = match required_str(args, "query") {
         Ok(q) => q,
@@ -1016,6 +1132,11 @@ fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>
     // Clamp to the editor's server-side cap rather than requesting results
     // that can never come back.
     let max_results = max_results.min(MAX_RESULTS_CAP);
+    if args.contains_key("match_case") || args.contains_key("whole_word") {
+        let mut a = args.clone();
+        a.insert("max_results".into(), json!(max_results));
+        return to_outcome(transport.call_verb("search_project", Value::Object(a)));
+    }
     match transport.search_project(query, max_results, regex) {
         Ok(results) => json_text(&results),
         Err(e) => CallOutcome::ToolError(e.0),
@@ -1035,8 +1156,24 @@ fn get_selection(transport: &mut dyn EditorTransport, args: &Map<String, Value>)
 fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
     // NP-11: `title` was accepted by read_tab and rejected here with
     // "unexpected argument" — the same selector, two answers.
-    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "title", "query", "regex"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &[
+            "tab_index",
+            "tab_id",
+            "title",
+            "query",
+            "regex",
+            "match_case",
+            "whole_word",
+        ],
+    ) {
         return e;
+    }
+    for k in ["match_case", "whole_word"] {
+        if let Err(e) = optional_bool(args, k, false) {
+            return e;
+        }
     }
     let query = match required_str(args, "query") {
         Ok(q) => q,
@@ -1057,12 +1194,40 @@ fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -
         Ok(r) => r,
         Err(e) => return e,
     };
+    if args.contains_key("match_case") || args.contains_key("whole_word") {
+        // The bridge reads this verb's positional selector from "index".
+        let mut a = args.clone();
+        if let Some(i) = a.remove("tab_index") {
+            a.insert("index".into(), i);
+        }
+        return to_outcome(transport.call_verb("find_in_tab", Value::Object(a)));
+    }
     to_outcome(transport.find_in_tab(tab, title, query, regex))
 }
 
 fn new_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["text"]) {
+    let spec = [
+        editing::Arg {
+            key: "text",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "language",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "title",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+    ];
+    if let Err(e) = editing::check(args, &spec) {
         return e;
+    }
+    if args.contains_key("language") || args.contains_key("title") {
+        return to_outcome(transport.call_verb("new_tab", Value::Object(args.clone())));
     }
     let text = match optional_str(args, "text") {
         Ok(t) => t,
@@ -1186,14 +1351,22 @@ fn format_text(
     args: &Map<String, Value>,
     kind: &str,
 ) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["text"]) {
+    let spec = editing::format_spec(kind);
+    if let Err(e) = editing::check(args, spec) {
         return e;
     }
     let text = match required_str(args, "text") {
         Ok(t) => t,
         Err(e) => return e,
     };
-    match transport.format_text(kind, text) {
+    let result = if args.len() > 1 {
+        let mut a = args.clone();
+        a.insert("kind".into(), json!(kind));
+        transport.call_verb("format_text", Value::Object(a))
+    } else {
+        transport.format_text(kind, text)
+    };
+    match result {
         // Unwrap {text} so the tool returns the formatted text itself.
         Ok(v) => match v.get("text").and_then(Value::as_str) {
             Some(t) => CallOutcome::Ok(t.to_string()),
@@ -1262,8 +1435,36 @@ fn replace_selection(
 }
 
 fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["find", "replace", "tab_index", "tab_id", "all"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &[
+            "find",
+            "replace",
+            "tab_index",
+            "tab_id",
+            "all",
+            "regex",
+            "match_case",
+            "whole_word",
+            "scope",
+        ],
+    ) {
         return e;
+    }
+    for k in ["regex", "match_case", "whole_word"] {
+        if let Err(e) = optional_bool(args, k, false) {
+            return e;
+        }
+    }
+    let scope = match optional_str(args, "scope") {
+        Ok(s) => s.unwrap_or("tab"),
+        Err(e) => return e,
+    };
+    if scope != "tab" && scope != "all_open" {
+        return CallOutcome::InvalidParams("scope must be \"tab\" or \"all_open\"".into());
+    }
+    if scope == "all_open" && (args.contains_key("tab_id") || args.contains_key("tab_index")) {
+        return CallOutcome::InvalidParams("scope all_open does not take a tab".into());
     }
     let find = match required_str(args, "find") {
         Ok(f) => f,
@@ -1281,6 +1482,14 @@ fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) ->
         Ok(a) => a,
         Err(e) => return e,
     };
+    let extended = ["regex", "match_case", "whole_word", "scope"]
+        .iter()
+        .any(|k| args.contains_key(*k));
+    if extended {
+        let mut a = args.clone();
+        a.insert("all".into(), json!(all));
+        return to_outcome(transport.call_verb("apply_edit", Value::Object(a)));
+    }
     to_outcome(transport.apply_edit(find, replace, tab, all))
 }
 
@@ -1501,8 +1710,31 @@ fn get_capabilities(transport: &mut dyn EditorTransport, args: &Map<String, Valu
 // ── Phase 1 handlers ────────────────────────────────────────────────────────
 
 fn create_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["source", "title"]) {
+    let spec = [
+        editing::Arg {
+            key: "source",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "title",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "template",
+            kind: editing::Kind::Enum(&["flow", "er", "system"]),
+            required: false,
+        },
+    ];
+    if let Err(e) = editing::check(args, &spec) {
         return e;
+    }
+    if args.contains_key("template") {
+        if args.contains_key("source") {
+            return CallOutcome::InvalidParams("provide source or template, not both".into());
+        }
+        return to_outcome(transport.call_verb("create_diagram", Value::Object(args.clone())));
     }
     let source = match optional_str(args, "source") {
         Ok(s) => s,

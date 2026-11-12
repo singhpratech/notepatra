@@ -95,6 +95,10 @@ pub struct SearchHit {
     pub path: String,
     /// 1-based line number.
     pub line: usize,
+    /// 1-based column of the first match on the line (v0.1.133); absent
+    /// from editors that predate it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<usize>,
     pub text: String,
 }
 

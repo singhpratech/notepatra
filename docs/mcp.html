@@ -15,7 +15,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notepatra MCP — Your editor, readable by your AI</title>
-<meta name="description" content="Notepatra's MCP server: 49 tools let Claude, Codex or any MCP client read tabs, search, run read-only SQL and inspect Git. Writes need your approval.">
+<meta name="description" content="Notepatra's MCP server: 79 tools let Claude, Codex or any MCP client read tabs, search, run read-only SQL and inspect Git. Writes need your approval.">
 <link rel="canonical" href="https://notepatra.org/mcp.html">
 <!-- Open Graph / Twitter. og:image is same-origin on purpose: an
      off-domain card is the same class of bug the favicon had. 1200x630
@@ -25,7 +25,7 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://notepatra.org/mcp.html">
 <meta property="og:title" content="Notepatra MCP — Your editor, readable by your AI">
-<meta property="og:description" content="49 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
+<meta property="og:description" content="79 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
 <meta property="og:image" content="https://notepatra.org/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -33,7 +33,7 @@
 <meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Notepatra MCP — Your editor, readable by your AI">
-<meta name="twitter:description" content="49 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
+<meta name="twitter:description" content="79 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
 <meta name="twitter:image" content="https://notepatra.org/og-card.png">
 <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
 
@@ -292,7 +292,7 @@
   <div class="topbar-left">
     <img src="/icon-192.png" alt="Notepatra" width="192" height="192">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · v0.1.132 · 49 tools</span>
+    <span class="tag">MCP · v0.1.132 · 79 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -310,7 +310,7 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL (over data files in the Full edition), read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.132. The server provides <strong>49 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.132.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.132. The server provides <strong>79 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export, and since v0.1.133 tab, line, case, comment, encoding and view control plus pure text tools) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.132.
     <br><br>
     <strong>v0.1.125, v0.1.126 and v0.1.127 were all MCP-only releases</strong>, driven by testing this server against a real editor rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v127">what changed in v0.1.127</a> below.
   </div>
@@ -318,7 +318,8 @@
   <nav class="pagenav">
     On this page:
     <a href="#what-it-is">What it is</a> ·
-    <a href="#tools">The 49 tools</a> ·
+    <a href="#tools">The 79 tools</a> ·
+    <a href="#v133">New in v0.1.133</a> ·
     <a href="#v127">New in v0.1.127</a> ·
     <a href="#approval">Write approval</a> ·
     <a href="#setup">Setup per client</a> ·
@@ -336,15 +337,15 @@
   <ul>
     <li><strong>Transport:</strong> a stdio JSON-RPC 2.0 MCP server. It speaks MCP protocol revision <code>2025-06-18</code> and also accepts <code>2025-03-26</code> and <code>2024-11-05</code> from older clients.</li>
     <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket on Linux and macOS, a named pipe on Windows; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
-    <li><strong>Capabilities:</strong> tools (49 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
+    <li><strong>Capabilities:</strong> tools (79 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
     <li><strong>Safety:</strong> reads never need permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>.</li>
   </ul>
   <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
 
-  <h2 id="tools" class="anchor-target">The tool surface — 49 tools, three tiers</h2>
-  <p><code>notepatra-mcp</code> exposes 49 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
+  <h2 id="tools" class="anchor-target">The tool surface — 79 tools, three tiers</h2>
+  <p><code>notepatra-mcp</code> exposes 79 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
 
-  <h3>Tier 1 — Read (27 tools, no approval needed)</h3>
+  <h3>Tier 1 — Read (37 tools, no approval needed)</h3>
   <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -372,41 +373,59 @@
       <tr><td><code>list_connections</code></td><td>List your saved database connections (name, driver, database) — never passwords.</td></tr>
       <tr><td><code>run_query</code></td><td>Run a read-only <code>SELECT</code> against a saved named connection (PostgreSQL / MySQL / SQL Server / SQLite / DuckDB) — what <code>run_sql</code> cannot reach; mutations rejected. Full edition (DuckDB) for DuckDB-driver connections.</td></tr>
       <tr><td><code>list_tables</code></td><td>List the user tables available over a saved named connection.</td></tr>
-      <tr><td><code>format_json</code></td><td>Format JSON text and return the result (fails on invalid JSON).</td></tr>
+      <tr><td><code>format_json</code></td><td>Format JSON text and return the result (fails on invalid JSON). Takes <code>indent</code> and <code>minify</code>; <code>format_sql</code> takes <code>indent</code> and <code>keyword_case</code>; <code>format_html</code> takes <code>indent</code>.</td></tr>
       <tr><td><code>format_sql</code></td><td>Format SQL text and return the result.</td></tr>
       <tr><td><code>format_html</code></td><td>Format HTML text and return the result.</td></tr>
+      <tr><td><code>check_brackets</code></td><td>Check <code>()</code> <code>[]</code> <code>{}</code> balance and begin/end keyword pairs in text or a tab, as Bracket Tools &gt; Check does.</td></tr>
+      <tr><td><code>fix_brackets</code></td><td>Auto-fix unbalanced brackets and return <code>{fixed, changed, report}</code> — the tab itself is not changed.</td></tr>
+      <tr><td><code>hash_text</code></td><td>MD5 / SHA-1 / SHA-256 / SHA-512 of text or a tab (Utilities &gt; Hash).</td></tr>
+      <tr><td><code>encode_text</code></td><td>Base64 or URL encode/decode text or a tab (Utilities &gt; Base64 / URL).</td></tr>
+      <tr><td><code>diff_text</code></td><td>Line diff of two texts or tabs with the Compare view's engine; returns hunks with 1-based line numbers.</td></tr>
+      <tr><td><code>repair_json</code></td><td>Explicit, opt-in JSON repair (JSON Tools &gt; Fix): <code>{fixed, report}</code>. <code>format_json</code> still refuses invalid JSON.</td></tr>
+      <tr><td><code>markdown_convert</code></td><td>Tools &gt; Markdown Converter as data: table, list, code block, bold, italic, link, heading, HTML to Markdown.</td></tr>
+      <tr><td><code>mermaid_to_npd</code></td><td>Translate Mermaid diagram text to Notepatra Diagram (<code>.npd</code>) source with the Diagram tab's importer.</td></tr>
+      <tr><td><code>list_symbols</code></td><td>Classes and functions in a tab, from the Function List parser: <code>{name, kind, line}</code>.</td></tr>
+      <tr><td><code>generate_password</code></td><td>Passwords or passphrases from the Password Generator engine. The result goes to your MCP client and its model provider.</td></tr>
     </tbody>
   </table></div>
 
   <div class="callout success">
     <strong>How <code>run_sql</code> stays safe.</strong> Every query is checked by the SQL classifier and rejected unless it is a pure <code>SELECT</code> — no <code>INSERT</code>, <code>UPDATE</code>, <code>ATTACH</code>, <code>COPY</code>, or DDL ever runs. On the Full (DuckDB) edition there is a second wall: the target CSV / Parquet / JSON is first materialized into an in-memory table, then DuckDB's external filesystem access is turned off (<code>SET enable_external_access=false</code>) <em>before</em> the untrusted SQL executes — so the query cannot reach host files even through <code>read_text</code>, <code>read_csv_auto</code>, <code>glob</code>, or a replacement scan. The <code>csv_path</code> argument is confined to your open workspace. Results are row- and cell-capped so a single answer can't exfiltrate a whole file.</div>
 
-  <h3>Tier 2 — Act (11 tools, visible and non-destructive)</h3>
+  <h3>Tier 2 — Act (19 tools, visible and non-destructive)</h3>
   <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>open_file</code></td><td>Open a file in a new tab, or focus the tab that already has it.</td></tr>
-      <tr><td><code>new_tab</code></td><td>Create a new untitled tab, optionally pre-filled with text.</td></tr>
+      <tr><td><code>new_tab</code></td><td>Create a new untitled tab, optionally pre-filled with text, a language and a title.</td></tr>
       <tr><td><code>goto_line</code></td><td>Move the cursor to a line in a tab — for pointing you at a location.</td></tr>
       <tr><td><code>select_range</code></td><td>Select a range of text in a tab by 1-based line/column (columns clamp to the line), so <code>replace_selection</code> has a selection to act on.</td></tr>
       <tr><td><code>set_language</code></td><td>Set a tab's syntax-highlighting language. Accepts friendly aliases (<code>python</code>, <code>js</code>, <code>cpp</code>, <code>go</code>) and resolves them to the canonical name.</td></tr>
       <tr><td><code>compare_tabs</code></td><td>Open Notepatra's side-by-side Compare view for two open tabs, each named by <code>tab_id_a</code> / <code>tab_id_b</code> (stable) or <code>index_a</code> / <code>index_b</code>.</td></tr>
       <tr><td><code>open_note</code></td><td>Open one Noter note in the editor by its file path.</td></tr>
-      <tr><td><code>create_diagram</code></td><td>Create a new Diagram (<code>.npd</code>) tab — optionally pre-filled — and focus it; reports parse validity.</td></tr>
+      <tr><td><code>create_diagram</code></td><td>Create a new Diagram (<code>.npd</code>) tab — pre-filled with source or a <code>flow</code> / <code>er</code> / <code>system</code> starter template — and focus it; reports parse validity.</td></tr>
       <tr><td><code>open_noter</code></td><td>Open or focus the Noter panel tab.</td></tr>
       <tr><td><code>open_data_analyst</code></td><td>Reveal and focus the AI dock in Data Analyst mode.</td></tr>
       <tr><td><code>render_chart</code></td><td>Render a chart inline in the Data Analyst transcript (Vega-Lite or the simplified <code>{type,x,y,data}</code> form). Full edition on Linux and Windows only (needs WebEngine; macOS Full has none).</td></tr>
+      <tr><td><code>activate_tab</code></td><td>Bring a tab to the front, by <code>tab_id</code> or <code>tab_index</code>.</td></tr>
+      <tr><td><code>set_read_only</code></td><td>Turn a tab's read-only lock on or off.</td></tr>
+      <tr><td><code>bookmarks</code></td><td>List, toggle (at a 1-based line) or clear a tab's bookmarks.</td></tr>
+      <tr><td><code>fold</code></td><td>Fold or unfold every region of a tab.</td></tr>
+      <tr><td><code>set_view</code></td><td>Word wrap, zoom (font size 6-48), whitespace, end-of-line markers, indent guides — through the View menu's own actions.</td></tr>
+      <tr><td><code>set_theme</code></td><td>Switch to System, Light, Dark or Monokai (Settings &gt; Theme).</td></tr>
+      <tr><td><code>set_preview</code></td><td>Show or hide the Preview pane for a tab.</td></tr>
+      <tr><td><code>compare_with_file</code></td><td>Compare a tab with a file on disk (Tools &gt; Compare with File); the path must pass the credential deny-list.</td></tr>
     </tbody>
   </table></div>
 
-  <h3>Tier 3 — Write, with approval (11 tools, human-gated)</h3>
+  <h3>Tier 3 — Write, with approval (23 tools, human-gated)</h3>
   <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td><code>insert_text</code></td><td>Insert text into an open tab at the cursor, or at an explicit line/column.</td></tr>
       <tr><td><code>replace_selection</code></td><td>Replace the currently selected text with new text.</td></tr>
-      <tr><td><code>apply_edit</code></td><td>Literal find-and-replace in one open tab — first occurrence, or all of them.</td></tr>
-      <tr><td><code>save_tab</code></td><td>Save an open tab to its file on disk.</td></tr>
+      <tr><td><code>apply_edit</code></td><td>Find-and-replace in one tab, or every open tab (<code>scope: all_open</code>, one card listing each tab and its count). Literal and case-sensitive by default — <code>$1</code> stays <code>$1</code>; <code>regex</code>, <code>match_case</code> and <code>whole_word</code> use the Replace dialog's engine. If the document changes while the card waits, nothing is replaced.</td></tr>
+      <tr><td><code>save_tab</code></td><td>Save an open tab to its file on disk, or Save As to a new path.</td></tr>
       <tr><td><code>create_note</code></td><td>Create a new Noter note with a title and body.</td></tr>
       <tr><td><code>append_note</code></td><td>Append text to an existing Noter note.</td></tr>
       <tr><td><code>set_reminder</code></td><td>Set a due-time reminder on a Noter note.</td></tr>
@@ -414,8 +433,30 @@
       <tr><td><code>set_diagram_source</code></td><td>Replace the entire <code>.npd</code> source of a Diagram tab; the canvas re-renders.</td></tr>
       <tr><td><code>export_query_results</code></td><td>Run a read-only <code>SELECT</code> against a saved connection and write the results to a CSV or JSON file.</td></tr>
       <tr><td><code>export_chart</code></td><td>Render a chart off-screen and export it to a PNG / SVG / HTML / spec file. Full edition on Linux and Windows only (needs WebEngine; macOS Full has none).</td></tr>
+      <tr><td><code>close_tab</code></td><td>Close a tab. No card when it has no unsaved changes; with unsaved changes it is refused unless <code>discard_unsaved</code> is set, and then the card says they will be lost.</td></tr>
+      <tr><td><code>reload_tab</code></td><td>Reload a tab from disk. No card when nothing unsaved would be lost; otherwise the card says so.</td></tr>
+      <tr><td><code>rename_file</code></td><td>Rename a tab's file inside its folder: no separators, never overwrites, protected names refused.</td></tr>
+      <tr><td><code>save_all</code></td><td>Save every modified file-backed tab behind one card that lists them; untitled tabs are skipped and reported.</td></tr>
+      <tr><td><code>undo</code></td><td>Undo the last edit(s) in a tab.</td></tr>
+      <tr><td><code>redo</code></td><td>Redo undone edit(s) in a tab.</td></tr>
+      <tr><td><code>transform_lines</code></td><td>One Line Operations / Blank Operations transform (sorts, dedupe, remove empty or blank, join, reverse, trim, tab/space) on the selection or document — one undo step.</td></tr>
+      <tr><td><code>convert_case</code></td><td>UPPER / lower / Proper / Sentence / iNVERT case on the selection or document.</td></tr>
+      <tr><td><code>comment_lines</code></td><td>Comment, uncomment or toggle a line range with the language's line or block comment syntax.</td></tr>
+      <tr><td><code>line_edit</code></td><td>Duplicate, delete, or move up/down one line.</td></tr>
+      <tr><td><code>set_eol</code></td><td>Set CRLF / LF / CR line endings, converting existing ones by default.</td></tr>
+      <tr><td><code>set_encoding</code></td><td>Convert to an encoding (text kept), or reinterpret the file from disk (refused over unsaved changes unless <code>discard_unsaved</code>).</td></tr>
     </tbody>
   </table></div>
+
+  <h2 id="v133" class="anchor-target">What changed in v0.1.133</h2>
+  <p>The goal of this release: an MCP client can drive the editor itself, not only read it. Thirty tools are new, and nine contract defects found by an audit are fixed.</p>
+  <ul>
+    <li><strong>A held write follows the document, not a position.</strong> A write waiting on the approval card used to remember the tab <em>index</em>; close or move a tab during the two-minute wait and the edit landed in whichever document now held that index. The card now pins the tab's stable id, re-resolves it on Approve, and fails if the tab is gone. <code>apply_edit</code> also fails if the match the card described has moved.</li>
+    <li><strong>One tab resolver, everywhere.</strong> <code>goto_line</code> and <code>set_language</code> ignored <code>tab_id</code> and acted on the focused tab; the diagram tools advertised <code>tab_id</code> and then demanded <code>tab_index</code>. Every tab-taking tool now resolves through the same code, and a stale id is an error, never a fallback. <code>compare_tabs</code> takes <code>tab_id_a</code> / <code>tab_id_b</code>.</li>
+    <li><strong>Write destinations have a deny-list.</strong> Save As, exports and every buffer edit refuse credential stores and files that run code later: <code>authorized_keys</code>, shell rc and profile files, autostart and LaunchAgents entries, the Windows Startup folder, cron spools, <code>.git/hooks</code> and <code>.gitconfig</code>. The check runs before any card, on the path, its canonical parent and any symlink target.</li>
+    <li><strong>The card counts down and asks for attention.</strong> It shows the time left before auto-deny and flashes the taskbar entry (it never steals focus). A client that sends a <code>progressToken</code> receives <code>notifications/progress</code> while the user decides.</li>
+    <li><strong>Smaller fixes.</strong> <code>open_file</code>, <code>new_tab</code>, <code>create_diagram</code> and <code>get_status</code> return <code>tab_id</code>; <code>get_status</code> adds line endings, line count, length, selection, read-only, word wrap and the workspace folder. Exports are written to a temporary name and replaced in one step. <code>format_*</code> moved to the read tier. A relative <code>read_note</code> path resolves inside the Noter folder. <code>resources/list</code> says so when the Noter folder cannot be listed. Stopping the editor with SIGTERM removes its endpoint file.</li>
+  </ul>
 
   <h2 id="v127" class="anchor-target">What changed in v0.1.127</h2>
   <p>Retesting v0.1.126 found a <strong>sixth</strong> credential door, and the interesting part is not the door — it is why there kept being another one.</p>
@@ -469,10 +510,12 @@
   </ul>
 
   <h2 id="approval" class="anchor-target">The write-approval model</h2>
-  <p>The eleven write tools <strong>never execute on arrival</strong>. Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
+  <p>The write tools <strong>never execute on arrival</strong> (<code>close_tab</code> and <code>reload_tab</code> skip the card only when nothing unsaved would be lost). Each incoming write request shows a non-modal approval card inside the Notepatra window — it does not steal focus or block your typing — describing what the assistant wants to do, with a preview of the text involved and two buttons: <strong>Approve</strong> and <strong>Deny</strong>.</p>
   <ul>
     <li><strong>Nothing happens until you click Approve.</strong> The tool call blocks; the assistant just waits.</li>
-    <li><strong>120-second auto-deny.</strong> If you don't respond within two minutes, the request is denied automatically and the assistant receives the error <code>approval timed out</code>.</li>
+    <li><strong>120-second auto-deny, shown on the card.</strong> The card counts down the time left. If you don't respond within two minutes, the request is denied automatically and the assistant receives the error <code>approval timed out</code>. A client that sent a <code>progressToken</code> hears <code>notifications/progress</code> while it waits.</li>
+    <li><strong>The card names the document, and the write follows it.</strong> Each card says which tool, which tab, which operation and on what scope. If that tab is closed before you approve, the write fails instead of landing in another document.</li>
+    <li><strong>Some destinations are never offered.</strong> Writes to credential stores, shell start-up files, autostart entries, cron spools, git hooks and <code>.gitconfig</code> are refused before any card appears.</li>
     <li><strong>Deny is a first-class answer.</strong> Click Deny and the assistant receives <code>denied by user</code> — as a tool error it can read and react to, not a silent failure.</li>
     <li><strong>One card at a time, in order.</strong> Multiple pending writes queue FIFO; you decide each one individually. No batch-approve.</li>
     <li><strong>No headless fallback — by design.</strong> If there is no visible editor window to host the card, the write is denied with <code>approval unavailable</code>. There is no auto-approve setting, no environment variable, and no config flag that bypasses the card.</li>
@@ -529,7 +572,7 @@ cargo build --release   # binary at target/release/notepatra-mcp</code></pre>
   <h3>Claude Code</h3>
   <p>One command:</p>
   <pre><code>claude mcp add notepatra -- notepatra-mcp --socket</code></pre>
-  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 49 tools.</p>
+  <p>Then <code>/mcp</code> inside Claude Code shows the server and its 79 tools.</p>
 
   <h3>OpenAI Codex CLI</h3>
   <p>Add a block to <code>~/.codex/config.toml</code>:</p>
@@ -562,6 +605,7 @@ async with MCPServerStdio(
   <ul>
     <li><code>notepatra://tab/N</code> — each open tab, as plain text. <code>resources/list</code> enumerates them with their titles.</li>
     <li><code>notepatra://note/&lt;basename&gt;</code> — each Noter note, as plain text. If two notes share a basename, the colliding ones are addressed by their URI-encoded full path instead, so every note stays reachable.</li>
+    <li><code>notepatra://notes/unavailable</code> — listed only when the editor cannot list your notes (for example, the OS blocks the Noter folder); its description and contents give the reason.</li>
   </ul>
   <p>Clients that support MCP resources (Claude Desktop's attachment picker, for example) can pull a tab or note straight into the conversation without a tool call.</p>
   <h3>Prompts</h3>

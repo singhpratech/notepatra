@@ -933,6 +933,7 @@ impl EditorTransport for SocketEditor {
                         .get("line")
                         .and_then(Value::as_u64)
                         .ok_or_else(|| malformed("line"))? as usize,
+                    column: h.get("column").and_then(Value::as_u64).map(|c| c as usize),
                     text: required_str(h, "text")?,
                 })
             })

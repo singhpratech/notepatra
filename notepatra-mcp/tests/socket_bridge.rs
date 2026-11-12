@@ -873,3 +873,77 @@ fn approval_wait_emits_progress_notifications() {
     assert!(seen.lock().unwrap().is_empty());
     cleanup(path, bridge, "approval_wait_emits_progress_notifications");
 }
+
+/// v0.1.133: the new verbs go through call_verb with the tool's own argument
+/// object; card-gated ones get the long approval window, and find_in_tab's
+/// extended form still names its tab with the bridge's "index" key.
+#[test]
+fn v0133_verbs_send_exact_args_and_wait_out_the_card() {
+    use notepatra_mcp::server::Server;
+
+    let _wd = Watchdog::new(SUITE, "v0133_verbs_send_exact_args_and_wait_out_the_card");
+    let (path, bridge) = spawn_bridge(|stream| {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+        let mut stream = stream;
+        writeln!(stream, "{GREETING}").unwrap();
+        for _ in 0..3 {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                return;
+            }
+            let req: Value = serde_json::from_str(&line).unwrap();
+            let result = match req["verb"].as_str().unwrap() {
+                "transform_lines" => {
+                    assert_eq!(req["args"], json!({ "tab_id": 7, "op": "sort_asc" }));
+                    // Longer than the base timeout: write verbs wait for the human.
+                    std::thread::sleep(Duration::from_millis(300));
+                    json!({ "changed": true, "tab_index": 2, "tab_id": 7 })
+                }
+                "find_in_tab" => {
+                    assert_eq!(
+                        req["args"],
+                        json!({ "index": 1, "query": "a", "match_case": true })
+                    );
+                    json!({ "matches": [{ "line": 1, "column": 3, "text": "xxa" }], "truncated": false })
+                }
+                "hash_text" => {
+                    assert_eq!(req["args"], json!({ "text": "abc", "algo": "md5" }));
+                    json!({ "algo": "md5", "hash": "900150983cd24fb0d6963f7d28e17f72" })
+                }
+                other => panic!("unexpected verb {other}"),
+            };
+            let resp = json!({ "id": req["id"], "ok": true, "result": result });
+            writeln!(stream, "{resp}").unwrap();
+        }
+    });
+    let ed = SocketEditor::with_socket_path(path.to_str().unwrap())
+        .with_timeouts(Duration::from_millis(100), Duration::from_millis(100))
+        .with_approval_timeout(Duration::from_secs(2));
+    let mut server = Server::new(ed);
+    let call = |id: u64, name: &str, args: Value| {
+        json!({ "jsonrpc": "2.0", "id": id, "method": "tools/call",
+                "params": { "name": name, "arguments": args } })
+        .to_string()
+    };
+    for (id, name, args) in [
+        (
+            1,
+            "transform_lines",
+            json!({ "tab_id": 7, "op": "sort_asc" }),
+        ),
+        (
+            2,
+            "find_in_tab",
+            json!({ "tab_index": 1, "query": "a", "match_case": true }),
+        ),
+        (3, "hash_text", json!({ "text": "abc", "algo": "md5" })),
+    ] {
+        let resp = server.handle_line(&call(id, name, args)).expect("response");
+        assert_eq!(resp["result"]["isError"], false, "{name}: {resp}");
+    }
+    cleanup(
+        path,
+        bridge,
+        "v0133_verbs_send_exact_args_and_wait_out_the_card",
+    );
+}

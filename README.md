@@ -255,13 +255,13 @@ A first-class diagramming surface that **renders in the default binary on every 
 
 From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. Nothing leaves your machine: stdio to the client, local socket to the editor, no network connections.
 
-**49 tools in three tiers**:
+**79 tools in three tiers**:
 
 | Tier | Tools | Gate |
 |---|---|---|
-| **Read** (24) | tabs, selection, status, recent files, in-tab + project search, Noter notes, reminders, read-only Git (status / diff / log / show / branch), `.npd` validation, read-only SQL (`run_sql`), language list (`list_languages`), capability probe (`get_capabilities`), `.npd` source read (`get_diagram_source`), saved connections (`list_connections` / `run_query` / `list_tables`) | None — observation only |
-| **Act** (13) | open file, new tab, go to line, set language, compare tabs, format JSON/SQL/HTML, open note, create diagram, open Noter, open Data Analyst (`open_data_analyst`), render chart (`render_chart`) | None — visible, non-destructive |
-| **Write** (11) | insert text, replace selection, find-and-replace, save, create note, append note, set reminder, export diagram, set diagram source, export query results (`export_query_results`), export chart (`export_chart`) | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
+| **Read** (37) | tabs, selection, status, recent files, in-tab + project search, Noter notes, reminders, read-only Git (status / diff / log / show / branch), `.npd` validation, read-only SQL (`run_sql`), language list (`list_languages`), capability probe (`get_capabilities`), `.npd` source read (`get_diagram_source`), saved connections (`list_connections` / `run_query` / `list_tables`), JSON/SQL/HTML formatting, pure text tools (`check_brackets`, `fix_brackets`, `hash_text`, `encode_text`, `diff_text`, `repair_json`, `markdown_convert`, `mermaid_to_npd`, `list_symbols`, `generate_password`) | None — observation only |
+| **Act** (19) | open file, new tab, go to line, select range, set language, compare tabs, compare with file, activate tab, read-only lock, bookmarks, fold, view settings, theme, preview pane, open note, create diagram, open Noter, open Data Analyst (`open_data_analyst`), render chart (`render_chart`) | None — visible, non-destructive |
+| **Write** (23) | insert text, replace selection, find-and-replace (one tab or all open tabs), save, save all, close / reload / rename, undo / redo, line transforms, case, comments, line edits, line endings, encoding, create note, append note, set reminder, export diagram, set diagram source, export query results (`export_query_results`), export chart (`export_chart`) | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
 
 `find_in_tab` and `search_project` also take an optional `regex` flag. `run_sql` is **SELECT-only** (rejected by the SQL classifier otherwise) and, on the Full/DuckDB edition, runs in an engine sandbox — the target file is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (`enable_external_access=false`) before the untrusted query runs, so it cannot read host files. Since v0.1.119 the sidecar also supports Windows over a named pipe.
 

@@ -112,6 +112,9 @@ pub struct MockEditor {
     notes: Vec<MockNote>,
     reminders: Vec<MockReminder>,
     connections: Vec<MockConnection>,
+    /// v0.1.133 per-tab state (read-only, bookmarks, EOL, encoding, undo)
+    /// keyed by tab id, plus app-wide view state. See mock/verbs.rs.
+    v133: verbs::State,
     approval: ApprovalMode,
     /// Test hook: list_notes fails with this text (blocked Noter folder).
     notes_error: Option<String>,
@@ -247,6 +250,7 @@ impl Default for MockEditor {
             ],
             // One saved connection so the phase-2 data verbs demo believably
             // offline (in-memory SQLite; no real database needed).
+            v133: verbs::State::default(),
             connections: vec![MockConnection {
                 name: "demo",
                 driver: "QSQLITE",
@@ -470,10 +474,11 @@ impl EditorTransport for MockEditor {
         let mut results = Vec::new();
         'outer: for tab in &self.tabs {
             for (n, line) in tab.content.lines().enumerate() {
-                if line.to_lowercase().contains(&query.to_lowercase()) {
+                if let Some(col) = verbs::find_col(line, query, false, false) {
                     results.push(SearchHit {
                         path: tab.path.clone().unwrap_or_default(),
                         line: n + 1,
+                        column: Some(col),
                         text: line.trim().to_string(),
                     });
                     if results.len() >= max_results {
@@ -565,12 +570,12 @@ impl EditorTransport for MockEditor {
         let mut truncated = false;
         // Bridge semantics: case-insensitive substring, trimmed line text.
         for (n, line) in self.tabs[i].content.lines().enumerate() {
-            if line.to_lowercase().contains(&query.to_lowercase()) {
+            if let Some(col) = verbs::find_col(line, query, false, false) {
                 if matches.len() >= FIND_IN_TAB_CAP {
                     truncated = true;
                     break;
                 }
-                matches.push(json!({ "line": n + 1, "text": line.trim() }));
+                matches.push(json!({ "line": n + 1, "column": col, "text": line.trim() }));
             }
         }
         Ok(json!({ "matches": matches, "truncated": truncated }))

@@ -128,7 +128,7 @@ mod tests {
     fn filter_sizes_are_cumulative() {
         let full = serde_json::json!({ "result": { "tools": definitions() } });
         let total = definitions().as_array().unwrap().len();
-        assert_eq!(total, 49);
+        assert_eq!(total, 79);
 
         for (scope, want) in [
             (Scope::ReadOnly, READ_TOOLS.len()),
@@ -145,9 +145,9 @@ mod tests {
                 scope.as_str()
             );
         }
-        // Concretely: 27 / 38 / 49.
-        assert_eq!(READ_TOOLS.len(), 27);
-        assert_eq!(READ_TOOLS.len() + ACT_TOOLS.len(), 38);
+        // Concretely: 37 / 56 / 79.
+        assert_eq!(READ_TOOLS.len(), 37);
+        assert_eq!(READ_TOOLS.len() + ACT_TOOLS.len(), 56);
     }
 
     #[test]

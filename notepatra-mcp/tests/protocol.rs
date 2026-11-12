@@ -157,10 +157,41 @@ fn tools_list_shape() {
             "open_data_analyst",
             "render_chart",
             "export_query_results",
-            "export_chart"
+            "export_chart",
+            // v0.1.133 — tabs/files, editing, view, pure tools
+            "activate_tab",
+            "close_tab",
+            "reload_tab",
+            "rename_file",
+            "save_all",
+            "set_read_only",
+            "undo",
+            "redo",
+            "transform_lines",
+            "convert_case",
+            "comment_lines",
+            "line_edit",
+            "set_eol",
+            "set_encoding",
+            "bookmarks",
+            "fold",
+            "set_view",
+            "set_theme",
+            "set_preview",
+            "compare_with_file",
+            "check_brackets",
+            "fix_brackets",
+            "hash_text",
+            "encode_text",
+            "diff_text",
+            "repair_json",
+            "markdown_convert",
+            "mermaid_to_npd",
+            "list_symbols",
+            "generate_password"
         ]
     );
-    assert_eq!(names.len(), 49);
+    assert_eq!(names.len(), 79);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -699,20 +730,9 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 49);
-    let write_tools = [
-        "insert_text",
-        "replace_selection",
-        "apply_edit",
-        "save_tab",
-        "create_note",
-        "append_note",
-        "set_reminder",
-        "export_diagram",
-        "set_diagram_source",
-        "export_query_results",
-        "export_chart",
-    ];
+    assert_eq!(tools.len(), 79);
+    // Derived from the tier table, so a new write tool is covered by default.
+    let write_tools = notepatra_mcp::tools::WRITE_TOOLS;
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
         let description = tool["description"].as_str().unwrap();
@@ -1414,10 +1434,10 @@ fn p0a_list_languages_and_get_capabilities() {
         .unwrap()
         .len();
     assert_eq!(caps["tool_count"], expected as u64);
-    assert_eq!(caps["tool_count"], 49);
-    assert_eq!(caps["tiers"]["read"], 27); // +format_* moved from act (v0.1.133)
-    assert_eq!(caps["tiers"]["act"], 11);
-    assert_eq!(caps["tiers"]["write"], 11);
+    assert_eq!(caps["tool_count"], 79);
+    assert_eq!(caps["tiers"]["read"], 37); // v0.1.133: +format_* from act, +10 pure
+    assert_eq!(caps["tiers"]["act"], 19);
+    assert_eq!(caps["tiers"]["write"], 23);
     // v0.1.133: export_diagram's accepted formats come from the editor.
     assert!(caps["diagram_export_formats"]
         .as_array()
