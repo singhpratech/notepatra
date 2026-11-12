@@ -193,6 +193,96 @@ if [[ -f notepatra-mcp/src/tools.rs ]]; then
         README.md "$MCP_TOOL_COUNT tools"
     assert_contains "index.html MCP card: $MCP_TOOL_COUNT tools" \
         docs/index.html "$MCP_TOOL_COUNT tools"
+
+    echo
+    echo "── NEGATIVE: no stale MCP tool / tier counts, no false MCP privacy claims ──"
+    # v0.1.133: the positive checks above only prove that "119 tools" appears
+    # SOMEWHERE on a page. The same pages still said "the 49 tools", "49-tool
+    # MCP server" (og:image alt on four pages), "the eleven write tools", tier
+    # rows of Read (47) / Act (21), and "nothing leaves your machine" after
+    # read tools started querying saved database servers. This gate fails on any
+    # count phrase near MCP that is not the derived total or a derived tier size,
+    # on a tier-labelled count that does not match its tier, and on the retired
+    # privacy phrases. Tier sizes come from READ_TOOLS / ACT_TOOLS / WRITE_TOOLS
+    # in tools.rs. Release-history rows (lines linking releases/tag/v0.1.X) and
+    # HTML comments are history and are skipped.
+    #   MCP_STALE_SURFACES overrides the scanned files (used to prove this fires).
+    mcp_neg_out=$(MCP_TOOL_COUNT="$MCP_TOOL_COUNT" python3 - ${MCP_STALE_SURFACES:-} <<'PY'
+import os, re, sys
+src = open("notepatra-mcp/src/tools.rs").read()
+tiers = {}
+for t in ("READ", "ACT", "WRITE"):
+    m = re.search(r"pub const %s_TOOLS: &\[&str\] = &\[(.*?)\];" % t, src, re.S)
+    tiers[t.lower()] = len(re.findall(r'"[a-z_]+"', re.sub(r"//[^\n]*", "", m.group(1)))) if m else -1
+total = int(os.environ["MCP_TOOL_COUNT"])
+print("TIERS read=%d act=%d write=%d" % (tiers["read"], tiers["act"], tiers["write"]))
+if sum(tiers.values()) != total:
+    print("BAD tools.rs tier arrays sum to %d, MCP_TOOL_COUNT=%d" % (sum(tiers.values()), total))
+allowed = {total, *tiers.values()}
+files = sys.argv[1:] or (
+    ["README.md", "notepatra-mcp/README.md", "notepatra-mcp/Cargo.toml",
+     "notepatra-mcp/mcpb/manifest.json", "docs/llms.txt", "scripts/make-og-card.py"]
+    + sorted("docs/" + f for f in os.listdir("docs") if f.endswith(".html")))
+count_re = re.compile(r"\b(\d+)(?:-tool\b| (?:MCP )?tools\b)", re.I)
+tier_res = [
+    re.compile(r"\b(Read|Act|Write)(?:\*\*|</strong>)? \((\d+)\b"),          # Read (46)  **Read** (46)
+    re.compile(r"\b(Read|Act|Write)\b[^()\n]{0,30}\((\d+) tools\b"),          # Read (46 tools
+    re.compile(r"\b(read|act|write) \((\d+):"),                               # read (46: ...
+    re.compile(r"\b(Read|Act|Write) (\d+)\b(?= /| \||\))"),                   # Read 46 / Act 22
+    re.compile(r"\b(\d+) (read|act|write)(?: tools)?\b(?![-\w])", re.I),      # 46 read, the 51 write tools
+]
+retired = ["nothing leaves your machine", "eleven write", "local-only"]
+bad = []
+for f in files:
+    if not os.path.isfile(f):
+        continue
+    text = re.sub(r"<!--.*?-->", lambda m: "\n" * m.group(0).count("\n"), open(f).read(), flags=re.S)
+    mcp_surface = "mcp" in f.lower()
+    low_text = text.lower()
+    off = 0
+    for n, line in enumerate(text.split("\n"), 1):
+        start, off = off, off + len(line) + 1
+        if re.search(r"releases/tag/v0\.1\.", line):
+            continue
+        # "near MCP": an MCP-only surface, or "mcp" within ~3 KB before the
+        # line (a tier table row sits under its MCP heading) or on the line.
+        near_mcp = mcp_surface or "mcp" in low_text[max(0, start - 3000):off]
+        if not near_mcp:
+            continue
+        for m in count_re.finditer(line):
+            if int(m.group(1)) not in allowed:
+                bad.append("%s:%d: '%s' (MCP total is %d)" % (f, n, m.group(0), total))
+        for r in tier_res:
+            for m in r.finditer(line):
+                a, b = m.group(1), m.group(2)
+                label, num = (b, a) if a.isdigit() else (a, b)
+                want = tiers[label.lower()]
+                if int(num) != want:
+                    bad.append("%s:%d: '%s' (%s tier is %d)" % (f, n, m.group(0), label.lower(), want))
+        low = line.lower()
+        for p in retired:
+            if p in low:
+                bad.append("%s:%d: retired MCP claim '%s'" % (f, n, p))
+for b in bad:
+    print("BAD " + b)
+PY
+    )
+    echo "$mcp_neg_out" | sed -n 's/^TIERS /  ⓘ tools.rs tiers: /p'
+    mcp_neg_bad=$(echo "$mcp_neg_out" | sed -n 's/^BAD //p')
+    if [[ -z "$mcp_neg_out" ]]; then
+        echo "  ✗ the negative MCP gate produced no output (python3 missing or crashed) — a checker that cannot run must fail"
+        FAIL=$((FAIL + 1))
+    elif [[ -z "$mcp_neg_bad" ]]; then
+        echo "  ✓ no stale MCP tool/tier count and no retired MCP privacy phrase on any surface"
+        PASS=$((PASS + 1))
+    else
+        echo "  ✗ stale MCP count or retired claim (fix the text; counts come from notepatra-mcp/src/tools.rs):"
+        echo "$mcp_neg_bad" | sed 's/^/      /' | head -20
+        echo "      MCP privacy wording that is true: local by default; the server opens no network"
+        echo "      connections of its own; tools that use a saved database connection talk to that"
+        echo "      database; REST and git network tools run only after approval."
+        FAIL=$((FAIL + 1))
+    fi
 else
     echo "  ⓘ notepatra-mcp/src/tools.rs not present on this branch — skipping MCP tool-count gate"
 fi
