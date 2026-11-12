@@ -2019,9 +2019,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             "list (inline below the chat) for you to review + Apply.",
             "border-radius: 0;");
         m_agentSegBtn = makeSegBtn("Agent", QStringLiteral("#E07B5A"),
-            "Agent — full autonomous loop. Tool calls fire and edits "
-            "hit disk immediately. Use when you trust the model to "
-            "drive the workspace end-to-end.",
+            "Agent — the model runs tools in a loop. Reads run on "
+            "their own; each write shows an Approve card before it "
+            "touches disk.",
             "border-top-right-radius: 6px; border-bottom-right-radius: 6px;");
 
         auto *segGroup = new QButtonGroup(this);
