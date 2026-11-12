@@ -7797,13 +7797,42 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
         // so "Undo apply" can restore it. Read disk (the row's before-text is
         // the model's view; disk is ground truth for what we're replacing).
         QByteArray beforeBytes;
+        bool beforeRead = false;
         {
             QFile in(absPath);
-            if (in.open(QIODevice::ReadOnly)) { beforeBytes = in.readAll(); in.close(); }
+            if (in.open(QIODevice::ReadOnly)) {
+                beforeBytes = in.readAll();
+                beforeRead = true;
+                in.close();
+            }
+        }
+        if (!beforeRead && QFileInfo::exists(absPath)) {
+            failures << absPath + " (not written: the current file could not be read)";
+            continue;
+        }
+
+        // An existing text file is written back in its own encoding, BOM and line
+        // endings; an undecodable one is replaced wholesale as UTF-8 (as write_file does).
+        QByteArray bytes = after.toUtf8();
+        AiTools::TextFileFormat fmt;
+        QString beforeText, why;
+        if (beforeRead && AiTools::decodeTextFile(beforeBytes, &fmt, &beforeText, &why)) {
+            QString text = after;
+            if (!fmt.bom.isEmpty() && text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
+            if (!text.contains(QLatin1String("\r\n")))
+                text = AiTools::withEol(text, AiTools::dominantEol(beforeText));
+            bool encOk = false;
+            const QByteArray encoded = AiTools::encodeWithCodec(fmt.codec, text, &encOk);
+            if (!encOk) {
+                failures << absPath + QString(" (not written: the new text has characters %1 "
+                                              "cannot encode; the file was not changed)")
+                                          .arg(fmt.label);
+                continue;
+            }
+            bytes = fmt.bom + encoded;
         }
 
         // Atomic write via the shared helper (same .tmp+rename used by undo).
-        const QByteArray bytes = after.toUtf8();
         bool wasNew = false;
         QString werr;
         if (!writeFileAtomic(absPath, bytes, &wasNew, &werr)) {

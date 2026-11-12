@@ -853,16 +853,12 @@ bool looksBinary(const QByteArray &sniff) {
     return sniff.contains('\0');
 }
 
+} // anonymous namespace
+
 // ── Agent-edit encoding round-trip ──────────────────────────────────────
 // write_file / apply_diff edit DECODED text. These keep the file's BOM,
 // encoding and line endings byte-exact outside the edited region, and refuse
 // when the bytes cannot be reproduced (never write damaged bytes).
-struct TextFileFormat {
-    QByteArray bom;                       // raw BOM bytes, re-emitted as-is
-    QByteArray codec = "UTF-8";
-    QString label = QStringLiteral("UTF-8");
-};
-
 QByteArray encodeWithCodec(const QByteArray &codecName, const QString &text, bool *ok) {
     QTextCodec *codec = QTextCodec::codecForName(codecName);
     if (!codec) { *ok = false; return QByteArray(); }
@@ -921,9 +917,9 @@ bool decodeTextFile(const QByteArray &raw, TextFileFormat *fmt, QString *text, Q
     return true;
 }
 
-// Display/proposal text: a UTF-8 BOM stays visible as U+FEFF so a Compose
-// apply (which writes toUtf8) keeps it.
-QString proposalPrefix(const TextFileFormat &fmt) {
+// Display/proposal text: a UTF-8 BOM stays visible as U+FEFF (Compose apply
+// strips it and re-emits the file's own BOM).
+static QString proposalPrefix(const TextFileFormat &fmt) {
     return fmt.label == QLatin1String("UTF-8 BOM") ? QString(QChar(0xFEFF)) : QString();
 }
 
@@ -945,6 +941,8 @@ QString withEol(const QString &s, const QString &eol) {
     }
     return out;
 }
+
+namespace {
 
 // Write-temp + fsync + atomic replace (never remove-then-rename).
 bool writeBytesAtomic(const QString &target, const QByteArray &bytes, QString *err) {
