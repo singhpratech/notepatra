@@ -27,6 +27,7 @@
 #include <QWidget>
 
 #include <cstdio>
+#include <functional>
 
 static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
@@ -85,10 +86,17 @@ QJsonObject call(const QString &verb, const QJsonObject &args = {}) {
     return r;
 }
 
-QJsonObject callCard(const QString &verb, const QJsonObject &args, bool approve) {
+// Tab state the fake host reports (R7 / R18).
+bool g_modified = false;
+bool g_reports = true;
+QByteArray g_rev = "r0";
+
+QJsonObject callCard(const QString &verb, const QJsonObject &args, bool approve,
+                     const std::function<void()> &whileWaiting = {}) {
     send(verb, args);
     QFrame *card = liveCard(3000);
     if (!card) return QJsonObject{{"no_card", true}, {"early", readObj(200)}};
+    if (whileWaiting) whileWaiting();
     auto text = [card](const char *name) {
         if (auto *l = card->findChild<QLabel *>(QLatin1String(name))) return l->text();
         if (auto *p = card->findChild<QPlainTextEdit *>(QLatin1String(name))) return p->toPlainText();
@@ -153,7 +161,9 @@ int main(int argc, char *argv[]) {
     h.tabTitle = [](int) { return QStringLiteral("api.http"); };
     h.tabPath = [](int) { return QString(); };
     h.tabText = [](int) { return QStringLiteral("GET http://127.0.0.1/a\n"); };
-    h.tabModified = [](int) { return false; };
+    h.tabModified = [](int) { return g_modified; };
+    h.tabReportsModified = [](int) { return g_reports; };
+    h.tabRevision = [](int) { return g_rev; };
     h.approvalParent = [] { return g_win; };
     h.notesRoot = [notes] { return notes; };
     h.workspaceRoot = [repo] { return repo; };
@@ -166,10 +176,12 @@ int main(int argc, char *argv[]) {
         if (op == QLatin1String("context")) return g_gitCtx;
         if (op == QLatin1String("list_hunks"))
             return {{"hunks", QJsonArray{QJsonObject{{"index", 0}, {"header", "@@ -1 +1 @@"},
-                                                     {"diff", "@@ -1 +1 @@\n-old\n+new"}}}}};
+                                                     {"diff", "@@ -1 +1 @@\n-old\n+new"},
+                                                     {"fingerprint", "fp-hunk"}}}}};
         if (op == QLatin1String("list_conflicts") && a.contains("path"))
             return {{"regions", QJsonArray{QJsonObject{{"start_line", 2}, {"end_line", 6},
-                                                       {"ours", "x\n"}, {"theirs", "y\n"}}}}};
+                                                       {"ours", "x\n"}, {"theirs", "y\n"},
+                                                       {"fingerprint", "fp-region"}}}}};
         record("git", op, a);
         Q_UNUSED(err);
         return {{"done", op}};
@@ -236,6 +248,18 @@ int main(int argc, char *argv[]) {
         record("rest", op, a);
         done({{"status", 200}}, QString());
     };
+    h.tabAction = [record](int, const QString &op, const QJsonObject &a, QString *) -> QJsonObject {
+        record("tab", op, a);
+        return {};
+    };
+    h.editTab = [record](int, const QString &op, const QJsonObject &a, QString *) -> QJsonObject {
+        record("tabedit", op, a);
+        return {};
+    };
+    h.insertText = [record](int, int, int, const QString &t) {
+        record("tab", "insert_text", {{"text", t}});
+        return true;
+    };
     h.miscOp = [record](const QString &op, const QJsonObject &a, QString *) -> QJsonObject {
         if (op == QLatin1String("hex_bytes"))
             return {{"base64", QString::fromLatin1(QByteArray("Hello, world!\n").toBase64())},
@@ -296,6 +320,8 @@ int main(int argc, char *argv[]) {
     r = callCard("git_stage", {{"paths", QJsonArray{"b.txt"}}}, true);
     EXPECT("git_stage Approve runs the host with repo-relative paths",
            ok(r) && ran("git:git_stage") && g_lastArgs.value("paths").toArray() == QJsonArray{"b.txt"});
+    EXPECT("R6: a git write carries the repository the card named",
+           g_lastArgs.value("expect_root").toString() == repo);
     r = callCard("git_commit", {{"message", "fix: one\n\nbody"}}, false);
     EXPECT("git_commit card lists the staged files and the message",
            g_cardDesc.contains("git commit on branch 'main'") && g_cardPreview.contains("fix: one") &&
@@ -317,9 +343,18 @@ int main(int argc, char *argv[]) {
     r = callCard("resolve_conflict", {{"path", "m.txt"}, {"region", 0}, {"take", "both"}}, true);
     EXPECT("resolve_conflict card shows the replacement, host gets the expected start line",
            ok(r) && g_cardPreview.contains("x\ny") && g_lastArgs.value("expect_start").toInt() == 2);
+    EXPECT("R15: resolve_conflict pins the whole region and the repository",
+           g_lastArgs.value("expect_region").toString() == "fp-region" &&
+               g_lastArgs.value("expect_root").toString() == repo);
+    r = callCard("git_hunk", {{"path", "b.txt"}, {"hunk_index", 0}, {"action", "stage"}}, true);
+    EXPECT("R15: git_hunk pins the whole hunk text, not only its header",
+           ok(r) && g_lastArgs.value("expect_hunk").toString() == "fp-hunk" &&
+               g_lastArgs.value("expect_header").toString() == "@@ -1 +1 @@" &&
+               g_lastArgs.value("expect_root").toString() == repo);
     r = callCard("git_push", {}, true);
     EXPECT("git_push card says never forced; async completion answers",
-           ok(r) && g_cardDesc.contains("never forced") && ran("git:git_push"));
+           ok(r) && g_cardDesc.contains("never forced") && ran("git:git_push") &&
+               g_lastArgs.value("expect_root").toString() == repo);
     g_gitCtx["upstream"] = QString();
     r = call("git_pull");
     EXPECT("git_pull without an upstream is refused", !ok(r) && errOf(r).contains("no upstream"));
@@ -422,6 +457,58 @@ int main(int argc, char *argv[]) {
     r = call("test_connection", {{"connection_name", "db"}});
     EXPECT("test_connection answers through the async path", ok(r) && ran("data:test_connection"));
 
+    // ── R2: line breaks and control characters on the card ──
+    r = callCard("execute_sql", {{"connection_name", "db"},
+                                 {"sql", "UPDATE t SET a=1 WHERE id=5 -- note\rOR 1=1"}}, false);
+    EXPECT("R2: a bare CR ends the comment on the card too (two lines, nothing hidden)",
+           g_cardPreview.contains("-- note\nOR 1=1") && !g_cardPreview.contains("noteOR"));
+    r = callCard("execute_sql", {{"connection_name", "db"},
+                                 {"sql", QStringLiteral("UPDATE t SET a=1 -- x") + QChar(0x2028) +
+                                             "WHERE 1=1" + QChar(0x0B) + "AND b=2" + QChar(0x0C) +
+                                             "AND c=3" + QChar(0x85) + "AND d=4" + QChar(0x2029) + "AND e=5"}},
+                 false);
+    EXPECT("R2: LS, VT, FF, NEL and PS are line breaks on the card",
+           g_cardPreview.contains("-- x\nWHERE 1=1\nAND b=2\nAND c=3\nAND d=4\nAND e=5"));
+    r = callCard("git_commit", {{"message", QStringLiteral("fix: a\x1b[2Kb") + QChar(0x202E) + "cba"}}, false);
+    EXPECT("R2: ESC and an RLO show as visible escapes, nothing deleted",
+           g_cardPreview.contains("fix: a\\x1b[2Kb\\u202ecba"));
+
+    // ── R17: the whole inserted text is reviewable ──
+    {
+        QString longText;
+        for (int i = 0; i < 40; ++i) longText += QStringLiteral("line %1 of the inserted text\n").arg(i);
+        longText += "LAST-LINE-MARKER";
+        r = callCard("insert_text", {{"tab_index", 0}, {"text", longText}}, false);
+        EXPECT("R17: insert_text card shows the whole text in the scrollable box",
+               g_cardPreview.contains("line 0 of") && g_cardPreview.contains("LAST-LINE-MARKER") &&
+                   !g_cardPreview.contains(QChar(0x2026)));
+        QString huge;
+        for (int i = 0; i < 20000; ++i) huge += QStringLiteral("row %1 xxxxxxxxxxxxxxxx\n").arg(i);
+        r = callCard("insert_text", {{"tab_index", 0}, {"text", huge}}, false);
+        EXPECT("R17: a huge text shows first and last lines and says how much is left out",
+               g_cardPreview.contains("row 0 ") && g_cardPreview.contains("row 19999 ") &&
+                   g_cardPreview.contains("lines not shown") && g_cardWarn.contains("leaves out"));
+    }
+
+    // ── R7 / R18: close_tab ──
+    g_reports = false;
+    r = callCard("close_tab", {{"tab_index", 0}}, false);
+    EXPECT("R7: a tab type that cannot report unsaved work gets a card (never closed silently)",
+           errOf(r) == "denied by user" && !ran("tab:close_tab") && !ran("tabedit:close_tab") &&
+               g_cardDesc.contains("cannot report"));
+    g_reports = true;
+    g_modified = true;
+    r = call("close_tab", {{"tab_index", 0}});
+    EXPECT("R7: a modified tab is refused without discard_unsaved", !ok(r) && errOf(r).contains("unsaved"));
+    r = callCard("close_tab", {{"tab_index", 0}, {"discard_unsaved", true}}, true,
+                 []() { g_rev = "r1"; });
+    EXPECT("R18: typing while the discard card waits refuses the close",
+           !ok(r) && errOf(r).contains("edited while the approval card was waiting") &&
+               !ran("tabedit:close_tab"));
+    r = callCard("close_tab", {{"tab_index", 0}, {"discard_unsaved", true}}, true);
+    EXPECT("R18: an unchanged tab closes on Approve", ok(r) && ran("tabedit:close_tab"));
+    g_modified = false;
+
     // ── REST ──
     r = call("rest_request", {{"method", "GET"}, {"url", "file:///etc/passwd"}});
     EXPECT("rest_request refuses file://", !ok(r) && errOf(r).contains("only http"));
@@ -439,6 +526,11 @@ int main(int argc, char *argv[]) {
                !g_cardDesc.contains("SECRETQ") && ran("rest:rest_request"));
     r = callCard("rest_request", {{"tab_index", 0}, {"line", 1}}, false);
     EXPECT("rest_request from a .http tab resolves before the card", g_cardDesc.contains("http://127.0.0.1/a"));
+    r = callCard("rest_request", {{"method", "GET"}, {"url", "http://127.0.0.1:9/z"}}, true);
+    EXPECT("R5: the host is handed the request resolved for the card, to send as is",
+           ok(r) && g_lastArgs.value("resolved").toObject().value("url").toString() == "http://127.0.0.1:9/z" &&
+               g_lastArgs.value("resolved").toObject().value("method").toString() == "GET" &&
+               g_cardPreview.contains("not resolved again") && g_cardPreview.contains("request fields"));
 
     // ── leftovers ──
     r = call("hex_dump", {{"tab_index", 0}, {"length", 70000}});

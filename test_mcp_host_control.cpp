@@ -38,7 +38,13 @@
 #include <QThread>
 #include <QTimer>
 
+#include "diagram/diagram_editor.h"
+#include "rest_history.h"
+
+#include <QTextEdit>
+
 #include <cstdio>
+#include <functional>
 
 static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
@@ -94,10 +100,17 @@ QFrame *liveCard(int timeoutMs = 5000) {
     return nullptr;
 }
 
-QJsonObject callCard(const QString &verb, const QJsonObject &args, bool approve) {
+// whileWaiting runs after the card is up and before the click: what a user
+// (or another tool call) does while the card waits.
+QJsonObject callCard(const QString &verb, const QJsonObject &args, bool approve,
+                     const std::function<void()> &whileWaiting = {}) {
     send(verb, args);
     QFrame *card = liveCard();
     if (!card) return QJsonObject{{"no_card", true}, {"early", readObj(300)}};
+    if (whileWaiting) {
+        whileWaiting();
+        pump(50);
+    }
     auto text = [card](const char *name) {
         if (auto *l = card->findChild<QLabel *>(QLatin1String(name))) return l->text();
         if (auto *p = card->findChild<QPlainTextEdit *>(QLatin1String(name))) return p->toPlainText();
@@ -190,6 +203,25 @@ int main(int argc, char *argv[]) {
     readObj();
 
     QJsonObject r;
+    // ── R13: a reminder lookup never starts Noter for someone who never used it ──
+    pump(1700); // past the 1.5 s startup probe
+    EXPECT("fixture: Noter not in use, no reminder DB",
+           Config::instance().noterInUse != 1 && !QFileInfo::exists(NotesPanel::todosDbPath()));
+    r = call("delete_reminder", {{"id", "bogus-id"}});
+    EXPECT("R13: delete_reminder with a bogus id is refused as unknown",
+           !ok(r) && errOf(r).contains("no reminder"));
+    r = call("snooze_reminder", {{"id", "bogus-id"}, {"minutes", 5}});
+    EXPECT("R13: ...and creates no Noter DB and does not mark Noter in use",
+           !ok(r) && !QFileInfo::exists(NotesPanel::todosDbPath()) &&
+               Config::instance().noterInUse != 1);
+    r = call("search_notes", {{"query", "anything"}});
+    EXPECT("R13: search_notes before Noter exists finds nothing and creates no folder",
+           ok(r) && res(r).value("results").toArray().isEmpty() &&
+               !QFileInfo::exists(NotesPanel::defaultNotesFolder()));
+    EXPECT("R14: a negative first-launch probe is not saved as 'Noter unused'",
+           Config::instance().noterInUse == -1 &&
+               !readFile(Config::appConfigDir() + "/config.json").contains("\"noterInUse\": 0"));
+
     // ── workspace folder ──
     r = call("set_workspace_folder", {{"path", home.path()}});
     EXPECT("set_workspace_folder refuses $HOME before a card", !ok(r) && errOf(r).contains("home folder"));
@@ -260,6 +292,52 @@ int main(int argc, char *argv[]) {
         r = call("git_discard", {{"paths", QJsonArray{".env"}}});
         EXPECT("git_discard never touches an untracked secret", !ok(r) && QFileInfo::exists(g_repo + "/.env"));
 
+        // R6: a workspace switch approved while a git card waits moves the
+        // workspace, never the write.
+        {
+            const QString repo2 = QFileInfo(work.path()).canonicalFilePath() + "/repo2";
+            QDir().mkpath(repo2);
+            git({"init", "-q"}, nullptr, repo2);
+            git({"config", "user.name", "Test User"}, nullptr, repo2);
+            git({"config", "user.email", "test@example.invalid"}, nullptr, repo2);
+            git({"config", "commit.gpgsign", "false"}, nullptr, repo2);
+            writeFile(repo2 + "/a.txt", "repo2 committed\n");
+            git({"add", "."}, nullptr, repo2);
+            git({"commit", "-q", "-m", "init"}, nullptr, repo2);
+            writeFile(repo2 + "/a.txt", "repo2 local work\n");
+            writeFile(g_repo + "/a.txt", "repo1 local work\n");
+            send("set_workspace_folder", {{"path", repo2}});
+            QFrame *wsCard = liveCard();
+            send("git_discard", {{"paths", QJsonArray{"a.txt"}}}); // card text built now, for repo 1
+            pump(100);
+            if (wsCard) wsCard->findChild<QPushButton *>("mcpApproveBtn")->click();
+            const QJsonObject ws = readObj();
+            pump(100);
+            QFrame *gitCard = liveCard();
+            const QString gitDesc = gitCard ? gitCard->findChild<QLabel *>("mcpApprovalDesc")->text() : QString();
+            if (gitCard) gitCard->findChild<QPushButton *>("mcpApproveBtn")->click();
+            r = readObj();
+            pump(50);
+            EXPECT("R6: the discard card named repo 1; the workspace moved to repo 2 meanwhile",
+                   ok(ws) && gitDesc.contains(QDir::toNativeSeparators(g_repo)));
+            EXPECT("R6: the approved discard is refused, nothing discarded in either repository",
+                   !ok(r) && errOf(r).contains("workspace changed while the card was waiting") &&
+                       readFile(repo2 + "/a.txt") == "repo2 local work\n" &&
+                       readFile(g_repo + "/a.txt") == "repo1 local work\n");
+            r = callCard("set_workspace_folder", {{"path", g_repo}}, true);
+            git({"checkout", "--", "a.txt"});
+        }
+
+        // R16: client paths are literal, never globs.
+        writeFile(g_repo + "/a[1].txt", "bracket\n");
+        writeFile(g_repo + "/a1.txt", "plain\n");
+        r = callCard("git_stage", {{"paths", QJsonArray{"a[1].txt"}}}, true);
+        EXPECT("R16: staging a[1].txt stages only that file, not a1.txt",
+               ok(r) && git({"diff", "--cached", "--name-only"}) == "a[1].txt");
+        git({"reset", "-q"});
+        QFile::remove(g_repo + "/a[1].txt");
+        QFile::remove(g_repo + "/a1.txt");
+
         // hunks
         writeFile(g_repo + "/a.txt", "one\nTWO\nthree\nfour\n");
         r = call("list_hunks", {{"path", "a.txt"}});
@@ -270,6 +348,12 @@ int main(int argc, char *argv[]) {
         EXPECT("git_hunk stage puts the hunk in the index",
                ok(r) && git({"diff", "--cached"}).contains("+four"));
         git({"reset", "-q", "HEAD", "--", "a.txt"});
+        // R15: same header, different lines while the card waits.
+        writeFile(g_repo + "/a.txt", "one\nTWO\nthree\nfour\n");
+        r = callCard("git_hunk", {{"path", "a.txt"}, {"hunk_index", 0}, {"action", "stage"}}, true,
+                     []() { writeFile(g_repo + "/a.txt", "one\nTWO\nthree\nFIVE\n"); });
+        EXPECT("R15: a hunk whose lines changed under the same header is refused",
+               !ok(r) && errOf(r).contains("hunk changed") && git({"diff", "--cached"}).isEmpty());
         r = call("git_unstage", {{"paths", QJsonArray{"a.txt"}}});
         EXPECT("git_unstage of a file that is not staged is refused", !ok(r));
         git({"checkout", "--", "a.txt"});
@@ -341,6 +425,27 @@ int main(int argc, char *argv[]) {
                ok(r) && res(r).value("files").toArray().at(0).toObject().value("path").toString() == "c.txt");
         r = call("list_conflicts", {{"path", "c.txt"}});
         EXPECT("list_conflicts path gives the region", ok(r) && res(r).value("regions").toArray().size() == 1);
+        // R15: the same region, other text, while the card waits.
+        const QByteArray conflicted = readFile(g_repo + "/c.txt");
+        r = callCard("resolve_conflict", {{"path", "c.txt"}, {"region", 0}, {"take", "theirs"}}, true,
+                     [&]() {
+                         QByteArray changed = conflicted;
+                         changed.replace("theirs\n", "edited theirs\n");
+                         writeFile(g_repo + "/c.txt", changed);
+                     });
+        EXPECT("R15: a conflict region whose text changed (same start line) is refused",
+               !ok(r) && errOf(r).contains("conflict regions changed") &&
+                   readFile(g_repo + "/c.txt").contains("edited theirs"));
+        // The refused attempt opened c.txt in a tab: close it (unmodified, no
+        // card) before the file is put back, so no file-watcher prompt fires.
+        {
+            auto *tm = g_mw->findChild<TabManager *>();
+            for (int i = tm->count() - 1; i >= 0; --i)
+                if (Editor *ced = tm->editorAt(i))
+                    if (QFileInfo(ced->filePath()).fileName() == "c.txt")
+                        call("close_tab", {{"tab_index", i}});
+        }
+        writeFile(g_repo + "/c.txt", conflicted);
         r = callCard("resolve_conflict", {{"path", "c.txt"}, {"region", 0}, {"take", "theirs"}}, true);
         EXPECT("resolve_conflict theirs writes the file, markers gone",
                ok(r) && readFile(g_repo + "/c.txt") == "theirs\n" && res(r).value("remaining").toInt() == 0);
@@ -367,10 +472,18 @@ int main(int argc, char *argv[]) {
     if (np) np->saveCurrentNote(); // the 5 s autosave's own call
     pump(50);
     EXPECT("an autosave after the rename never recreates the old path", !QFileInfo::exists(noteFile));
+    // R23: typing not yet autosaved goes to Trash with the note.
+    if (np)
+        if (auto *te = np->findChild<QTextEdit *>("noterEditor")) {
+            QTextCursor c = te->textCursor();
+            c.movePosition(QTextCursor::End);
+            te->setTextCursor(c);
+            te->insertPlainText(" UNSAVED-TAIL-23");
+        }
     r = callCard("trash_note", {{"file", renamed}}, true);
     const QString trashed = res(r).value("file").toString();
     EXPECT("trash_note moves it to Trash and closes it in the editor",
-           ok(r) && trashed.contains("/Trash/.trashed-") && !QFileInfo::exists(renamed) && np &&
+           ok(r) && QDir::fromNativeSeparators(trashed).contains("/Trash/.trashed-") && !QFileInfo::exists(renamed) && np &&
                np->currentNotePath().isEmpty());
     if (np) np->saveCurrentNote();
     EXPECT("an autosave after trash writes nothing back", !QFileInfo::exists(renamed));
@@ -382,6 +495,8 @@ int main(int argc, char *argv[]) {
     r = callCard("restore_note", {{"file", trashed}}, true);
     const QString restored = res(r).value("file").toString();
     EXPECT("restore_note brings it back to the Inbox", ok(r) && QFileInfo::exists(restored));
+    EXPECT("R23: the open note's unsaved typing was saved before it went to Trash",
+           readFile(restored).contains("UNSAVED-TAIL-23"));
     r = call("delete_note_permanently", {{"file", restored}});
     EXPECT("delete_note_permanently refuses a note outside Trash", !ok(r));
     r = callCard("trash_note", {{"file", restored}}, true);
@@ -454,6 +569,19 @@ int main(int argc, char *argv[]) {
     EXPECT("describe_table never puts the argument into SQL", !ok(r));
     r = call("test_connection", {{"connection_name", "scratch"}});
     EXPECT("test_connection ok", ok(r) && res(r).value("ok").toBool());
+    {
+        const QString missingDb = work.path() + "/never-created.db";
+        callCard("add_connection", {{"name", "ghost"}, {"driver", "QSQLITE"}, {"database", missingDb}}, true);
+        r = call("test_connection", {{"connection_name", "ghost"}});
+        EXPECT("R12: test_connection on a missing SQLite file reports it and creates nothing",
+               ok(r) && !res(r).value("ok").toBool(true) &&
+                   res(r).value("error").toString().contains("does not exist") &&
+                   !QFileInfo::exists(missingDb));
+        r = call("describe_table", {{"connection_name", "ghost"}, {"table", "t"}});
+        EXPECT("R12: describe_table on a missing SQLite file creates nothing",
+               !ok(r) && !QFileInfo::exists(missingDb));
+        callCard("delete_connection", {{"name", "ghost"}}, true);
+    }
     r = callCard("update_connection", {{"name", "scratch"}, {"new_name", "scratch2"}}, true);
     EXPECT("update_connection rename", ok(r) && res(r).value("name").toString() == "scratch2");
     r = call("list_connections");
@@ -509,10 +637,68 @@ int main(int argc, char *argv[]) {
     r = callCard("rest_request", {{"tab_id", ht}, {"line", 4}}, true);
     EXPECT("rest_request from a .http tab resolves {{host}} (card shows the resolved host)",
            ok(r) && g_cardDesc.contains("127.0.0.1") && seen.contains("GET /ping"));
+    // R5: the environment changes while the card waits; the request that
+    // reaches the server is the one the card described.
+    {
+        const QString envDir = work.path() + "/envapi";
+        QDir().mkpath(envDir);
+        writeFile(envDir + "/env.http", "### Who\nGET {{host}}/who\nX-Token: {{tok}}\n");
+        writeFile(envDir + "/http-client.env.json",
+                  ("{\"dev\": {\"host\": \"" + base + "\", \"tok\": \"dev-token-1\"}}").toUtf8());
+        RestHistory::setEnvironmentFor(Config::appConfigDir() + "/rest-client.json",
+                                       QFileInfo(envDir + "/env.http").absolutePath(), "dev");
+        const qint64 et = openFile(envDir + "/env.http");
+        seen.clear();
+        r = callCard("rest_request", {{"tab_id", et}, {"line", 2}}, true, [&]() {
+            writeFile(envDir + "/http-client.env.json",
+                      "{\"dev\": {\"host\": \"http://127.0.0.1:1\", \"tok\": \"prod-token-2\"}}");
+        });
+        EXPECT("R5: the card's host and token are what is sent, not the env file's new values",
+               ok(r) && g_cardDesc.contains("127.0.0.1:" + QString::number(server.serverPort())) &&
+                   seen.contains("GET /who") && seen.contains("dev-token-1") &&
+                   !seen.contains("prod-token-2"));
+    }
     r = call("curl_to_request", {{"text", "curl -X POST " + base + "/a -H 'X-A: 1' -d 'b'"}});
     EXPECT("curl_to_request", ok(r) && res(r).value("method").toString() == "POST");
     r = call("request_to_curl", {{"method", "GET"}, {"url", base + "/b"}});
     EXPECT("request_to_curl", ok(r) && res(r).value("text").toString().startsWith("curl"));
+
+    // ── R7 / R18: close_tab and reload_tab ──
+    {
+        auto *tm = g_mw->findChild<TabManager *>();
+        r = call("create_diagram", {{"source", "flow\n  a -> b\n"}});
+        const qint64 dt = qint64(res(r).value("tab_id").toDouble(-1));
+        DiagramEditor *de = nullptr;
+        for (int i = 0; i < tm->count(); ++i)
+            if (tm->widget(i)->property("npMcpTabId").toLongLong() == dt)
+                de = qobject_cast<DiagramEditor *>(tm->widget(i));
+        if (de)
+            if (auto *pe = de->findChild<QPlainTextEdit *>()) pe->appendPlainText("  b -> c");
+        r = call("close_tab", {{"tab_id", dt}});
+        EXPECT("R7: a Diagram tab with unsaved .npd edits is not closed without a card",
+               de && de->isModified() && !ok(r) && errOf(r).contains("unsaved"));
+        r = callCard("close_tab", {{"tab_id", dt}, {"discard_unsaved", true}}, true);
+        EXPECT("R7: with discard_unsaved and Approve the Diagram tab closes", ok(r));
+        int restTab = -1;
+        for (int i = 0; i < tm->count(); ++i)
+            if (tm->widget(i)->inherits("RestClient")) restTab = i;
+        if (restTab >= 0) {
+            r = callCard("close_tab", {{"tab_index", restTab}}, false);
+            EXPECT("R7: a REST Client tab (cannot report unsaved work) is closed only via a card",
+                   errOf(r) == "denied by user" && tm->widget(restTab)->inherits("RestClient"));
+        }
+        writeFile(work.path() + "/reload.txt", "on disk\n");
+        const qint64 rt = openFile(work.path() + "/reload.txt");
+        Editor *red = editorById(rt);
+        if (red) red->setText("first edit\n");
+        r = callCard("reload_tab", {{"tab_id", rt}}, true, [red]() {
+            if (red) red->append("typed while the card waited\n");
+        });
+        EXPECT("R18: reload_tab refuses when the tab was edited while its card waited",
+               !ok(r) && red && red->text().contains("typed while the card waited"));
+        r = callCard("reload_tab", {{"tab_id", rt}}, true);
+        EXPECT("R18: an unchanged tab reloads on Approve", ok(r) && red && red->text() == "on disk\n");
+    }
 
     // ── leftovers ──
     writeFile(g_repo + "/bytes.bin", QByteArray("\x00\x01" "AB", 4));

@@ -4550,20 +4550,23 @@ private slots:
         QVERIFY(dir.isValid());
         const QString root = dir.path();
         QVERIFY(QDir().mkpath(root + QStringLiteral("/repo/.git/hooks")));
+        QStringList bad = {
+            QDir::homePath() + QStringLiteral("/.ssh/authorized_keys"),
+            root + QStringLiteral("/.bashrc"),
+            root + QStringLiteral("/repo/.git/hooks/pre-commit"),
+        };
+#ifndef Q_OS_WIN
+        // POSIX symlinks only: on Windows QFile::link makes a .lnk shortcut.
         QVERIFY(QFile::link(root + QStringLiteral("/repo/.git/hooks"),
                             root + QStringLiteral("/hooklink")));
         QVERIFY(QFile::link(root + QStringLiteral("/repo/.git/hooks/post-checkout"),
                             root + QStringLiteral("/innocent.txt")));
+        bad << root + QStringLiteral("/hooklink/pre-commit")  // symlinked parent
+            << root + QStringLiteral("/innocent.txt");        // dangling leaf link
+#endif
         QLocalSocket s;
         QVERIFY(connectClient(s));
         readGreeting(s);
-        const QStringList bad = {
-            QDir::homePath() + QStringLiteral("/.ssh/authorized_keys"),
-            root + QStringLiteral("/.bashrc"),
-            root + QStringLiteral("/repo/.git/hooks/pre-commit"),
-            root + QStringLiteral("/hooklink/pre-commit"), // symlinked parent
-            root + QStringLiteral("/innocent.txt"),        // dangling leaf link
-        };
         int rid = 10;
         for (const QString &p : bad) {
             if (!QDir(QFileInfo(p).absolutePath()).exists()) continue;
@@ -4895,8 +4898,13 @@ private slots:
         QVERIFY(kf.open(QIODevice::WriteOnly));
         kf.write("k");
         kf.close();
+        QStringList refused{key};
+#ifndef Q_OS_WIN
+        // A POSIX symlink onto the key (QFile::link is a .lnk shortcut on Windows).
         QVERIFY(QFile::link(key, dir.path() + QStringLiteral("/innocent.txt")));
-        for (const QString &p : {key, dir.path() + QStringLiteral("/innocent.txt")}) {
+        refused << dir.path() + QStringLiteral("/innocent.txt");
+#endif
+        for (const QString &p : refused) {
             r = callNoCard(s, 11, QStringLiteral("compare_with_file"), {{"path", p}});
             QVERIFY2(r.value(QLatin1String("error")).toString().contains(QLatin1String("deny-list")),
                      qPrintable(p));
