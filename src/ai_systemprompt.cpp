@@ -302,7 +302,8 @@ static QString toolModeLayerData() {
     return QStringLiteral(
         "You have data-analyst tools available. "
         "`csv_query(file_path, sql, max_rows?)` runs SQLite SQL against an "
-        "attached CSV (the table is named `csv`; column names match the CSV "
+        "attached CSV (the table is named `csv`; use the exact column names "
+        "shown in the schema/preview, which can differ from the raw CSV "
         "header). `query_sql(connection_name, sql, max_rows?)` runs SQL "
         "against a saved DB connection — by default SELECT-only; for "
         "INSERT/UPDATE/DELETE/DDL ask the user first and pass "

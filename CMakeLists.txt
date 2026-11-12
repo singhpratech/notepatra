@@ -3724,9 +3724,10 @@ endif()
 
 # v0.1.133 follow-ups — secret files stay out of git/MCP/list_dir output.
 if(NOTEPATRA_BUILD_TESTS)
-    foreach(_sec_t test_git_tools_secrets test_ai_list_dir_denylist)
+    foreach(_sec_t test_git_tools_secrets test_ai_list_dir_denylist test_csv_column_name_guidance)
         add_executable(${_sec_t}
             ${_sec_t}.cpp
+            src/ai_systemprompt.cpp
             src/ai_tools.cpp
             src/path_denylist.cpp
             src/atomic_write.cpp

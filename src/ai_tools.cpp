@@ -575,7 +575,7 @@ QJsonArray availableTools() {
         QJsonObject props;
         props["file_path"] = QJsonObject{
             {"type", "string"},
-            {"description", "Workspace-relative path to a CSV/TSV file. Loaded into an in-memory SQLite db with table name 'csv'; column names match the CSV header."}
+            {"description", "Workspace-relative path to a CSV/TSV file. Loaded into an in-memory SQLite db with table name 'csv'; use the exact column names shown in the schema/preview (they can differ from the raw CSV header)."}
         };
         props["sql"] = QJsonObject{
             {"type", "string"},
