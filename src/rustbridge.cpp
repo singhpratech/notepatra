@@ -282,6 +282,22 @@ QString formatHtml(const QString &text, int indent) {
     QByteArray b = text.toUtf8();
     return textFromResult(npc_format_html(b.constData(), b.size(), indent));
 }
+QString formatHtml(const QString &text, int indent, QString *message) {
+    QByteArray b = text.toUtf8();
+    TextResult msg{nullptr, 0};
+    QString out = textFromResult(npc_format_html_ex(b.constData(), b.size(), indent, &msg));
+    QString m = textFromResult(msg);
+    if (message) *message = m;
+    return out;
+}
+QString minifyHtml(const QString &text, QString *message) {
+    QByteArray b = text.toUtf8();
+    TextResult msg{nullptr, 0};
+    QString out = textFromResult(npc_minify_html_ex(b.constData(), b.size(), &msg));
+    QString m = textFromResult(msg);
+    if (message) *message = m;
+    return out;
+}
 
 // ── Brackets ──
 QString fixBrackets(const QString &text) {

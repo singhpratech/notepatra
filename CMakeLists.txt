@@ -3589,6 +3589,45 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
     message(STATUS "Regression test enabled — target: test_sqlfmt")
 endif()
 
+# ─── HTML formatter FFI contract ────────────────────────────────────────
+# The DOM-equivalence fuzzing lives in rust-core (cargo test); this pins
+# the bridge: formatted text + empty message, or the input unchanged + a
+# message with line and column.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_htmlfmt.cpp")
+    add_executable(test_htmlfmt
+        test_htmlfmt.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_htmlfmt rust_core)
+    target_include_directories(test_htmlfmt PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_htmlfmt PRIVATE
+        Qt5::Core
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        target_link_libraries(test_htmlfmt PRIVATE
+            ws2_32 userenv bcrypt ntdll
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_htmlfmt PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_htmlfmt PRIVATE pthread dl m)
+    endif()
+    add_test(NAME test_htmlfmt COMMAND $<TARGET_FILE:test_htmlfmt>)
+    set_tests_properties(test_htmlfmt PROPERTIES
+        LABELS "regression;htmlfmt"
+        TIMEOUT 120
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    message(STATUS "Regression test enabled — target: test_htmlfmt")
+endif()
+
 # ── QSS arrow lint (v0.1.128) ──
 # Source lint: a stylesheet must not delete a spin box's or combo's arrows.
 # Reads the real src/*.cpp, so a panel added later cannot reintroduce it.

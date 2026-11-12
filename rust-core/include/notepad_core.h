@@ -139,7 +139,14 @@ TextResult npc_fix_json_report(const char *text, size_t len);
 
 /* ═══════════ HTML Formatter ═══════════ */
 
+/* Re-indents HTML without changing its DOM. When it cannot prove that, it
+ * returns the text unchanged. */
 TextResult npc_format_html(const char *text, size_t len, int indent);
+/* Same, and `message` (may be NULL; free it with npc_free_text_result) is
+ * set to "" on success or to why the text was left unchanged (with line and
+ * column). npc_minify_html_ex removes only unrendered whitespace. */
+TextResult npc_format_html_ex(const char *text, size_t len, int indent, TextResult *message);
+TextResult npc_minify_html_ex(const char *text, size_t len, TextResult *message);
 
 /* ═══════════ Bracket Fixer ═══════════ */
 

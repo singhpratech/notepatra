@@ -102,8 +102,13 @@ QString minifyJson(const QString &text);
 QString fixJson(const QString &text);
 QString fixJsonReport(const QString &text);
 
-// HTML
+// HTML — whitespace-only re-indentation that never changes the DOM. When
+// the formatter cannot prove a document safe it returns it unchanged and,
+// through `message`, says what it found and where (line, column).
 QString formatHtml(const QString &text, int indent = 2);
+QString formatHtml(const QString &text, int indent, QString *message);
+// Removes only whitespace the browser does not render; same contract.
+QString minifyHtml(const QString &text, QString *message = nullptr);
 
 // Brackets. fixBrackets posts a TransformNote: Info listing each inserted /
 // removed bracket with line and column, or Error when it declined.
