@@ -10,6 +10,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -207,6 +208,68 @@ int main(int argc, char *argv[]) {
         auto r = writeFile("fresh.txt", "x\ny\n", "create");
         check("write_file create: succeeds", !r.isError);
         expectBytes("write_file create: new file is plain UTF-8 LF", "fresh.txt", "x\ny\n");
+    }
+
+    // ── the temp file never follows a planted symlink (v0.1.133 review) ──
+    // writeBytesAtomic once opened the fixed name `<target>.notepatra.tmp`
+    // with Truncate: a repository shipping that name as a symlink to a file
+    // outside the workspace had the outside file truncated and written on the
+    // agent's next edit of the target.
+#ifndef Q_OS_WIN
+    {
+        QTemporaryDir outsideDir;
+        const QString outside = outsideDir.path() + "/outside-rc";
+        {
+            QFile o(outside);
+            o.open(QIODevice::WriteOnly);
+            o.write("ORIGINAL OUTSIDE CONTENT\n");
+        }
+        put("main.py", "print(1)\n");
+        QFile::setPermissions(g_ws + "/main.py", QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                                     | QFileDevice::ReadGroup);
+        const bool planted = QFile::link(outside, g_ws + "/main.py.notepatra.tmp")
+                             && QFileInfo(g_ws + "/main.py.notepatra.tmp").isSymLink();
+        check("planted symlink: vacuity, <target>.notepatra.tmp is a symlink", planted);
+        auto outsideBytes = [&] {
+            QFile o(outside);
+            return o.open(QIODevice::ReadOnly) ? o.readAll() : QByteArray("<missing>");
+        };
+
+        auto w = writeFile("main.py", "print(2)\n", "overwrite");
+        check("planted symlink: write_file succeeds", !w.isError);
+        check("planted symlink: write_file leaves the outside file byte-identical",
+              outsideBytes() == "ORIGINAL OUTSIDE CONTENT\n");
+        expectBytes("planted symlink: write_file edit landed", "main.py", "print(2)\n");
+        check("planted symlink: main.py is a regular file, not the planted link",
+              !QFileInfo(g_ws + "/main.py").isSymLink());
+
+        auto d = applyDiff("main.py", QJsonArray{hunk(1, "print(2)\n", "print(3)\n")});
+        check("planted symlink: apply_diff succeeds", !d.isError);
+        check("planted symlink: apply_diff leaves the outside file byte-identical",
+              outsideBytes() == "ORIGINAL OUTSIDE CONTENT\n");
+        expectBytes("planted symlink: apply_diff edit landed", "main.py", "print(3)\n");
+        check("planted symlink: the planted link is untouched",
+              QFileInfo(g_ws + "/main.py.notepatra.tmp").isSymLink());
+        check("existing permission bits kept (0640)",
+              (QFile::permissions(g_ws + "/main.py") & QFileDevice::Permissions(0x7077))
+                  == (QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadGroup));
+
+        // A new file gets the mode a plain create gets (umask), not 0600.
+        put("plain.txt", "p\n");
+        writeFile("created.txt", "c\n", "create");
+        check("new file mode matches a plain create",
+              QFile::permissions(g_ws + "/created.txt") == QFile::permissions(g_ws + "/plain.txt"));
+    }
+#endif
+    {
+        // Every file this test makes has one dot; a temp (QSaveFile's
+        // <name>.XXXXXX, or a leftover .notepatra.tmp) has more. The planted
+        // link is the one exception.
+        QStringList stray;
+        for (const QString &n : QDir(g_ws).entryList(QDir::Files | QDir::Hidden | QDir::System))
+            if (n.count('.') > 1 && n != QLatin1String("main.py.notepatra.tmp")) stray << n;
+        if (!stray.isEmpty()) std::printf("         stray: %s\n", qPrintable(stray.join(", ")));
+        check("no temp file left behind after any write", stray.isEmpty());
     }
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);

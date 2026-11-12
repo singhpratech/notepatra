@@ -17,6 +17,7 @@
 #include <QFileInfoList>
 #include <QJsonDocument>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -944,23 +945,29 @@ QString withEol(const QString &s, const QString &eol) {
 
 namespace {
 
-// Write-temp + fsync + atomic replace (never remove-then-rename).
+// Write-temp + fsync + atomic replace (never remove-then-rename). QSaveFile
+// creates a uniquely named temp beside the target with O_EXCL, so a planted
+// `<target>.notepatra.tmp -> ~/.bashrc` symlink is never opened (the old fixed
+// name was opened with Truncate and wrote through it). It keeps an existing
+// file's permission bits, fsyncs and renames over the target on commit, and
+// on any failure leaves the target untouched.
 bool writeBytesAtomic(const QString &target, const QByteArray &bytes, QString *err) {
-    const QString tmpPath = target + ".notepatra.tmp";
-    QFile tmp(tmpPath);
-    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        *err = "Failed to open temp file: " + tmp.errorString();
+    QSaveFile f(target);
+    if (!f.open(QIODevice::WriteOnly)) {
+        *err = "Failed to open temp file: " + f.errorString();
         return false;
     }
-    const qint64 w = tmp.write(bytes);
-    NpAtomic::syncData(tmp);
-    tmp.close();
-    if (w != bytes.size()) {
-        QFile::remove(tmpPath);
-        *err = QStringLiteral("Short write to temp file.");
+    if (f.write(bytes) != bytes.size()) {
+        f.cancelWriting();
+        *err = QStringLiteral("Short write to temp file; the file was not changed.");
         return false;
     }
-    return NpAtomic::replaceFile(tmpPath, target, err);
+    if (!f.commit()) {
+        *err = "Failed to replace the file (it was not changed): " + f.errorString();
+        return false;
+    }
+    NpAtomic::syncDirectoryOf(target);
+    return true;
 }
 
 ToolResult executeReadFile(const ToolCall &call, const QString &workspaceRoot) {
