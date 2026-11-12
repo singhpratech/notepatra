@@ -3,70 +3,160 @@
 #ifndef RESTCLIENT_H
 #define RESTCLIENT_H
 
-#include <QWidget>
-#include <QTextEdit>
+#include "http_file.h"
+
+#include <QByteArray>
 #include <QComboBox>
-#include <QLineEdit>
+#include <QElapsedTimer>
 #include <QLabel>
+#include <QLineEdit>
+#include <QNetworkAccessManager>
+#include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QTabWidget>
-#include <QPlainTextEdit>
-#include <QNetworkAccessManager>
+#include <QTextEdit>
+#include <QTimer>
+#include <QWidget>
 
+class QNetworkReply;
+class QSplitter;
+class QStackedWidget;
+class QTabBar;
+class QTreeWidget;
+
+// REST client panel: one request at a time, filled by hand, from a .http
+// file (Send Request in the editor), from a pasted curl command, or from
+// history. Variables are expanded only at send time; an undefined one
+// blocks the send. Redirects are shown, never followed, so credentials
+// cannot travel to another host. TLS errors are never ignored.
 class RestClient : public QWidget {
     Q_OBJECT
+    friend class RestClientTestAccess;
+
 public:
     explicit RestClient(QWidget *parent = nullptr);
-    void executeRequest(const QString &httpText);
+    ~RestClient() override;
+
+    // Runs the first request in `httpText` (e.g. an editor selection).
+    void executeRequest(const QString &httpText, const QString &filePath = QString());
+    // Runs the request whose block contains 0-based `line` of a .http file.
+    // Returns false (with a note in the panel) when there is no request there.
+    bool sendHttpRequest(const QString &fileText, int line, const QString &filePath);
+
+    bool importCurl(const QString &command);
+    QString currentAsCurl() const;
+    bool isBusy() const { return !m_reply.isNull(); }
+
+    static bool isBinaryResponse(const QString &contentType, const QByteArray &body);
+    static QString languageForContentType(const QString &contentType);
+    static QString suggestedFileName(const QString &url, const QString &contentType);
+
+    static constexpr int kRenderCap = 2 * 1024 * 1024;
+    static constexpr qint64 kMaxResponse = 256LL * 1024 * 1024;
 
 public slots:
-    // Re-apply every palette-dependent stylesheet in the panel when
-    // MainWindow emits themeChanged(). Also refreshes the cached
-    // m_pal* fields so a later sendFromUi() recolours the status badge
-    // against the new theme.
+    // Re-applies every palette-dependent stylesheet when MainWindow emits
+    // themeChanged().
     void onThemeChanged();
+    void send();
+    void cancelRequest();
+
+signals:
+    // "Open in tab": MainWindow puts `text` in a new untitled editor tab.
+    void openInTabRequested(const QString &text, const QString &language);
+    void requestFinished();
 
 private:
+    struct Context {
+        QString filePath;
+        QString dir;
+        QList<QPair<QString, QString>> fileVariables;
+        QString requestName;
+    };
+
     void applyPalette();
-    // Retained chrome widgets so applyPalette() can restyle after
-    // construction without re-walking the layout tree.
-    QLabel      *m_header = nullptr;
-    QWidget     *m_reqBarHost = nullptr;
-    QWidget     *m_btnRowHost = nullptr;
+    // role: "muted", "success", "accent", "warning" or "error"
+    void setBadge(const QString &text, const QString &role);
+    void setNote(const QString &text, bool warning = false);
+    void refuse(const QString &badge, const QString &detail);
+    void fillFromRequest(const QString &method, const QString &url, const QString &headers,
+                         const QString &body);
+    void setContext(const Context &ctx);
+    void reloadEnvironments();
+    void onEnvironmentChosen(int index);
+    void onReplyFinished(QNetworkReply *reply);
+    void renderResponse();
+    void showResponseView(int which);
+    void updateResponseActions();
+    void openImportDialog();
+    void copyAsCurl();
+    void copyResponse();
+    void openResponseInTab();
+    void saveResponse();
+    bool saveResponseTo(const QString &path, QString *error);
+    void reloadHistory();
+    void loadHistoryEntry(int row);
+    void clearHistory();
+    QString historyPath() const;
+
+    // Chrome
+    QWidget *m_headerHost = nullptr;
+    QLabel *m_header = nullptr;
+    QLabel *m_envLabel = nullptr;
+    QComboBox *m_envCombo = nullptr;
+    QWidget *m_reqBarHost = nullptr;
+    QComboBox *m_methodCombo = nullptr;
+    QLineEdit *m_urlInput = nullptr;
+    QPushButton *m_sendBtn = nullptr;
+    QPushButton *m_cancelBtn = nullptr;
+    QTabWidget *m_reqTabs = nullptr;
+    QPlainTextEdit *m_headersInput = nullptr;
+    QPlainTextEdit *m_bodyInput = nullptr;
+    QPushButton *m_importBtn = nullptr;
+    QPushButton *m_copyCurlBtn = nullptr;
+    QLabel *m_statusBadge = nullptr;
+    QLabel *m_note = nullptr;
+    QWidget *m_respBarHost = nullptr;
+    QTabBar *m_respTabs = nullptr;
+    QPushButton *m_openTabBtn = nullptr;
+    QPushButton *m_saveBtn = nullptr;
     QPushButton *m_copyBtn = nullptr;
+    QSplitter *m_split = nullptr;
+    QStackedWidget *m_respStack = nullptr;
+    QPlainTextEdit *m_respBody = nullptr;
+    QPlainTextEdit *m_respHeaders = nullptr;
+    QWidget *m_historyHost = nullptr;
+    QLabel *m_historyTitle = nullptr;
+    QLabel *m_historyHint = nullptr;
+    QPushButton *m_clearHistoryBtn = nullptr;
+    QTreeWidget *m_history = nullptr;
 
-    // Top request bar
-    QComboBox      *m_methodCombo;
-    QLineEdit      *m_urlInput;
-    QPushButton    *m_sendBtn;
+    QNetworkAccessManager *m_nam = nullptr;
+    QPointer<QNetworkReply> m_reply;
+    QElapsedTimer m_elapsed;
+    QTimer m_timeout;
+    int m_timeoutMs = 30 * 1000;
+    bool m_timedOut = false;
+    bool m_tooLarge = false;
+    QStringList m_sslErrors;
 
-    // Headers / Body tabs
-    QTabWidget     *m_reqTabs;
-    QPlainTextEdit *m_headersInput;
-    QPlainTextEdit *m_bodyInput;
+    Context m_ctx;
+    HttpFile::Environments m_envs;
+    bool m_fillingEnvCombo = false;
+    QString m_historyPathOverride;
 
-    // Response panel
-    QLabel         *m_statusBadge;  // "200 OK · 43 ms"
-    QTextEdit      *m_output;
+    // Last response
+    QByteArray m_respBytes;
+    QString m_respContentType;
+    QString m_respUrl;
+    bool m_respBinary = false;
+    bool m_haveResponse = false;
+    bool m_noteWarning = false;
+    QString m_badgeRole = QStringLiteral("muted");
 
-    QNetworkAccessManager *m_nam;
-
-    // Cached theme colors (captured in applyPalette() from npPalette())
-    // so sendFromUi() can color-code HTTP status badges without calling
-    // npPalette() again. 2xx → successFg, 3xx → accent, 4xx → warningFg,
-    // 5xx → errorFg.
-    QString m_palBg;
-    QString m_palChromeBg;
-    QString m_palText;
-    QString m_palTextMuted;
-    QString m_palAccent;
-    QString m_palBorder;
-    QString m_palSuccessFg;
-    QString m_palWarningFg;
-    QString m_palErrorFg;
-
-    void sendFromUi();
-    void parseAndSend(const QString &block);
+    // Request being sent, as typed (unexpanded) for the history entry.
+    QString m_sentMethod, m_sentUrl, m_sentHeaders, m_sentBody;
 };
 
 #endif

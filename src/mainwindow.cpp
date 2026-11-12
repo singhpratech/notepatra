@@ -251,6 +251,7 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QJsonArray>
 #include <QTimer>
 #include "compare.h"
+#include "http_editor_support.h"
 #include "merge_helper_widget.h"
 #include "hexeditor.h"
 #include "gitgutter.h"
@@ -985,7 +986,7 @@ ul { margin-top: 4px; }
 
 <h3>REST and Git</h3>
 <ul>
-<li><b>REST Client:</b> run selected HTTP requests from editor content, especially <code>.http</code> style request blocks.</li>
+<li><b>REST Client:</b> in a <code>.http</code> / <code>.rest</code> file, <code>Ctrl+Alt+R</code> (Tools &gt; Send Request) sends the request under the caret; <code>{{variables}}</code>, environments from <code>http-client.env.json</code>, Import cURL / Copy as cURL and a request history.</li>
 <li><b>Git Integration:</b> inspect repository status, changed files, and work with repository context without leaving the editor.</li>
 <li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
 </ul>
@@ -1062,7 +1063,7 @@ ul { margin-top: 4px; }
 <ul>
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
 <li><code>Ctrl+F</code> find, <code>%4</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
-<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Alt+R</code> Send Request (.http), <code>Ctrl+Shift+E</code> Workspace</li>
 <li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
 <li><code>%6</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
@@ -4179,15 +4180,77 @@ void MainWindow::buildMenus() {
     auto *restAct = feat->addAction("REST Client (.http)");
     restAct->setShortcut(QKeySequence("Ctrl+Shift+R"));
     restAct->setStatusTip("Opens REST client in a new tab. Select HTTP request first.");
-    connect(restAct, &QAction::triggered, this, [this, E]() {
+    auto newRestTab = [this]() {
         auto *rest = new RestClient;
         // Theme propagation — palette-driven stylesheets re-render.
         connect(this, &MainWindow::themeChanged, rest, &RestClient::onThemeChanged);
-        if (E() && E()->hasSelectedText()) rest->executeRequest(E()->selectedText());
+        connect(rest, &RestClient::openInTabRequested, this,
+                [this](const QString &text, const QString &lang) {
+                    Editor *ed = newFile();
+                    if (!ed) return;
+                    {
+                        Editor::ScopedBulkLoad bulk(ed);
+                        ed->setText(text);
+                    }
+                    ed->setLanguage(lang);
+                    m_statusBar->updateLanguage(lang);
+                });
         exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(rest, "REST Client");
         m_tabs->setCurrentIndex(idx);
+        return rest;
+    };
+    connect(restAct, &QAction::triggered, this, [E, newRestTab]() {
+        Editor *src = E();
+        const QString sel = src && src->hasSelectedText() ? src->selectedText() : QString();
+        const QString path = src ? src->filePath() : QString();
+        RestClient *rest = newRestTab();
+        if (!sel.isEmpty()) rest->executeRequest(sel, path);
     });
+
+    // Send Request: the .http request under the caret goes to the REST
+    // Client tab (reused if one is open). Enabled only on .http/.rest tabs,
+    // so Ctrl+Alt+R is never taken from anything else.
+    auto *sendHttpAct = feat->addAction("Send Request");
+    sendHttpAct->setObjectName(QStringLiteral("actSendHttpRequest"));
+    sendHttpAct->setShortcut(QKeySequence("Ctrl+Alt+R"));
+    sendHttpAct->setStatusTip("Send the request under the caret in a .http or .rest file to the REST Client.");
+    sendHttpAct->setEnabled(false);
+    auto sendHttpAt = [this, newRestTab](Editor *ed, int line) {
+        if (!ed) return;
+        RestClient *rest = qobject_cast<RestClient *>(m_tabs->currentWidget());
+        for (int i = m_tabs->count() - 1; !rest && i >= 0; --i)
+            rest = qobject_cast<RestClient *>(m_tabs->widget(i));
+        if (rest) {
+            exitAiFullscreenIfActive();
+            m_tabs->setCurrentWidget(rest);
+        } else {
+            rest = newRestTab();
+        }
+        rest->sendHttpRequest(ed->text(), line, ed->filePath());
+    };
+    connect(sendHttpAct, &QAction::triggered, this, [this, sendHttpAt]() {
+        Editor *ed = m_tabs->currentEditor();
+        auto *sup = HttpEditorSupport::ensure(ed);
+        if (!sup || !sup->isActive()) return;
+        int line = 0, col = 0;
+        ed->getCursorPosition(&line, &col);
+        sendHttpAt(ed, line);
+    });
+    auto syncHttpTab = [this, sendHttpAct, sendHttpAt]() {
+        bool created = false;
+        HttpEditorSupport *sup = HttpEditorSupport::ensure(m_tabs->currentEditor(), &created);
+        if (sup && created) {
+            connect(sup, &HttpEditorSupport::sendRequested, this, sendHttpAt);
+            connect(sup, &HttpEditorSupport::activeChanged, sendHttpAct, [this, sendHttpAct, sup](bool on) {
+                sendHttpAct->setEnabled(on && m_tabs->currentEditor() == sup->editor());
+            });
+        }
+        if (sup) sup->refreshMarkerColors();
+        sendHttpAct->setEnabled(sup && sup->isActive());
+    };
+    connect(m_tabs, &QTabWidget::currentChanged, this, syncHttpTab);
+    connect(this, &MainWindow::themeChanged, this, syncHttpTab);
 
     // --- Noter (meeting thinkpad) ---
     // v0.1.112 — "(toggle)" in the label because triggering it CLOSES the
@@ -4339,11 +4402,12 @@ void MainWindow::buildMenus() {
             "  Content-Type: application/json\n\n"
             "  {\"name\": \"test\", \"value\": 42}\n\n"
             "Usage:\n"
-            "  1. Select the request block\n"
-            "  2. Ctrl+Shift+R to open REST panel\n"
-            "  3. Response appears with headers + body\n"
-            "  4. JSON is auto-pretty-printed\n\n"
-            "Supports: GET, POST, PUT, DELETE, PATCH, HEAD\n"
+            "  1. Save the file as .http or .rest\n"
+            "  2. Put the caret in a request and press Ctrl+Alt+R\n"
+            "     (or click the green marker, or right-click > Send Request)\n"
+            "  3. The REST Client tab shows status, body and headers\n\n"
+            "Variables: @name = value lines, {{name}} anywhere, and\n"
+            "environments from http-client.env.json next to the file.\n"
             "### separates multiple requests in one file");
     });
 
@@ -5791,6 +5855,7 @@ void MainWindow::buildMenus() {
             "  %3Terminal\n"
             "  %4AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
+            "  Ctrl+Alt+R      Send Request (.http)\n"
             "  Ctrl+Shift+E    File Explorer\n"
             "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
             "TABS\n"

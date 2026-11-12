@@ -3860,7 +3860,9 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
 endif()
 
 # v0.1.133 — REST client: .http parser + variables + environments + history
-# redaction (test_http_file) and Import/Copy as cURL (test_curl_convert).
+# redaction (test_http_file), Import/Copy as cURL (test_curl_convert), and the
+# panel + .http editor wiring against fake servers on 127.0.0.1
+# (test_rest_client). Pure tests list their sources; the panel test links the app.
 if(NOTEPATRA_BUILD_TESTS)
     add_executable(test_http_file test_http_file.cpp src/http_file.cpp src/rest_history.cpp)
     target_include_directories(test_http_file PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -3874,7 +3876,43 @@ if(NOTEPATRA_BUILD_TESTS)
     notepatra_add_qt_test(test_curl_convert)
     set_tests_properties(test_curl_convert PROPERTIES LABELS "unit;rest" TIMEOUT 60)
 
-    message(STATUS "Regression tests enabled — targets: test_http_file, test_curl_convert")
+    set(REST_CLIENT_TEST_SOURCES ${SOURCES})
+    list(FILTER REST_CLIENT_TEST_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_rest_client test_rest_client.cpp ${REST_CLIENT_TEST_SOURCES} ${HEADERS})
+    add_dependencies(test_rest_client rust_core)
+    target_compile_definitions(test_rest_client PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_rest_client PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_rest_client PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts Qt5::Test
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_rest_client PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_rest_client PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_rest_client PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_rest_client PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_rest_client PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_rest_client PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_rest_client PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_rest_client PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_rest_client PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    notepatra_add_qt_test(test_rest_client)
+    set_tests_properties(test_rest_client PROPERTIES LABELS "integration;rest" TIMEOUT 180)
+    message(STATUS "Regression tests enabled — targets: test_http_file, test_curl_convert, test_rest_client")
 endif()
 
 # v0.1.57 hit a CI regression because test_edit_plan was registered with
