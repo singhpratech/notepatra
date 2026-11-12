@@ -21,6 +21,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QSqlRecord>
+#include <QTextCodec>
 #include <QTextStream>
 
 #include <cstdio>
@@ -205,13 +206,14 @@ bool resolveSafeWritePath(const QString &pathArg,
     // Construct the target path under the canonical parent. This is the
     // path we'll actually write to; we keep the user-supplied filename
     // (no canonicalize on the leaf since it doesn't exist yet).
-    const QString targetAbs = canonicalParent + '/' + fi.fileName();
+    QString targetAbs = canonicalParent + '/' + fi.fileName();
 
     // Apply the hardcoded deny-list to the candidate target — block
     // writes to credential paths even if the parent dir is in workspace.
     if (isHardDenied(targetAbs)) {
         setError("denied"); return false;
     }
+
 
     if (outAbsTarget) *outAbsTarget = targetAbs;
     return true;
@@ -841,6 +843,118 @@ bool looksBinary(const QByteArray &sniff) {
     return sniff.contains('\0');
 }
 
+// ── Agent-edit encoding round-trip ──────────────────────────────────────
+// write_file / apply_diff edit DECODED text. These keep the file's BOM,
+// encoding and line endings byte-exact outside the edited region, and refuse
+// when the bytes cannot be reproduced (never write damaged bytes).
+struct TextFileFormat {
+    QByteArray bom;                       // raw BOM bytes, re-emitted as-is
+    QByteArray codec = "UTF-8";
+    QString label = QStringLiteral("UTF-8");
+};
+
+QByteArray encodeWithCodec(const QByteArray &codecName, const QString &text, bool *ok) {
+    QTextCodec *codec = QTextCodec::codecForName(codecName);
+    if (!codec) { *ok = false; return QByteArray(); }
+    QTextCodec::ConverterState st(QTextCodec::IgnoreHeader);
+    const QByteArray out = codec->fromUnicode(text.constData(), text.size(), &st);
+    *ok = st.invalidChars == 0 && st.remainingChars == 0;
+    return out;
+}
+
+// Same detection order as rust-core file_io.rs: BOM, then UTF-8, then
+// Windows-1252. BOM-less bytes with NULs (binary / BOM-less UTF-16) refuse.
+bool decodeTextFile(const QByteArray &raw, TextFileFormat *fmt, QString *text, QString *why) {
+    static const struct { const char *bom; int len; const char *codec; const char *label; } kBoms[] = {
+        {"\xFF\xFE\x00\x00", 4, "UTF-32LE", "UTF-32 LE BOM"},
+        {"\x00\x00\xFE\xFF", 4, "UTF-32BE", "UTF-32 BE BOM"},
+        {"\xEF\xBB\xBF", 3, "UTF-8", "UTF-8 BOM"},
+        {"\xFF\xFE", 2, "UTF-16LE", "UTF-16 LE BOM"},
+        {"\xFE\xFF", 2, "UTF-16BE", "UTF-16 BE BOM"},
+    };
+    TextFileFormat f;
+    for (const auto &b : kBoms) {
+        if (raw.startsWith(QByteArray(b.bom, b.len))) {
+            f.bom = raw.left(b.len);
+            f.codec = b.codec;
+            f.label = QString::fromLatin1(b.label);
+            break;
+        }
+    }
+    const QByteArray body = raw.mid(f.bom.size());
+    if (f.bom.isEmpty()) {
+        if (raw.contains('\0')) {
+            *why = QStringLiteral("it looks binary (or BOM-less UTF-16)");
+            return false;
+        }
+        if (QString::fromUtf8(raw).toUtf8() != raw) {
+            f.codec = "windows-1252";
+            f.label = QStringLiteral("Windows-1252");
+        }
+    }
+    QTextCodec *codec = QTextCodec::codecForName(f.codec);
+    if (!codec) {
+        *why = QStringLiteral("no %1 codec is available").arg(f.label);
+        return false;
+    }
+    QTextCodec::ConverterState st(QTextCodec::IgnoreHeader);
+    const QString decoded = codec->toUnicode(body.constData(), body.size(), &st);
+    bool encOk = false;
+    const bool ok = st.invalidChars == 0 && st.remainingChars == 0
+                    && encodeWithCodec(f.codec, decoded, &encOk) == body && encOk;
+    if (!ok) {
+        *why = QStringLiteral("its bytes do not round-trip as %1").arg(f.label);
+        return false;
+    }
+    *fmt = f;
+    *text = decoded;
+    return true;
+}
+
+// Display/proposal text: a UTF-8 BOM stays visible as U+FEFF so a Compose
+// apply (which writes toUtf8) keeps it.
+QString proposalPrefix(const TextFileFormat &fmt) {
+    return fmt.label == QLatin1String("UTF-8 BOM") ? QString(QChar(0xFEFF)) : QString();
+}
+
+QString dominantEol(const QString &text) {
+    const int crlf = text.count(QStringLiteral("\r\n"));
+    const int lf = text.count(QLatin1Char('\n')) - crlf;
+    return crlf > lf ? QStringLiteral("\r\n") : QStringLiteral("\n");
+}
+
+// Turn bare "\n" into `eol` (no-op for LF files).
+QString withEol(const QString &s, const QString &eol) {
+    if (eol == QLatin1String("\n")) return s;
+    QString out;
+    out.reserve(s.size() + s.size() / 16);
+    for (int i = 0; i < s.size(); ++i) {
+        if (s.at(i) == QLatin1Char('\n') && (i == 0 || s.at(i - 1) != QLatin1Char('\r')))
+            out += QLatin1Char('\r');
+        out += s.at(i);
+    }
+    return out;
+}
+
+// Write-temp + fsync + atomic replace (never remove-then-rename).
+bool writeBytesAtomic(const QString &target, const QByteArray &bytes, QString *err) {
+    const QString tmpPath = target + ".notepatra.tmp";
+    QFile tmp(tmpPath);
+    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        *err = "Failed to open temp file: " + tmp.errorString();
+        return false;
+    }
+    const qint64 w = tmp.write(bytes);
+    NpAtomic::syncData(tmp);
+    tmp.close();
+    if (w != bytes.size()) {
+        QFile::remove(tmpPath);
+        *err = QStringLiteral("Short write to temp file.");
+        return false;
+    }
+    return NpAtomic::replaceFile(tmpPath, target, err);
+}
+
 ToolResult executeReadFile(const ToolCall &call, const QString &workspaceRoot) {
     const QString pathArg = call.args.value("path").toString();
     int offset = call.args.value("offset").toInt(1);
@@ -1075,28 +1189,52 @@ ToolResult executeWriteFile(const ToolCall &call,
                          "or mode='append' to add to it.");
     }
 
+    // Existing file: keep its encoding, BOM and line endings. An undecodable
+    // file may still be overwritten wholesale (as UTF-8), never appended to.
+    QByteArray existingBytes;
+    bool readOk = false;
+    TextFileFormat fmt;
+    QString existingText;
+    bool decoded = false;
+    QString why;
+    if (existed) {
+        QFile fr(absTarget);
+        if (fr.open(QIODevice::ReadOnly)) {
+            existingBytes = fr.readAll();
+            readOk = true;
+            fr.close();
+            decoded = decodeTextFile(existingBytes, &fmt, &existingText, &why);
+        }
+        if (modeStr == "append" && !readOk)
+            return makeError(call, "io_error", "Failed to read the file to append to.");
+        if (modeStr == "append" && !decoded)
+            return makeError(call, "unsupported_encoding",
+                             QString("Refusing to append: %1. The file was not changed.").arg(why));
+    }
+    const QString newText = withEol(content, decoded ? dominantEol(existingText) : QStringLiteral("\n"));
+    QByteArray encoded;
+    if (decoded) {
+        bool encOk = false;
+        encoded = encodeWithCodec(fmt.codec, newText, &encOk);
+        if (!encOk)
+            return makeError(call, "unsupported_encoding",
+                             QString("The content has characters that %1 cannot encode; the file "
+                                     "was not changed.").arg(fmt.label));
+    } else {
+        encoded = newText.toUtf8();
+    }
+    const QByteArray bytes = (modeStr == "append") ? existingBytes + encoded
+                                                   : (decoded ? fmt.bom : QByteArray()) + encoded;
+
     if (dryRun) {
-        // Read the existing content for the "before" snapshot of the
-        // diff preview. If the file doesn't exist (mode=create or fresh
-        // overwrite of an absent path), `before` is empty.
+        // "before" is the existing content (empty for an absent path); a read
+        // failure is non-fatal for a dry run. "after" is what would be written.
         QString before;
-        if (existed) {
-            QFile fr(absTarget);
-            if (fr.open(QIODevice::ReadOnly)) {
-                before = QString::fromUtf8(fr.readAll());
-                fr.close();
-            }
-            // Read failure on an existing file is non-fatal for a dry
-            // run — we just present an empty `before`. The UI can warn.
-        }
-        // Compose the "after" snapshot from the proposed mode.
-        QString after;
-        if (modeStr == "append") {
-            after = before + content;
-        } else {
-            // overwrite / create — replacement is the entire new content.
-            after = content;
-        }
+        if (decoded) before = proposalPrefix(fmt) + existingText;
+        else if (readOk) before = QString::fromUtf8(existingBytes);
+        const QString after = (modeStr == "append")
+            ? before + newText
+            : (decoded ? proposalPrefix(fmt) : QString()) + newText;
         QJsonObject proposed;
         proposed["path"]   = QDir(workspaceRoot).relativeFilePath(absTarget);
         proposed["before"] = before;
@@ -1109,31 +1247,18 @@ ToolResult executeWriteFile(const ToolCall &call,
         result["abs_path"]          = absTarget;
         result["mode"]              = modeStr;
         result["created"]           = !existed;
-        result["bytes_would_write"] = content.toUtf8().size();
+        result["bytes_would_write"] = (modeStr == "append") ? encoded.size() : bytes.size();
         return makeSuccess(call, result);
     }
 
-    QFile f(absTarget);
-    QIODevice::OpenMode openMode = (modeStr == "append")
-        ? (QIODevice::WriteOnly | QIODevice::Append)
-        : (QIODevice::WriteOnly | QIODevice::Truncate);
-    if (!f.open(openMode)) {
-        return makeError(call, "io_error",
-                         "Failed to open for writing: " + f.errorString());
-    }
-    const QByteArray bytes = content.toUtf8();
-    qint64 written = f.write(bytes);
-    f.close();
-    if (written != bytes.size()) {
-        return makeError(call, "io_error",
-                         QString("Short write: wrote %1 of %2 bytes.")
-                             .arg(written).arg(bytes.size()));
-    }
+    QString writeErr;
+    if (!writeBytesAtomic(absTarget, bytes, &writeErr))
+        return makeError(call, "io_error", writeErr);
 
     QJsonObject result;
     result["path"]          = QDir(workspaceRoot).relativeFilePath(absTarget);
     result["abs_path"]      = absTarget;
-    result["bytes_written"] = bytes.size();
+    result["bytes_written"] = (modeStr == "append") ? encoded.size() : bytes.size();
     result["mode"]          = modeStr;
     result["created"]       = !existed;
     return makeSuccess(call, result);
@@ -1185,6 +1310,8 @@ ToolResult executeSearch(const ToolCall &call, const QString &workspaceRoot) {
     if (!rootFi.exists()) {
         return makeError(call, "not_found", "Search path does not exist.");
     }
+    const QString canonicalWs = QDir(workspaceRoot).canonicalPath();
+    const QString wsPrefix = canonicalWs.endsWith('/') ? canonicalWs : canonicalWs + '/';
 
     // Compile regex if requested. For literal mode, use lower-cased
     // substring search when caseSensitive is false.
@@ -1412,19 +1539,38 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     }
 
     QFile f(canonical);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    if (!f.open(QIODevice::ReadOnly)) {
         return makeError(call, "io_error",
                          "Failed to open: " + f.errorString());
     }
-    const QString content = QString::fromUtf8(f.readAll());
+    const QByteArray raw = f.readAll();
     f.close();
+    TextFileFormat fmt;
+    QString content;
+    {
+        QString why;
+        if (!decodeTextFile(raw, &fmt, &content, &why))
+            return makeError(call, "unsupported_encoding",
+                             QString("Refusing to edit: %1. The file was not changed.").arg(why));
+    }
 
-    // Split into lines preserving final newline behaviour.
+    // Lines without their endings; terms[i] is line i's own ending ("\n",
+    // "\r\n", or "" for an unterminated last line), kept byte-exact.
     QStringList lines = content.split('\n');
-    // If the file ends with a newline, split() leaves an empty trailing
-    // element. We handle this by tracking it and re-adding it.
-    bool trailingNewline = !lines.isEmpty() && lines.last().isEmpty();
+    const bool trailingNewline = lines.last().isEmpty();
     if (trailingNewline) lines.removeLast();
+    QStringList terms;
+    terms.reserve(lines.size());
+    for (int i = 0; i < lines.size(); ++i) {
+        QString t = (i == lines.size() - 1 && !trailingNewline) ? QString() : QStringLiteral("\n");
+        if (!t.isEmpty() && lines[i].endsWith(QLatin1Char('\r'))) {
+            lines[i].chop(1);
+            t = QStringLiteral("\r\n");
+        }
+        terms << t;
+    }
+    const QString eol = terms.count(QStringLiteral("\r\n")) > terms.count(QStringLiteral("\n"))
+                            ? QStringLiteral("\r\n") : QStringLiteral("\n");
 
     // Sort hunks by old_start_line, then validate + apply in REVERSE.
     QVector<QJsonObject> sortedHunks;
@@ -1646,17 +1792,38 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
     for (int hi = effective.size() - 1; hi >= 0; --hi) {
         const EffectiveHunk &h = effective[hi];
 
-        // Replace lines [startLine-1 .. startLine-1+oldCount) with newLines.
-        for (int i = h.oldCount - 1; i >= 0; --i) {
-            lines.removeAt(h.startLine - 1 + i);
+        const int s = h.startLine - 1;
+        // New lines take the replaced block's ending; insertions the file's.
+        QString lastTerm = h.oldCount > 0 ? terms[s + h.oldCount - 1] : eol;
+        if (h.oldCount == 0 && s == lines.size() && s > 0 && terms[s - 1].isEmpty()) {
+            terms[s - 1] = eol;      // appending after an unterminated last line
+            lastTerm.clear();
         }
+        if (h.newLines.isEmpty() && lastTerm.isEmpty() && s > 0)
+            terms[s - 1].clear();    // deleted the unterminated last line
+        for (int i = h.oldCount - 1; i >= 0; --i) {
+            lines.removeAt(s + i);
+            terms.removeAt(s + i);
+        }
+        const QString midTerm = lastTerm.isEmpty() ? eol : lastTerm;
         for (int i = h.newLines.size() - 1; i >= 0; --i) {
-            lines.insert(h.startLine - 1, h.newLines[i]);
+            QString l = h.newLines[i];
+            if (l.endsWith(QLatin1Char('\r'))) l.chop(1);
+            lines.insert(s, l);
+            terms.insert(s, i == h.newLines.size() - 1 ? lastTerm : midTerm);
         }
     }
 
-    QString out = lines.join('\n');
-    if (trailingNewline) out += '\n';
+    QString out;
+    out.reserve(content.size() + 256);
+    for (int i = 0; i < lines.size(); ++i) out += lines[i] + terms[i];
+
+    bool encOk = false;
+    const QByteArray outBytes = fmt.bom + encodeWithCodec(fmt.codec, out, &encOk);
+    if (!encOk)
+        return makeError(call, "unsupported_encoding",
+                         QString("new_lines contain characters that %1 cannot encode; the file "
+                                 "was not changed.").arg(fmt.label));
 
     if (dryRun) {
         // Composer mode preview: return the proposed before/after without
@@ -1666,8 +1833,8 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         // path — no temp file, no rename.
         QJsonObject proposed;
         proposed["path"]   = QDir(workspaceRoot).relativeFilePath(canonical);
-        proposed["before"] = content;
-        proposed["after"]  = out;
+        proposed["before"] = proposalPrefix(fmt) + content;
+        proposed["after"]  = proposalPrefix(fmt) + out;
         proposed["mode"]   = "apply_diff";
         QJsonObject result;
         result["dry_run"]           = true;
@@ -1675,7 +1842,7 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         result["path"]              = QDir(workspaceRoot).relativeFilePath(canonical);
         result["abs_path"]          = canonical;
         result["hunks_applied"]     = hunks.size();
-        result["bytes_would_write"] = out.toUtf8().size();
+        result["bytes_would_write"] = outBytes.size();
         if (!warnings.isEmpty()) {
             QJsonArray w;
             for (const QString &s : warnings) w.append(s);
@@ -1684,26 +1851,10 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         return makeSuccess(call, result);
     }
 
-    // Write atomically: write to .tmp, then rename.
-    const QString tmpPath = canonical + ".notepatra.tmp";
-    QFile tmp(tmpPath);
-    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        return makeError(call, "io_error",
-                         "Failed to open temp file: " + tmp.errorString());
-    }
-    QByteArray outBytes = out.toUtf8();
-    qint64 w = tmp.write(outBytes);
-    // fsync before the replace so a power loss cannot publish a truncated file.
-    NpAtomic::syncData(tmp);
-    tmp.close();
-    if (w != outBytes.size()) {
-        QFile::remove(tmpPath);
-        return makeError(call, "io_error", "Short write to temp file.");
-    }
     // Never remove-then-rename: a failed rename would lose both copies.
     {
         QString replaceErr;
-        if (!NpAtomic::replaceFile(tmpPath, canonical, &replaceErr))
+        if (!writeBytesAtomic(canonical, outBytes, &replaceErr))
             return makeError(call, "io_error", replaceErr);
     }
 
