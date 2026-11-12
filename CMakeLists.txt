@@ -3556,6 +3556,86 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_config_permissions
     set_tests_properties(test_config_permissions PROPERTIES
         LABELS "unit;config;security" TIMEOUT 60)
     message(STATUS "Regression test enabled — target: test_config_permissions")
+
+# v0.1.133 — coding-agent write-path regressions: encoding/EOL/BOM round-trip
+# (apply_diff/write_file), search deny-list + symlink escape, Compose same-file
+# merge, and agent writes never discarding a dirty tab.
+if(NOTEPATRA_BUILD_TESTS)
+    foreach(_agent_t test_agent_edit_encoding test_ai_search_denylist)
+        add_executable(${_agent_t}
+            ${_agent_t}.cpp
+            src/ai_tools.cpp
+            src/path_denylist.cpp
+            src/atomic_write.cpp
+            src/git_tools.cpp
+            src/csvanalyst.cpp
+            src/dbconnections.cpp
+        )
+        target_include_directories(${_agent_t} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_agent_t} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+        add_test(NAME ${_agent_t} COMMAND $<TARGET_FILE:${_agent_t}>)
+        set_tests_properties(${_agent_t} PROPERTIES
+            LABELS "unit;ai;tools" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+    endforeach()
+
+    add_executable(test_edit_plan_same_file
+        test_edit_plan_same_file.cpp src/edit_plan.cpp src/diff_view.cpp src/rustbridge.cpp)
+    add_dependencies(test_edit_plan_same_file rust_core)
+    target_include_directories(test_edit_plan_same_file PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/rust-core/include)
+    target_link_libraries(test_edit_plan_same_file PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets ${RUST_LIB})
+    if(WIN32)
+        target_link_libraries(test_edit_plan_same_file PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp kernel32 user32 gdi32)
+    elseif(APPLE)
+        target_link_libraries(test_edit_plan_same_file PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_edit_plan_same_file PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_edit_plan_same_file)
+    set_tests_properties(test_edit_plan_same_file PROPERTIES
+        LABELS "unit;coding-mode" TIMEOUT 60)
+
+    set(AGENT_DIRTY_TAB_SOURCES ${SOURCES})
+    list(FILTER AGENT_DIRTY_TAB_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_agent_write_dirty_tab
+        test_agent_write_dirty_tab.cpp ${AGENT_DIRTY_TAB_SOURCES} ${HEADERS})
+    add_dependencies(test_agent_write_dirty_tab rust_core)
+    target_compile_definitions(test_agent_write_dirty_tab PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_agent_write_dirty_tab PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_agent_write_dirty_tab PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_agent_write_dirty_tab PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_agent_write_dirty_tab PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_agent_write_dirty_tab PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_agent_write_dirty_tab PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_agent_write_dirty_tab COMMAND $<TARGET_FILE:test_agent_write_dirty_tab>)
+    set_tests_properties(test_agent_write_dirty_tab PROPERTIES
+        LABELS "integration;mainwindow;ai;write-gate"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 180)
+    message(STATUS "Regression tests enabled — coding-agent write path (4 targets)")
 endif()
 
 # ── Install ──
