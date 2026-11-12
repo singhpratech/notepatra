@@ -267,8 +267,14 @@ int main(int argc, char *argv[]) {
     EXPECT("format_json indent 2", res(r).value("text").toString().contains("\n  \"a\""));
     r = call("format_text", {{"kind", "json"}, {"text", "[1,2"}, {"minify", true}});
     EXPECT("format_json still refuses invalid JSON with options", !ok(r));
+    r = call("repair_json", {{"text", "{'a': 1,}"}});
+    EXPECT("repair_json is the explicit repair",
+           ok(r) && res(r).value("fixed").toString().contains("\"a\"") &&
+               !res(r).value("fixed").toString().contains(",}"));
     r = call("repair_json", {{"text", "[1,2"}});
-    EXPECT("repair_json is the explicit repair", ok(r) && res(r).value("fixed").toString().contains("]"));
+    EXPECT("repair_json declines a truncated document",
+           ok(r) && res(r).value("fixed").toString() == QLatin1String("[1,2") &&
+               !res(r).value("report").toString().isEmpty());
 
     // ── Markdown menu items: same function, same output ──
     {
