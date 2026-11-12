@@ -889,14 +889,24 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
                            : QStringLiteral("no connection named: %1").arg(orig);
                 return out;
             }
-            DbConnections::Record r = add ? DbConnections::Record() : all.at(at);
+            const DbConnections::Record before = add ? DbConnections::Record() : all.at(at);
+            DbConnections::Record r = before;
             r.name = a.value(QLatin1String("name")).toString();
             r.driver = a.value(QLatin1String("driver")).toString();
             r.host = a.value(QLatin1String("host")).toString();
             r.port = a.value(QLatin1String("port")).toInt();
             r.database = a.value(QLatin1String("database")).toString();
             r.username = a.value(QLatin1String("username")).toString();
-            if (add || a.value(QLatin1String("clear_secret")).toBool()) {
+            // Decided HERE, against the record as stored now (it may have
+            // changed while the card waited), never on the caller's word: a
+            // stored password goes only to the server and account it was
+            // saved for. A different driver, host, port or user name clears
+            // it and the options (raw connection-string text for QODBC). A
+            // database change alone keeps it (ODBC values are brace-quoted,
+            // so a database name cannot add SERVER=).
+            const bool serverChanged = before.driver != r.driver || before.host != r.host ||
+                                       before.port != r.port || before.username != r.username;
+            if (add || serverChanged || a.value(QLatin1String("clear_secret")).toBool()) {
                 r.password.clear();
                 r.options.clear();
             }

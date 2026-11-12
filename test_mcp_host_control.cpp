@@ -39,6 +39,7 @@
 #include <QTimer>
 
 #include "diagram/diagram_editor.h"
+#include "dbconnections.h"
 #include "rest_history.h"
 
 #include <QTextEdit>
@@ -584,6 +585,45 @@ int main(int argc, char *argv[]) {
     }
     r = callCard("update_connection", {{"name", "scratch"}, {"new_name", "scratch2"}}, true);
     EXPECT("update_connection rename", ok(r) && res(r).value("name").toString() == "scratch2");
+    {
+        // W3: the stored password follows the server it was saved for. The
+        // card is built while the record points at one host; the user moves
+        // it to another in Manage Connections before Approve; the approved
+        // update puts the first host back, so the password saved for the
+        // second must not travel with it.
+        auto seed = [](const QString &host, const QString &pw) {
+            QVector<DbConnections::Record> all = DbConnections::loadAll();
+            DbConnections::Record rec;
+            rec.name = "remote";
+            rec.driver = "QPSQL";
+            rec.host = host;
+            rec.port = 5432;
+            rec.database = "app";
+            rec.username = "me";
+            rec.password = pw;
+            for (int i = all.size() - 1; i >= 0; --i)
+                if (all.at(i).name == rec.name) all.remove(i);
+            all.append(rec);
+            return DbConnections::saveAll(all);
+        };
+        auto stored = []() {
+            DbConnections::Record rec;
+            DbConnections::findByName("remote", &rec);
+            return rec;
+        };
+        EXPECT("fixture: a server connection with a saved password", seed("db.internal", "pw-one"));
+        r = callCard("update_connection", {{"name", "remote"}, {"database", "app2"}}, true);
+        EXPECT("W3: a database-only change keeps the saved password",
+               ok(r) && stored().database == "app2" && stored().password == "pw-one");
+        r = callCard("update_connection", {{"name", "remote"}, {"database", "app3"}}, true,
+                     [&]() { seed("other.internal", "pw-for-other"); });
+        EXPECT("W3: a host change found at Approve clears the password, whatever the card said",
+               ok(r) && stored().host == "db.internal" && stored().password.isEmpty());
+        seed("db.internal", "pw-one");
+        r = callCard("update_connection", {{"name", "remote"}, {"port", 6543}}, true);
+        EXPECT("W3: a port change clears the saved password", ok(r) && stored().password.isEmpty());
+        callCard("delete_connection", {{"name", "remote"}}, true);
+    }
     r = call("list_connections");
     EXPECT("no tool returns a password or options",
            !QJsonDocument(r).toJson().contains("password") && !QJsonDocument(r).toJson().contains("options"));
