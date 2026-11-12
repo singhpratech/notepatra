@@ -229,6 +229,55 @@ static bool applySessionReadOnly(QSqlDatabase &db, const QString &driver,
     return true;
 }
 
+// ODBC brace-quoting: a value with ';', '{' or '}' becomes {value} with '}'
+// doubled. Values without those characters are left exactly as they were, so
+// no connection that worked before changes (a driver that keeps braces
+// literally would otherwise see "{master}").
+static QString odbcValue(const QString &v) {
+    if (!v.contains(QLatin1Char(';')) && !v.contains(QLatin1Char('{'))
+        && !v.contains(QLatin1Char('}')))
+        return v;
+    QString q = v;
+    q.replace(QLatin1Char('}'), QStringLiteral("}}"));
+    return QLatin1Char('{') + q + QLatin1Char('}');
+}
+
+QString odbcConnectionString(const Record &r, QString *outError) {
+    auto hasControl = [](const QString &s) {
+        for (const QChar c : s)
+            if (c.unicode() < 0x20 || c.unicode() == 0x7F) return true;
+        return false;
+    };
+    const struct { const char *field; const QString &value; } named[] = {
+        {"host", r.host}, {"database", r.database}, {"username", r.username}};
+    for (const auto &f : named) {
+        if (hasControl(f.value)) {
+            if (outError) *outError = QStringLiteral(
+                "The %1 field contains a control character; edit the connection.")
+                .arg(QLatin1String(f.field));
+            return QString();
+        }
+    }
+    if (r.password.contains(QChar(0))) {
+        if (outError) *outError = QStringLiteral(
+            "The password contains a NUL character; edit the connection.");
+        return QString();
+    }
+    QString conn = r.options.trimmed();
+    // Ensure terminating semicolon so we can append more keywords.
+    if (!conn.isEmpty() && !conn.endsWith(';')) conn += ';';
+    // Server is host plus comma-port (the SQL Server / ODBC convention,
+    // distinct from the colon-port that PostgreSQL etc. use).
+    const QString server = (r.port > 0)
+        ? QString("%1,%2").arg(r.host).arg(r.port)
+        : r.host;
+    if (!server.isEmpty())     conn += QString("SERVER=%1;").arg(odbcValue(server));
+    if (!r.database.isEmpty()) conn += QString("DATABASE=%1;").arg(odbcValue(r.database));
+    if (!r.username.isEmpty()) conn += QString("UID=%1;").arg(odbcValue(r.username));
+    if (!r.password.isEmpty()) conn += QString("PWD=%1;").arg(odbcValue(r.password));
+    return conn;
+}
+
 bool open(const Record &r, QString *outConnectionName, QString *outError,
           bool readOnly, QString *outReadOnlyWarning) {
     if (!QSqlDatabase::drivers().contains(r.driver)) {
@@ -237,6 +286,15 @@ bool open(const Record &r, QString *outConnectionName, QString *outError,
             "Install the appropriate Qt SQL plugin and restart Notepatra.")
                 .arg(r.driver);
         return false;
+    }
+    QString odbcConn;
+    if (r.driver == QStringLiteral("QODBC")) {
+        QString connErr;
+        odbcConn = odbcConnectionString(r, &connErr);
+        if (!connErr.isEmpty()) {
+            if (outError) *outError = connErr;
+            return false;
+        }
     }
     const QString cname = QStringLiteral("notepatra-%1-%2")
         .arg(r.name, QUuid::createUuid().toString(QUuid::Id128));
@@ -270,19 +328,7 @@ bool open(const Record &r, QString *outConnectionName, QString *outError,
         // DRIVER={...} (or other keywords); if it does, we splice the
         // host/port/database/uid/pwd around it. If Options is empty we
         // fall back to a minimal SERVER=host,port;DATABASE=db construct.
-        QString conn = r.options.trimmed();
-        // Ensure terminating semicolon so we can append more keywords.
-        if (!conn.isEmpty() && !conn.endsWith(';')) conn += ';';
-        // Server is host plus comma-port (the SQL Server / ODBC convention,
-        // distinct from the colon-port that PostgreSQL etc. use).
-        const QString server = (r.port > 0)
-            ? QString("%1,%2").arg(r.host).arg(r.port)
-            : r.host;
-        if (!server.isEmpty())     conn += QString("SERVER=%1;").arg(server);
-        if (!r.database.isEmpty()) conn += QString("DATABASE=%1;").arg(r.database);
-        if (!r.username.isEmpty()) conn += QString("UID=%1;").arg(r.username);
-        if (!r.password.isEmpty()) conn += QString("PWD=%1;").arg(r.password);
-        db.setDatabaseName(conn);
+        db.setDatabaseName(odbcConn);
     } else {
         db.setHostName(r.host);
         if (r.port > 0) db.setPort(r.port);

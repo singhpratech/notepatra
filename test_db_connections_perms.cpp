@@ -13,6 +13,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSqlDatabase>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <cstdio>
 
@@ -107,9 +109,69 @@ int main(int argc, char **argv) {
     check("saving over a loose file leaves it owner-only", ownerOnly(path));
     check("the new contents replaced the old",
           DbConnections::loadAll().value(0).name == QStringLiteral("perm-test-2"));
+
 #else
     std::printf("  (permission checks skipped on Windows: ACLs are left alone)\n");
 #endif
+
+    // ── ODBC connection string: field values cannot add keywords ──────
+    // database "x;Encrypt=no;TrustServerCertificate=yes" used to append two
+    // keywords to the string open() hands SQLDriverConnect.
+    std::printf("== QODBC connection string quoting ==\n");
+    {
+        DbConnections::Record o;
+        o.driver = QStringLiteral("QODBC");
+        o.options = QStringLiteral("DRIVER={ODBC Driver 18 for SQL Server};Encrypt=yes");
+        o.host = QStringLiteral("sql.example.invalid");
+        o.port = 1433;
+        o.database = QStringLiteral("master");
+        o.username = QStringLiteral("reader");
+        o.password = QStringLiteral("pw");
+        QString err;
+        check("ordinary values are passed exactly as before",
+              DbConnections::odbcConnectionString(o, &err)
+                  == QStringLiteral("DRIVER={ODBC Driver 18 for SQL Server};Encrypt=yes;"
+                                    "SERVER=sql.example.invalid,1433;DATABASE=master;"
+                                    "UID=reader;PWD=pw;") && err.isEmpty());
+        o.database = QStringLiteral("Sales Archive 2024");
+        check("a database name with spaces is unchanged",
+              DbConnections::odbcConnectionString(o).contains(
+                  QStringLiteral(";DATABASE=Sales Archive 2024;")));
+
+        o.database = QStringLiteral("x;Encrypt=no;TrustServerCertificate=yes");
+        const QString inj = DbConnections::odbcConnectionString(o);
+        check("database with ';' is one brace-quoted value",
+              inj.contains(QStringLiteral(";DATABASE={x;Encrypt=no;TrustServerCertificate=yes};")));
+        check("  ... and adds no TrustServerCertificate keyword of its own",
+              !inj.contains(QStringLiteral(";TrustServerCertificate=yes;")));
+        o.database = QStringLiteral("master");
+        o.username = QStringLiteral("u};SERVER=evil.invalid;{");
+        check("'}' is doubled inside the braces",
+              DbConnections::odbcConnectionString(o).contains(
+                  QStringLiteral(";UID={u}};SERVER=evil.invalid;{};")));
+        o.username = QStringLiteral("reader");
+        o.host = QStringLiteral("h;SERVER=evil.invalid");
+        check("host with ';' is quoted together with its port",
+              DbConnections::odbcConnectionString(o).contains(
+                  QStringLiteral(";SERVER={h;SERVER=evil.invalid,1433};")));
+        o.host = QStringLiteral("sql.example.invalid");
+        o.password = QStringLiteral("p;w}d");
+        check("a password with ';' and '}' now survives as one value",
+              DbConnections::odbcConnectionString(o).endsWith(QStringLiteral(";PWD={p;w}}d};")));
+
+        o.password = QStringLiteral("pw");
+        o.database = QStringLiteral("master\nDRIVER=x");
+        err.clear();
+        check("a control character is refused",
+              DbConnections::odbcConnectionString(o, &err).isEmpty()
+                  && err.contains(QStringLiteral("database")));
+        QString cname, openErr;
+        const bool opened = DbConnections::open(o, &cname, &openErr);
+        if (opened) QSqlDatabase::removeDatabase(cname);
+        check("open() refuses it too (or the QODBC driver is absent)",
+              !opened && (openErr.contains(QStringLiteral("control character"))
+                          || openErr.contains(QStringLiteral("not available"))));
+    }
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

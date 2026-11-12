@@ -92,6 +92,14 @@ bool findByName(const QString &name, Record *out);
 bool open(const Record &r, QString *outConnectionName, QString *outError,
           bool readOnly = true, QString *outReadOnlyWarning = nullptr);
 
+// The QODBC connection string open() passes to SQLDriverConnect: the Options
+// text as typed, then SERVER / DATABASE / UID / PWD from the fields. A field
+// value holding ';', '{' or '}' is brace-quoted with '}' doubled (ODBC rules),
+// so `x;Encrypt=no` stays one DATABASE value instead of adding keywords; any
+// other value is passed exactly as before. Returns an empty string and sets
+// *outError when a field holds a control character (or the password a NUL).
+QString odbcConnectionString(const Record &r, QString *outError = nullptr);
+
 // ── SQL read-only / mutation classifier ─────────────────────────────────
 // Replaces the old leading-keyword prefix allowlist. Strips comments and
 // string/identifier literals, tokenizes, and enforces a SINGLE statement
