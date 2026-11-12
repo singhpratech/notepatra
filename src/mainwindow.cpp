@@ -2760,8 +2760,632 @@ MainWindow::MainWindow(bool standaloneNoSession)
             return true;
         };
 #endif
+        // ── v0.1.133: tabs, editing, view, pure tools. Every op calls the
+        //    function the menu calls; nothing here opens a dialog. ──
+        host.tabAction = [this](int i, const QString &op, const QJsonObject &a,
+                                QString *err) -> QJsonObject {
+            QJsonObject r;
+            QWidget *w = m_tabs->widget(i);
+            auto *ed = m_tabs->editorAt(i);
+            if (!w) {
+                *err = QStringLiteral("no tab at index %1").arg(i);
+                return r;
+            }
+            if (op == QLatin1String("activate_tab")) {
+                m_tabs->setCurrentIndex(i);
+                r[QStringLiteral("active")] = true;
+            } else if (op == QLatin1String("set_title")) {
+                m_tabs->setTabText(i, a.value(QLatin1String("title")).toString());
+            } else if (op == QLatin1String("close_tab")) {
+                if (ed && ed->isModified()) { // the bridge checked; never prompt
+                    *err = QStringLiteral("tab has unsaved changes");
+                    return r;
+                }
+                closeTab(i);
+            } else if (!ed && op != QLatin1String("set_preview")) {
+                *err = QStringLiteral("tab %1 is not a text editor").arg(i);
+            } else if (op == QLatin1String("set_read_only")) {
+                ed->setReadOnly(a.value(QLatin1String("on")).toBool());
+                r[QStringLiteral("read_only")] = ed->isReadOnly();
+            } else if (op == QLatin1String("bookmarks")) {
+                const QString act = a.value(QLatin1String("action")).toString();
+                if (act == QLatin1String("toggle")) {
+                    const int l = a.value(QLatin1String("line")).toInt() - 1;
+                    if (l < 0 || l >= ed->lines()) {
+                        *err = QStringLiteral("line %1 is past the end (%2 lines)")
+                                   .arg(l + 1).arg(ed->lines());
+                        return r;
+                    }
+                    // Search > Bookmarks > Toggle Bookmark, at a given line.
+                    if (ed->markersAtLine(l) & 1) ed->markerDelete(l, 0);
+                    else ed->markerAdd(l, 0);
+                    r[QStringLiteral("line")] = l + 1;
+                    r[QStringLiteral("bookmarked")] = bool(ed->markersAtLine(l) & 1);
+                } else if (act == QLatin1String("clear")) {
+                    ed->markerDeleteAll(0); // Clear All Bookmarks
+                }
+                QJsonArray lines;
+                for (int l = ed->markerFindNext(0, 1); l >= 0;
+                     l = ed->markerFindNext(l + 1, 1))
+                    lines.append(l + 1);
+                r[QStringLiteral("lines")] = lines;
+            } else if (op == QLatin1String("fold")) {
+                // View > Fold All toggles; MCP asks for a direction, so fold
+                // contracts explicitly and unfold is the menu's clearFolds().
+                if (a.value(QLatin1String("action")).toString() == QLatin1String("fold_all"))
+                    ed->SendScintilla(QsciScintillaBase::SCI_FOLDALL,
+                                      QsciScintillaBase::SC_FOLDACTION_CONTRACT);
+                else
+                    ed->clearFolds();
+                r[QStringLiteral("action")] = a.value(QLatin1String("action"));
+            } else if (op == QLatin1String("set_preview")) {
+                if (!m_previewAct) {
+                    *err = QStringLiteral("no preview pane in this window");
+                    return r;
+                }
+                m_tabs->setCurrentIndex(i);
+                const bool on = a.value(QLatin1String("on")).toBool();
+                if (m_previewAct->isChecked() != on) m_previewAct->setChecked(on);
+                else if (on && m_previewPane) m_previewPane->setSource(currentEditor());
+                r[QStringLiteral("on")] = m_previewAct->isChecked();
+            } else if (op == QLatin1String("compare_with_file")) {
+                // Tools > Compare with File..., with the path given instead
+                // of picked (the bridge has already deny-checked it).
+                const QString path = a.value(QLatin1String("path")).toString();
+                QFile file(path);
+                if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    *err = QStringLiteral("could not read %1")
+                               .arg(QDir::toNativeSeparators(path));
+                    return r;
+                }
+                QString rightText = QTextStream(&file).readAll();
+                QString leftName = ed->filePath().isEmpty()
+                                       ? QStringLiteral("Current")
+                                       : QFileInfo(ed->filePath()).fileName();
+                auto *dlg = new CompareDialog(ed->text(), leftName, rightText,
+                                              QFileInfo(path).fileName(), this);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                dlg->show();
+                r[QStringLiteral("opened")] = true;
+            } else {
+                *err = QStringLiteral("unknown tab action: %1").arg(op);
+            }
+            return r;
+        };
+        host.editTab = [this](int i, const QString &op, const QJsonObject &a,
+                              QString *err) -> QJsonObject {
+            QJsonObject r;
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed) {
+                *err = QStringLiteral("tab %1 is not a text editor").arg(i);
+                return r;
+            }
+            const auto replaceWhole = [ed](const QString &out) {
+                ed->beginUndoAction();
+                ed->selectAll();
+                ed->replaceSelectedText(out);
+                ed->endUndoAction();
+            };
+            // One transform over the selection or the whole document, one
+            // undo step; changed:false when the text came out identical.
+            const auto transform = [ed, err, replaceWhole](
+                                       const QString &scope,
+                                       const std::function<QString(const QString &)> &fn)
+                -> QJsonObject {
+                QJsonObject o;
+                if (scope == QLatin1String("selection")) {
+                    if (!ed->hasSelectedText()) {
+                        *err = QStringLiteral("no selection");
+                        return o;
+                    }
+                    const QString in = ed->selectedText();
+                    const QString out = fn(in);
+                    o[QStringLiteral("changed")] = out != in;
+                    if (out != in) {
+                        ed->beginUndoAction();
+                        ed->replaceSelectedText(out);
+                        ed->endUndoAction();
+                    }
+                } else {
+                    const QString in = ed->text();
+                    const QString out = fn(in);
+                    o[QStringLiteral("changed")] = out != in;
+                    if (out != in) replaceWhole(out);
+                }
+                return o;
+            };
+            if (op == QLatin1String("undo") || op == QLatin1String("redo")) {
+                const bool undo = op == QLatin1String("undo");
+                const int steps = a.value(QLatin1String("steps")).toInt(1);
+                int done = 0;
+                for (; done < steps; ++done) {
+                    if (undo ? !ed->isUndoAvailable() : !ed->isRedoAvailable()) break;
+                    if (undo) ed->undo(); else ed->redo();
+                }
+                if (done == 0) *err = QStringLiteral("nothing to %1").arg(op);
+                r[QStringLiteral("steps")] = done;
+            } else if (op == QLatin1String("transform_lines")) {
+                // Edit > Line Operations / Blank Operations: same RustCore
+                // call, same mode number, per menu item.
+                const QString o = a.value(QLatin1String("op")).toString();
+                const int tw = ed->tabWidth();
+                std::function<QString(const QString &)> fn;
+                static const QStringList sorts = {
+                    QStringLiteral("sort_asc"),     QStringLiteral("sort_desc"),
+                    QStringLiteral("sort_int_asc"), QStringLiteral("sort_int_desc"),
+                    QStringLiteral("sort_len_asc"), QStringLiteral("sort_len_desc")};
+                if (sorts.contains(o)) {
+                    const int m = sorts.indexOf(o);
+                    fn = [m](const QString &t) { return RustCore::sortLines(t, m); };
+                } else if (o == QLatin1String("dedupe")) {
+                    fn = [](const QString &t) { return RustCore::removeDuplicates(t, 0); };
+                } else if (o == QLatin1String("dedupe_consecutive")) {
+                    fn = [](const QString &t) { return RustCore::removeDuplicates(t, 1); };
+                } else if (o == QLatin1String("remove_empty")) {
+                    fn = [](const QString &t) { return RustCore::removeEmptyLines(t, 0); };
+                } else if (o == QLatin1String("remove_blank")) {
+                    fn = [](const QString &t) { return RustCore::removeEmptyLines(t, 1); };
+                } else if (o == QLatin1String("join")) {
+                    fn = [](const QString &t) { return RustCore::joinLines(t, " "); };
+                } else if (o == QLatin1String("reverse")) {
+                    fn = [](const QString &t) { return RustCore::reverseLines(t); };
+                } else if (o == QLatin1String("trim_trailing")) {
+                    fn = [](const QString &t) { return RustCore::trimLines(t, 0); };
+                } else if (o == QLatin1String("trim_leading")) {
+                    fn = [](const QString &t) { return RustCore::trimLines(t, 1); };
+                } else if (o == QLatin1String("trim_both")) {
+                    fn = [](const QString &t) { return RustCore::trimLines(t, 2); };
+                } else if (o == QLatin1String("tab_to_space")) {
+                    fn = [tw](const QString &t) { return RustCore::convertWhitespace(t, tw, 0); };
+                } else if (o == QLatin1String("space_to_tab")) {
+                    fn = [tw](const QString &t) { return RustCore::convertWhitespace(t, tw, 1); };
+                } else {
+                    *err = QStringLiteral("unknown op: %1").arg(o);
+                    return r;
+                }
+                r = transform(a.value(QLatin1String("scope")).toString(), fn);
+            } else if (op == QLatin1String("convert_case")) {
+                // Edit > Convert Case to: modes 0..4 in menu order.
+                static const QStringList modes = {
+                    QStringLiteral("upper"), QStringLiteral("lower"),
+                    QStringLiteral("proper"), QStringLiteral("sentence"),
+                    QStringLiteral("invert")};
+                const int m = modes.indexOf(a.value(QLatin1String("mode")).toString());
+                if (m < 0) {
+                    *err = QStringLiteral("unknown mode");
+                    return r;
+                }
+                const QString scope = a.value(QLatin1String("scope")).toString();
+                r = transform(scope.isEmpty() ? QStringLiteral("selection") : scope,
+                              [m](const QString &t) { return RustCore::convertCase(t, m); });
+            } else if (op == QLatin1String("comment_lines")) {
+                const int from = a.value(QLatin1String("start_line")).toInt() - 1;
+                const int to = a.value(QLatin1String("end_line")).toInt() - 1;
+                if (from < 0 || to < from || to >= ed->lines()) {
+                    *err = QStringLiteral("lines %1-%2 are outside the document (%3 lines)")
+                               .arg(from + 1).arg(to + 1).arg(ed->lines());
+                    return r;
+                }
+                const bool block = a.value(QLatin1String("kind")).toString() ==
+                                   QLatin1String("block");
+                const Editor::CommentSyntax cs = Editor::commentSyntaxFor(ed->language());
+                if (block ? (cs.blockOpen.isEmpty() || cs.blockClose.isEmpty())
+                          : cs.line.isEmpty()) {
+                    *err = QStringLiteral("%1 has no %2 comment syntax")
+                               .arg(ed->language(),
+                                    block ? QStringLiteral("block") : QStringLiteral("line"));
+                    return r;
+                }
+                // Select the lines, then the Comment/Uncomment menu item.
+                QString last = ed->text(to);
+                while (last.endsWith(QLatin1Char('\n')) || last.endsWith(QLatin1Char('\r')))
+                    last.chop(1);
+                const QString before = ed->text();
+                ed->setSelection(from, 0, to, last.size());
+                const QString action = a.value(QLatin1String("action")).toString();
+                if (action == QLatin1String("comment")) block ? ed->commentBlock() : ed->commentLine();
+                else if (action == QLatin1String("uncomment")) block ? ed->uncommentBlock() : ed->uncommentLine();
+                else block ? ed->toggleBlockComment() : ed->toggleComment();
+                r[QStringLiteral("changed")] = ed->text() != before;
+            } else if (op == QLatin1String("line_edit")) {
+                const int l = a.value(QLatin1String("line")).toInt() - 1;
+                const QString o = a.value(QLatin1String("op")).toString();
+                if (l < 0 || l >= ed->lines()) {
+                    *err = QStringLiteral("line %1 is past the end (%2 lines)")
+                               .arg(l + 1).arg(ed->lines());
+                    return r;
+                }
+                if ((o == QLatin1String("move_up") && l == 0) ||
+                    (o == QLatin1String("move_down") && l >= ed->lines() - 1)) {
+                    *err = QStringLiteral("line %1 cannot move %2").arg(l + 1)
+                               .arg(o == QLatin1String("move_up") ? QStringLiteral("up")
+                                                                  : QStringLiteral("down"));
+                    return r;
+                }
+                // Edit > Line Operations, at the given line.
+                ed->setCursorPosition(l, 0);
+                ed->beginUndoAction();
+                if (o == QLatin1String("duplicate")) ed->duplicateLine();
+                else if (o == QLatin1String("delete")) ed->deleteLine();
+                else if (o == QLatin1String("move_up")) ed->moveLineUp();
+                else ed->moveLineDown();
+                ed->endUndoAction();
+                r[QStringLiteral("line_count")] = ed->lines();
+            } else if (op == QLatin1String("set_eol")) {
+                // Edit > EOL Conversion (the menu always converts).
+                const QString eol = a.value(QLatin1String("eol")).toString();
+                const QString name = eol == QLatin1String("crlf") ? QStringLiteral("Windows (CR LF)")
+                                     : eol == QLatin1String("cr") ? QStringLiteral("Macintosh (CR)")
+                                                                  : QStringLiteral("Unix (LF)");
+                ed->beginUndoAction();
+                ed->setEolModeByName(name, a.value(QLatin1String("convert")).toBool(true));
+                ed->endUndoAction();
+                if (m_tabs->currentIndex() == i) m_statusBar->updateEol(name);
+                r[QStringLiteral("eol")] = ed->eolModeName();
+            } else if (op == QLatin1String("set_encoding")) {
+                const QString enc = a.value(QLatin1String("encoding")).toString();
+                if (a.value(QLatin1String("mode")).toString() == QLatin1String("reinterpret")) {
+                    // Encoding > Reinterpret bytes as (the bridge's card
+                    // carried the discard consent the menu asks for).
+                    if (ed->isModified() && !a.value(QLatin1String("discard_unsaved")).toBool()) {
+                        *err = QStringLiteral("tab has unsaved changes");
+                        return r;
+                    }
+                    if (!ed->reloadWithEncoding(enc, /*force=*/true)) {
+                        *err = QStringLiteral("could not reload the file as %1").arg(enc);
+                        return r;
+                    }
+                } else {
+                    ed->convertEncoding(enc); // Encoding > Convert to
+                }
+                if (m_tabs->currentIndex() == i) m_statusBar->updateEncoding(enc);
+                r[QStringLiteral("encoding")] = ed->encoding();
+            } else if (op == QLatin1String("reload_tab")) {
+                QString lerr; // File > Reload from Disk
+                if (ed->filePath().isEmpty() || !ed->loadFile(ed->filePath(), &lerr)) {
+                    *err = lerr.isEmpty() ? QStringLiteral("could not reload") : lerr;
+                    return r;
+                }
+                updateTabTitle(i);
+                r[QStringLiteral("reloaded")] = true;
+            } else if (op == QLatin1String("rename_file")) {
+                QString rerr;
+                switch (renameTabFile(i, a.value(QLatin1String("new_name")).toString(), &rerr)) {
+                case RenameResult::Renamed:
+                case RenameResult::Unchanged:
+                    r[QStringLiteral("path")] = QDir::toNativeSeparators(ed->filePath());
+                    break;
+                case RenameResult::InvalidName:
+                    *err = QStringLiteral("not a valid file name");
+                    break;
+                case RenameResult::TargetExists:
+                    *err = QStringLiteral("a file with that name already exists; nothing was renamed");
+                    break;
+                case RenameResult::NoFile:
+                    *err = QStringLiteral("the tab has no file on disk");
+                    break;
+                default:
+                    *err = rerr.isEmpty() ? QStringLiteral("rename failed") : rerr;
+                }
+            } else if (op == QLatin1String("close_tab")) {
+                ed->setModified(false); // the card carried the discard consent
+                closeTab(i);
+            } else if (op == QLatin1String("apply_edit")) {
+                // Search > Replace: the dialog's Replace All engine.
+                QString find = a.value(QLatin1String("find")).toString();
+                QString repl = a.value(QLatin1String("replace")).toString();
+                bool isRegex = a.value(QLatin1String("regex")).toBool();
+                const bool cs = a.value(QLatin1String("match_case")).toBool(true);
+                const bool ww = a.value(QLatin1String("whole_word")).toBool();
+                const QString text = ed->text();
+                if (isRegex && !QRegularExpression(find).isValid()) {
+                    *err = QStringLiteral("invalid regex: %1")
+                               .arg(QRegularExpression(find).errorString());
+                    return r;
+                }
+                QString pattern = find;
+                QString replAll = repl;
+                bool patRegex = isRegex;
+                if (ww) {
+                    pattern = QStringLiteral("\\b(?:%1)\\b")
+                                  .arg(isRegex ? find : QRegularExpression::escape(find));
+                    // Literal promoted to regex: keep the caller's dollars literal.
+                    if (!isRegex) replAll.replace(QLatin1String("$"), QLatin1String("$$"));
+                    patRegex = true;
+                }
+                const int count = int(RustCore::countMatches(text, pattern, patRegex, cs));
+                r[QStringLiteral("count")] = count;
+                if (a.value(QLatin1String("dry_run")).toBool()) return r;
+                if (count == 0) {
+                    *err = QStringLiteral("no match");
+                    return r;
+                }
+                if (a.value(QLatin1String("all")).toBool()) {
+                    replaceWhole(RustCore::replaceAll(text, pattern, replAll, patRegex, cs));
+                    return r;
+                }
+                // First match only: the byte range findAll reports, replaced
+                // in place (Scintilla positions are UTF-8 bytes).
+                const auto hits = RustCore::findAll(text, find, isRegex, cs, ww);
+                if (hits.isEmpty()) {
+                    *err = QStringLiteral("no match");
+                    return r;
+                }
+                const QByteArray all8 = text.toUtf8();
+                const QByteArray hit8 = all8.mid(int(hits[0].start), int(hits[0].length));
+                QString out = repl;
+                if (isRegex) {
+                    const QString hit = QString::fromUtf8(hit8);
+                    const auto self = RustCore::findAll(hit, find, true, cs, ww);
+                    if (self.isEmpty() || self[0].start != 0 ||
+                        self[0].length != size_t(hit8.size())) {
+                        *err = QStringLiteral("the first match cannot be replaced on "
+                                              "its own unambiguously; use all:true");
+                        r[QStringLiteral("count")] = 0;
+                        return r;
+                    }
+                    out = RustCore::replaceAll(hit, find, repl, true, cs);
+                }
+                const QByteArray out8 = out.toUtf8();
+                ed->beginUndoAction();
+                ed->SendScintilla(QsciScintillaBase::SCI_SETTARGETRANGE,
+                                  (unsigned long)hits[0].start,
+                                  (long)(hits[0].start + hits[0].length));
+                ed->SendScintilla(QsciScintillaBase::SCI_REPLACETARGET,
+                                  (unsigned long)out8.size(), out8.constData());
+                ed->endUndoAction();
+                r[QStringLiteral("count")] = 1;
+            } else {
+                *err = QStringLiteral("unknown edit: %1").arg(op);
+            }
+            return r;
+        };
+        host.appAction = [this](const QString &op, const QJsonObject &a,
+                                QString *err) -> QJsonObject {
+            QJsonObject r;
+            const auto action = [this](const QString &name) {
+                return findChild<QAction *>(name);
+            };
+            if (op == QLatin1String("set_theme")) {
+                // Settings > Theme: trigger the same checkable action.
+                const QString t = a.value(QLatin1String("theme")).toString();
+                QAction *act = action(QStringLiteral("theme") + t);
+                if (!act) {
+                    *err = QStringLiteral("no theme action for %1").arg(t);
+                    return r;
+                }
+                act->trigger();
+                r[QStringLiteral("theme")] = Config::instance().theme;
+                return r;
+            }
+            // View menu toggles, by the objectName the menu already carries.
+            static const struct { const char *key; const char *act; } kToggles[] = {
+                {"word_wrap", "viewWordWrap"},
+                {"show_whitespace", "viewShowWhitespace"},
+                {"show_eol", "viewShowEol"},
+                {"indent_guides", "viewShowIndentGuide"}};
+            for (const auto &t : kToggles) {
+                if (!a.contains(QLatin1String(t.key))) continue;
+                QAction *act = action(QLatin1String(t.act));
+                if (!act) {
+                    *err = QStringLiteral("no View action %1").arg(QLatin1String(t.act));
+                    return r;
+                }
+                act->setChecked(a.value(QLatin1String(t.key)).toBool());
+                r[QLatin1String(t.key)] = act->isChecked();
+            }
+            if (a.contains(QLatin1String("zoom"))) {
+                // View > Zoom: the persisted font size, applied everywhere.
+                Config::instance().fontSize =
+                    qBound(6, a.value(QLatin1String("zoom")).toInt(), 48);
+                Config::instance().save();
+                applyConfigEverywhere();
+                r[QStringLiteral("zoom")] = Config::instance().fontSize;
+            }
+            return r;
+        };
+        host.computeText = [](const QString &op, const QJsonObject &a,
+                              QString *err) -> QJsonObject {
+            QJsonObject r;
+            const QString text = a.value(QLatin1String("text")).toString();
+            if (op == QLatin1String("check_brackets")) {
+                r[QStringLiteral("report")] = RustCore::checkBrackets(text);
+            } else if (op == QLatin1String("fix_brackets")) {
+                const QString fixed = RustCore::fixBrackets(text);
+                r[QStringLiteral("fixed")] = fixed;
+                r[QStringLiteral("changed")] = fixed != text;
+                // What the fixer found, in the Check button's words.
+                r[QStringLiteral("report")] = RustCore::checkBrackets(text);
+            } else if (op == QLatin1String("hash_text")) {
+                static const QStringList algos = {
+                    QStringLiteral("md5"), QStringLiteral("sha1"),
+                    QStringLiteral("sha256"), QStringLiteral("sha512")};
+                const QString algo = a.value(QLatin1String("algo")).toString();
+                r[QStringLiteral("algo")] = algo;
+                r[QStringLiteral("hash")] =
+                    RustCore::computeHash(text.toUtf8(), algos.indexOf(algo));
+            } else if (op == QLatin1String("encode_text")) {
+                const QString o = a.value(QLatin1String("op")).toString();
+                QString out; // Utilities > Base64 / URL, same calls
+                if (o == QLatin1String("base64_encode")) out = RustCore::base64Encode(text.toUtf8());
+                else if (o == QLatin1String("base64_decode")) out = RustCore::base64Decode(text.toUtf8());
+                else if (o == QLatin1String("url_encode")) out = RustCore::urlEncode(text);
+                else out = RustCore::urlDecode(text);
+                r[QStringLiteral("text")] = out;
+            } else if (op == QLatin1String("diff_text")) {
+                const RustCore::DiffInfo d = RustCore::computeDiff(
+                    a.value(QLatin1String("left")).toString(),
+                    a.value(QLatin1String("right")).toString());
+                // Consecutive non-equal entries form one hunk.
+                QJsonArray hunks;
+                QJsonObject cur;
+                QJsonArray lines;
+                int emitted = 0;
+                bool truncated = false;
+                const auto flush = [&]() {
+                    if (lines.isEmpty()) return;
+                    cur[QStringLiteral("lines")] = lines;
+                    hunks.append(cur);
+                    cur = QJsonObject();
+                    lines = QJsonArray();
+                };
+                for (const RustCore::DiffEntry &en : d.entries) {
+                    if (en.tag == 0) { flush(); continue; }
+                    if (emitted >= 5000) { truncated = true; break; }
+                    if (lines.isEmpty()) {
+                        cur[QStringLiteral("left_line")] = en.leftLine;
+                        cur[QStringLiteral("right_line")] = en.rightLine;
+                    }
+                    QJsonObject l;
+                    l[QStringLiteral("op")] = en.tag == 1 ? QStringLiteral("+")
+                                                          : QStringLiteral("-");
+                    l[QStringLiteral("text")] = en.text;
+                    lines.append(l);
+                    ++emitted;
+                }
+                flush();
+                r[QStringLiteral("identical")] = hunks.isEmpty() && !truncated;
+                r[QStringLiteral("added")] = d.added;
+                r[QStringLiteral("removed")] = d.removed;
+                r[QStringLiteral("hunks")] = hunks;
+                r[QStringLiteral("truncated")] = truncated;
+            } else if (op == QLatin1String("format")) {
+                const QString kind = a.value(QLatin1String("kind")).toString();
+                const int indent = a.value(QLatin1String("indent")).toInt();
+                QString out;
+                if (kind == QLatin1String("json")) {
+                    // Strict first, as format_json always has (NP-09).
+                    const QString perr = RustCore::jsonParseError(text);
+                    if (!perr.isEmpty()) {
+                        *err = QStringLiteral("invalid JSON: %1").arg(perr);
+                        return r;
+                    }
+                    out = a.value(QLatin1String("minify")).toBool()
+                              ? RustCore::minifyJson(text)
+                              : RustCore::formatJson(text, indent);
+                } else if (kind == QLatin1String("sql")) {
+                    out = RustCore::formatSql(
+                        text, indent,
+                        a.value(QLatin1String("keyword_case")).toString() != QLatin1String("lower"));
+                } else {
+                    out = RustCore::formatHtml(text, indent);
+                }
+                if (out.isEmpty()) *err = QStringLiteral("formatter returned empty output");
+                r[QStringLiteral("text")] = out;
+            } else if (op == QLatin1String("repair_json")) {
+                // JSON Tools > Fix + Format, as data: explicit opt-in only.
+                r[QStringLiteral("fixed")] = RustCore::fixJson(text);
+                r[QStringLiteral("report")] = RustCore::fixJsonReport(text);
+            } else if (op == QLatin1String("markdown_convert")) {
+                const QString out =
+                    markdownConvert(a.value(QLatin1String("op")).toString(), text);
+                if (out.isNull()) *err = QStringLiteral("nothing to convert");
+                r[QStringLiteral("text")] = out;
+            } else if (op == QLatin1String("mermaid_to_npd")) {
+                r[QStringLiteral("source")] = Npd::mermaidToNpd(text);
+            } else if (op == QLatin1String("list_symbols")) {
+                const QString lang = a.value(QLatin1String("language")).toString();
+                QJsonArray syms;
+                for (const FunctionList::Symbol &s : FunctionList::parseSymbols(text, lang)) {
+                    QJsonObject o;
+                    o[QStringLiteral("name")] = s.name;
+                    o[QStringLiteral("kind")] = s.kind;
+                    o[QStringLiteral("line")] = s.line;
+                    syms.append(o);
+                }
+                r[QStringLiteral("language")] = lang;
+                r[QStringLiteral("symbols")] = syms;
+            } else if (op == QLatin1String("generate_password")) {
+                PasswordGen::Options o;
+                o.mode = a.value(QLatin1String("mode")).toString() == QLatin1String("passphrase")
+                             ? PasswordGen::Mode::Passphrase
+                             : PasswordGen::Mode::Characters;
+                o.length = a.value(QLatin1String("length")).toInt(20);
+                if (a.contains(QLatin1String("classes"))) {
+                    o.classes = 0;
+                    for (const QJsonValue &c : a.value(QLatin1String("classes")).toArray()) {
+                        const QString n = c.toString();
+                        if (n == QLatin1String("lower")) o.classes |= PasswordGen::Lower;
+                        else if (n == QLatin1String("upper")) o.classes |= PasswordGen::Upper;
+                        else if (n == QLatin1String("digits")) o.classes |= PasswordGen::Digits;
+                        else if (n == QLatin1String("symbols")) o.classes |= PasswordGen::Symbols;
+                    }
+                }
+                o.excludeLookalikes = a.value(QLatin1String("exclude_lookalikes")).toBool();
+                o.requireEachClass = a.value(QLatin1String("require_each")).toBool(true);
+                o.words = a.value(QLatin1String("words")).toInt(6);
+                if (a.contains(QLatin1String("separator")))
+                    o.separator = a.value(QLatin1String("separator")).toString().at(0);
+                o.capitalise = a.value(QLatin1String("capitalise")).toBool();
+                o.appendDigits = a.value(QLatin1String("append_digits")).toBool();
+                if (const QString v = PasswordGen::validate(o); !v.isEmpty()) {
+                    *err = v;
+                    return r;
+                }
+                QJsonArray out;
+                for (const QString &p :
+                     PasswordGen::generateMany(o, a.value(QLatin1String("count")).toInt(1)))
+                    out.append(p);
+                r[QStringLiteral("passwords")] = out;
+            } else if (op == QLatin1String("diagram_template")) {
+                r[QStringLiteral("source")] = DiagramEditor::templateSource(
+                    a.value(QLatin1String("template")).toString());
+            } else {
+                *err = QStringLiteral("unknown operation: %1").arg(op);
+            }
+            return r;
+        };
         new McpBridge(std::move(host), this);
     }
+}
+
+// The Tools > Markdown Converter transforms, moved verbatim out of the menu
+// lambdas so MCP markdown_convert runs the same code. A null QString means
+// "nothing to replace" (the table op on an empty selection).
+QString MainWindow::markdownConvert(const QString &op, const QString &input) {
+    if (op == QLatin1String("table")) {
+        // Convert CSV/tab-separated to markdown table
+        QStringList lines = input.split("\n", Qt::SkipEmptyParts);
+        if (lines.isEmpty()) return QString();
+        QString result;
+        for (int i = 0; i < lines.size(); i++) {
+            QStringList cols = lines[i].split(QRegularExpression("[,\t]"));
+            result += "| " + cols.join(" | ") + " |\n";
+            if (i == 0) {
+                result += "|";
+                for (int j = 0; j < cols.size(); j++) result += " --- |";
+                result += "\n";
+            }
+        }
+        return result;
+    }
+    if (op == QLatin1String("list")) {
+        QStringList lines = input.split("\n", Qt::SkipEmptyParts);
+        QString result;
+        for (const auto &l : lines) result += "- " + l.trimmed() + "\n";
+        return result;
+    }
+    if (op == QLatin1String("code_block")) return "```\n" + input + "\n```";
+    if (op == QLatin1String("bold")) return "**" + input + "**";
+    if (op == QLatin1String("italic")) return "*" + input + "*";
+    if (op == QLatin1String("link")) return "[" + input + "](url)";
+    if (op == QLatin1String("heading")) return "## " + input;
+    if (op == QLatin1String("html_to_markdown")) {
+        QString text = input;
+        text.replace(QRegularExpression("<br\\s*/?>"), "\n");
+        text.replace(QRegularExpression("<p>(.*?)</p>"), "\\1\n\n");
+        text.replace(QRegularExpression("<strong>(.*?)</strong>"), "**\\1**");
+        text.replace(QRegularExpression("<b>(.*?)</b>"), "**\\1**");
+        text.replace(QRegularExpression("<em>(.*?)</em>"), "*\\1*");
+        text.replace(QRegularExpression("<i>(.*?)</i>"), "*\\1*");
+        text.replace(QRegularExpression("<h1>(.*?)</h1>"), "# \\1\n");
+        text.replace(QRegularExpression("<h2>(.*?)</h2>"), "## \\1\n");
+        text.replace(QRegularExpression("<h3>(.*?)</h3>"), "### \\1\n");
+        text.replace(QRegularExpression("<a href=\"(.*?)\">(.*?)</a>"), "[\\2](\\1)");
+        text.replace(QRegularExpression("<[^>]+>"), "");
+        return text;
+    }
+    return QString();
 }
 
 Editor *MainWindow::currentEditor() {
@@ -4186,66 +4810,25 @@ void MainWindow::buildMenus() {
 
     // --- Markdown Converter ---
     auto *mdMenu = feat->addMenu("Markdown Converter");
-    mdMenu->addAction("Selection → Markdown Table", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        // Convert CSV/tab-separated to markdown table
-        QStringList lines = e->selectedText().split("\n", Qt::SkipEmptyParts);
-        if (lines.isEmpty()) return;
-        QString result;
-        for (int i = 0; i < lines.size(); i++) {
-            QStringList cols = lines[i].split(QRegularExpression("[,\t]"));
-            result += "| " + cols.join(" | ") + " |\n";
-            if (i == 0) {
-                result += "|";
-                for (int j = 0; j < cols.size(); j++) result += " --- |";
-                result += "\n";
-            }
-        }
-        e->replaceSelectedText(result);
-    });
-    mdMenu->addAction("Selection → Markdown List", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        QStringList lines = e->selectedText().split("\n", Qt::SkipEmptyParts);
-        QString result;
-        for (const auto &l : lines) result += "- " + l.trimmed() + "\n";
-        e->replaceSelectedText(result);
-    });
-    mdMenu->addAction("Selection → Markdown Code Block", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("```\n" + e->selectedText() + "\n```");
-    });
-    mdMenu->addAction("Selection → Bold", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("**" + e->selectedText() + "**");
-    });
-    mdMenu->addAction("Selection → Italic", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("*" + e->selectedText() + "*");
-    });
-    mdMenu->addAction("Selection → Link", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("[" + e->selectedText() + "](url)");
-    });
-    mdMenu->addAction("Selection → Heading", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("## " + e->selectedText());
-    });
-    mdMenu->addAction("HTML → Markdown (strip tags)", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        QString text = e->selectedText();
-        text.replace(QRegularExpression("<br\\s*/?>"), "\n");
-        text.replace(QRegularExpression("<p>(.*?)</p>"), "\\1\n\n");
-        text.replace(QRegularExpression("<strong>(.*?)</strong>"), "**\\1**");
-        text.replace(QRegularExpression("<b>(.*?)</b>"), "**\\1**");
-        text.replace(QRegularExpression("<em>(.*?)</em>"), "*\\1*");
-        text.replace(QRegularExpression("<i>(.*?)</i>"), "*\\1*");
-        text.replace(QRegularExpression("<h1>(.*?)</h1>"), "# \\1\n");
-        text.replace(QRegularExpression("<h2>(.*?)</h2>"), "## \\1\n");
-        text.replace(QRegularExpression("<h3>(.*?)</h3>"), "### \\1\n");
-        text.replace(QRegularExpression("<a href=\"(.*?)\">(.*?)</a>"), "[\\2](\\1)");
-        text.replace(QRegularExpression("<[^>]+>"), "");
-        e->replaceSelectedText(text);
-    });
+    // Bodies live in MainWindow::markdownConvert (shared with MCP).
+    const struct { const char *label; const char *op; } mdItems[] = {
+        {"Selection → Markdown Table", "table"},
+        {"Selection → Markdown List", "list"},
+        {"Selection → Markdown Code Block", "code_block"},
+        {"Selection → Bold", "bold"},
+        {"Selection → Italic", "italic"},
+        {"Selection → Link", "link"},
+        {"Selection → Heading", "heading"},
+        {"HTML → Markdown (strip tags)", "html_to_markdown"},
+    };
+    for (const auto &it : mdItems) {
+        const QString op = QString::fromLatin1(it.op);
+        mdMenu->addAction(QString::fromUtf8(it.label), this, [E, op]() {
+            auto *e = E(); if (!e || !e->hasSelectedText()) return;
+            const QString out = markdownConvert(op, e->selectedText());
+            if (!out.isNull()) e->replaceSelectedText(out);
+        });
+    }
 
     // --- REST Client ---
     auto *restAct = feat->addAction("REST Client (.http)");
@@ -4639,6 +5222,7 @@ void MainWindow::buildMenus() {
     auto addTheme = [&](const QString &label, const QString &configKey,
                         const std::function<void()> &apply) {
         auto *act = themeMenu->addAction(label);
+        act->setObjectName(QStringLiteral("theme") + configKey); // MCP set_theme
         act->setCheckable(true);
         themeGroup->addAction(act);
         if (Config::instance().theme.compare(configKey, Qt::CaseInsensitive) == 0)

@@ -122,6 +122,15 @@ private:
     QString m_exportedChartPath;
     QString m_exportedChartFormat;
     int m_exportedChartScale = 0;
+    // ── v0.1.133 fake state ──
+    QStringList m_tabActions;
+    QJsonObject m_lastActionArgs;
+    QString m_lastEditOp;
+    QJsonObject m_lastEditArgs;
+    int m_edits = 0;
+    QString m_lastAppOp;
+    QString m_lastComputeOp;
+    QJsonObject m_lastComputeArgs;
 
     McpEditorHost makeHost() {
         McpEditorHost h;
@@ -546,6 +555,105 @@ private:
                 return true;
             };
         }
+        // ── v0.1.133 fakes: record what the bridge asked for; edits change
+        //    the fake buffer so tests can see that a Deny changed nothing. ──
+        h.tabState = [this](int i) {
+            QJsonObject o;
+            o[QStringLiteral("eol")] = QStringLiteral("Unix (LF)");
+            o[QStringLiteral("line_count")] = m_fakeTabs.value(i).text.count('\n') + 1;
+            o[QStringLiteral("length")] = m_fakeTabs.value(i).text.size();
+            o[QStringLiteral("read_only")] = false;
+            o[QStringLiteral("word_wrap")] = false;
+            o[QStringLiteral("selection")] = QJsonValue();
+            return o;
+        };
+        h.diagramExportFormats = [] {
+            return QStringList{QStringLiteral("png"), QStringLiteral("jpeg"),
+                               QStringLiteral("pdf")};
+        };
+        h.tabAction = [this](int i, const QString &op, const QJsonObject &a,
+                             QString *err) -> QJsonObject {
+            m_tabActions << op;
+            m_lastActionArgs = a;
+            if (op == QLatin1String("close_tab")) {
+                m_fakeTabs.removeAt(i);
+                return QJsonObject();
+            }
+            if (op == QLatin1String("set_title")) {
+                m_fakeTabs[i].title = a.value(QLatin1String("title")).toString();
+                return QJsonObject();
+            }
+            if (op == QLatin1String("activate_tab")) m_currentIndex = i;
+            Q_UNUSED(err);
+            QJsonObject r;
+            r[QStringLiteral("did")] = op;
+            return r;
+        };
+        h.editTab = [this](int i, const QString &op, const QJsonObject &a,
+                           QString *err) -> QJsonObject {
+            QJsonObject r;
+            if (op == QLatin1String("apply_edit")) {
+                // Literal stand-in honouring match_case / whole_word.
+                const QString find = a.value(QLatin1String("find")).toString();
+                const Qt::CaseSensitivity cs =
+                    a.value(QLatin1String("match_case")).toBool(true)
+                        ? Qt::CaseSensitive : Qt::CaseInsensitive;
+                QString &buf = m_fakeTabs[i].text;
+                const int count = buf.count(find, cs);
+                r[QStringLiteral("count")] = count;
+                if (a.value(QLatin1String("dry_run")).toBool()) return r;
+                if (count == 0) {
+                    *err = QStringLiteral("no match");
+                    return r;
+                }
+                buf.replace(find, a.value(QLatin1String("replace")).toString(), cs);
+                m_fakeTabs[i].modified = true;
+                ++m_edits;
+                return r;
+            }
+            m_lastEditOp = op;
+            m_lastEditArgs = a;
+            ++m_edits;
+            if (op == QLatin1String("close_tab")) {
+                m_fakeTabs.removeAt(i);
+                return r;
+            }
+            if (op == QLatin1String("transform_lines") &&
+                a.value(QLatin1String("op")).toString() == QLatin1String("sort_asc")) {
+                QStringList lines = m_fakeTabs[i].text.split('\n');
+                const bool nl = m_fakeTabs[i].text.endsWith('\n');
+                if (nl) lines.removeLast();
+                lines.sort();
+                m_fakeTabs[i].text = lines.join('\n') + (nl ? QStringLiteral("\n") : QString());
+            }
+            m_fakeTabs[i].modified = op != QLatin1String("reload_tab");
+            r[QStringLiteral("changed")] = true;
+            return r;
+        };
+        h.appAction = [this](const QString &op, const QJsonObject &a,
+                             QString *) -> QJsonObject {
+            m_lastAppOp = op;
+            return a;
+        };
+        h.computeText = [this](const QString &op, const QJsonObject &a,
+                               QString *err) -> QJsonObject {
+            m_lastComputeOp = op;
+            m_lastComputeArgs = a;
+            QJsonObject r;
+            const QString t = a.value(QLatin1String("text")).toString();
+            if (op == QLatin1String("hash_text"))
+                r[QStringLiteral("hash")] = QStringLiteral("H(%1)").arg(t);
+            else if (op == QLatin1String("diff_text"))
+                r[QStringLiteral("identical")] =
+                    a.value(QLatin1String("left")) == a.value(QLatin1String("right"));
+            else if (op == QLatin1String("diagram_template"))
+                r[QStringLiteral("source")] = QStringLiteral("diagram er\n");
+            else if (op == QLatin1String("markdown_convert") && t.isEmpty())
+                *err = QStringLiteral("nothing to convert");
+            else
+                r[QStringLiteral("text")] = op + QLatin1Char(':') + t;
+            return r;
+        };
         return h;
     }
 
@@ -823,6 +931,14 @@ private slots:
         m_exportedChartPath.clear();
         m_exportedChartFormat.clear();
         m_exportedChartScale = 0;
+        m_tabActions.clear();
+        m_lastActionArgs = QJsonObject();
+        m_lastEditOp.clear();
+        m_lastEditArgs = QJsonObject();
+        m_edits = 0;
+        m_lastAppOp.clear();
+        m_lastComputeOp.clear();
+        m_lastComputeArgs = QJsonObject();
         m_hostWindow = new QWidget;
         m_hostWindow->resize(640, 420);
         m_hostWindow->show();
@@ -4574,6 +4690,396 @@ private slots:
                                           Qt::DirectConnection));
         QVERIFY(!QFileInfo::exists(path));
         delete b;
+    }
+
+    // ── v0.1.133 · Phase 2 tools ──────────────────────────────────────
+
+    // Every tab-edit WRITE verb: validation errors never reach a card, the
+    // card names tool + tab + operation + scope, Deny changes nothing and
+    // Approve runs the host edit on the right tab.
+    void v0133_tab_edit_verbs_card_approve_and_deny() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        m_fakeTabs[0].text = QStringLiteral("b\na\n");
+        const qint64 t0 = tabIdAt(s, 0);
+        struct Case { QString verb; QJsonObject args; QString mustSay; };
+        const auto withTab = [t0](QJsonObject o) {
+            o[QStringLiteral("tab_id")] = t0;
+            return o;
+        };
+        const QVector<Case> cases = {
+            {QStringLiteral("transform_lines"), withTab({{"op", "sort_asc"}}),
+             QStringLiteral("transform_lines in 'notes.txt': sort_asc on the whole document")},
+            {QStringLiteral("convert_case"), withTab({{"mode", "upper"}, {"scope", "document"}}),
+             QStringLiteral("convert_case in 'notes.txt': upper case on the whole document")},
+            {QStringLiteral("comment_lines"), withTab({{"start_line", 1}, {"end_line", 2}}),
+             QStringLiteral("comment_lines in 'notes.txt': toggle line comments on lines 1-2")},
+            {QStringLiteral("line_edit"), withTab({{"line", 2}, {"op", "duplicate"}}),
+             QStringLiteral("line_edit in 'notes.txt': duplicate line 2")},
+            {QStringLiteral("set_eol"), withTab({{"eol", "crlf"}}),
+             QStringLiteral("set_eol in 'notes.txt': line endings to CRLF, converting")},
+            {QStringLiteral("set_encoding"), withTab({{"encoding", "UTF-16 LE"}}),
+             QStringLiteral("set_encoding in 'notes.txt': save as UTF-16 LE")},
+            {QStringLiteral("undo"), withTab({{"steps", 2}}),
+             QStringLiteral("undo in 'notes.txt': undo the last 2 edit(s)")},
+            {QStringLiteral("redo"), withTab({}),
+             QStringLiteral("redo in 'notes.txt': redo the last 1 edit(s)")},
+            {QStringLiteral("rename_file"), withTab({{"new_name", "renamed.txt"}}),
+             QStringLiteral("rename_file: rename")},
+        };
+        int rid = 100;
+        for (const Case &c : cases) {
+            // Deny first: nothing changes.
+            const QString before = m_fakeTabs[0].text;
+            const int editsBefore = m_edits;
+            sendRequest(s, ++rid, c.verb, c.args);
+            const QString card = cardText();
+            QVERIFY2(card.contains(c.mustSay), qPrintable(c.verb + QStringLiteral(": ") + card));
+            QVERIFY(clickCard(false));
+            QCOMPARE(readObj(s).value(QLatin1String("error")).toString(),
+                     QStringLiteral("denied by user"));
+            QCOMPARE(m_edits, editsBefore);
+            QCOMPARE(m_fakeTabs[0].text, before);
+            QVERIFY(waitForCardGone());
+            // Approve: the host ran exactly this op on this tab.
+            sendRequest(s, ++rid, c.verb, c.args);
+            QVERIFY(clickCard(true));
+            const QJsonObject r = readObj(s);
+            QVERIFY2(r.value(QLatin1String("ok")).toBool(), qPrintable(c.verb));
+            QCOMPARE(m_lastEditOp, c.verb);
+            QCOMPARE(qint64(r.value(QLatin1String("result")).toObject()
+                                .value(QLatin1String("tab_id")).toDouble()), t0);
+            QVERIFY(waitForCardGone());
+        }
+        QCOMPARE(m_fakeTabs[0].text.left(4), QStringLiteral("a\nb\n"));
+    }
+
+    void v0133_tab_edit_validation_never_shows_a_card() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QVector<QPair<QString, QJsonObject>> bad = {
+            {QStringLiteral("transform_lines"), {{"op", "shuffle"}}},
+            {QStringLiteral("transform_lines"), {{"op", "sort_asc"}, {"scope", "selection"}}}, // no selection
+            {QStringLiteral("convert_case"), {{"mode", "upper"}}},                       // no selection
+            {QStringLiteral("comment_lines"), {{"start_line", 3}, {"end_line", 1}}},
+            {QStringLiteral("line_edit"), {{"line", 0}, {"op", "delete"}}},
+            {QStringLiteral("set_eol"), {{"eol", "dos"}}},
+            {QStringLiteral("set_encoding"), {{"encoding", "EBCDIC"}}},
+            {QStringLiteral("undo"), {{"steps", 0}}},
+            {QStringLiteral("rename_file"), {{"new_name", "../x"}}},
+            {QStringLiteral("rename_file"), {{"new_name", ".bashrc"}}},          // protected target
+            {QStringLiteral("transform_lines"), {{"op", "sort_asc"}, {"tab_id", 999999}}}, // stale
+        };
+        int rid = 200;
+        for (const auto &b : bad) {
+            const QJsonObject r = callNoCard(s, ++rid, b.first, b.second);
+            QVERIFY2(!r.value(QLatin1String("ok")).toBool(),
+                     qPrintable(b.first + QJsonDocument(b.second).toJson()));
+        }
+        QCOMPARE(m_edits, 0);
+        // A modified tab: reinterpret needs explicit consent; reload needs a card.
+        m_fakeTabs[1].path = QStringLiteral("/fake/u.txt");
+        QJsonObject re{{"tab_index", 1}, {"encoding", "UTF-8"}, {"mode", "reinterpret"}};
+        QJsonObject r = callNoCard(s, 220, QStringLiteral("set_encoding"), re);
+        QVERIFY(r.value(QLatin1String("error")).toString().contains(QLatin1String("discard_unsaved")));
+        re[QStringLiteral("discard_unsaved")] = true;
+        sendRequest(s, 221, QStringLiteral("set_encoding"), re);
+        QVERIFY(cardText().contains(QLatin1String("UNSAVED CHANGES WILL BE LOST")));
+        QVERIFY(clickCard(false));
+        readObj(s);
+        QVERIFY(waitForCardGone());
+        // A protected open file refuses every tab edit before a card.
+        m_fakeTabs.append({QStringLiteral("config"), QStringLiteral("/home/u/.git/hooks/pre-push"),
+                           QStringLiteral("x\n"), false});
+        QJsonObject h{{"tab_index", int(m_fakeTabs.size() - 1)}, {"op", "reverse"}};
+        r = callNoCard(s, 222, QStringLiteral("transform_lines"), h);
+        QVERIFY(r.value(QLatin1String("error")).toString().contains(QLatin1String("refusing to write")));
+    }
+
+    void v0133_reload_and_close_need_a_card_only_when_unsaved() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        // Unmodified reload: immediate, no card.
+        QJsonObject r = callNoCard(s, 1, QStringLiteral("reload_tab"), {{"tab_index", 0}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_lastEditOp, QStringLiteral("reload_tab"));
+        // Modified close without consent: refused, tab stays.
+        const int n = m_fakeTabs.size();
+        r = callNoCard(s, 2, QStringLiteral("close_tab"), {{"tab_index", 1}});
+        QVERIFY(r.value(QLatin1String("error")).toString().contains(QLatin1String("unsaved changes")));
+        QCOMPARE(m_fakeTabs.size(), n);
+        // With consent: a card that says the changes are lost; Deny keeps it.
+        sendRequest(s, 3, QStringLiteral("close_tab"), {{"tab_index", 1}, {"discard_unsaved", true}});
+        QVERIFY(cardText().contains(QLatin1String("DISCARD its unsaved changes")));
+        QVERIFY(clickCard(false));
+        readObj(s);
+        QCOMPARE(m_fakeTabs.size(), n);
+        QVERIFY(waitForCardGone());
+        sendRequest(s, 4, QStringLiteral("close_tab"), {{"tab_index", 1}, {"discard_unsaved", true}});
+        QVERIFY(clickCard(true));
+        QVERIFY(readObj(s).value(QLatin1String("result")).toObject()
+                    .value(QLatin1String("closed")).toBool());
+        QCOMPARE(m_fakeTabs.size(), n - 1);
+        QVERIFY(waitForCardGone());
+        // Unmodified close: immediate.
+        r = callNoCard(s, 5, QStringLiteral("close_tab"), {{"tab_index", 0}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QVERIFY(m_tabActions.contains(QStringLiteral("close_tab")));
+    }
+
+    void v0133_save_all_one_card_lists_files() {
+        m_fakeTabs[0].modified = true; // /fake/notes.txt
+        m_fakeTabs.append({QStringLiteral("b.txt"), QStringLiteral("/fake/b.txt"),
+                           QStringLiteral("b"), true});
+        m_fakeTabs.append({QStringLiteral(".bashrc"), QStringLiteral("/home/u/.bashrc"),
+                           QStringLiteral("x"), true});
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        sendRequest(s, 1, QStringLiteral("save_all"));
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        QVERIFY(cardText().contains(QLatin1String("save 2 modified file(s)")));
+        QVERIFY(cardText().contains(QLatin1String("1 untitled tab(s) skipped")));
+        const QString preview = card->findChild<QLabel *>(QStringLiteral("mcpApprovalPreview"))->text();
+        QVERIFY(preview.contains(QLatin1String("notes.txt")) && preview.contains(QLatin1String("b.txt")));
+        QVERIFY(!preview.contains(QLatin1String(".bashrc")));
+        QVERIFY(clickCard(true));
+        const QJsonObject r = readObj(s).value(QLatin1String("result")).toObject();
+        QCOMPARE(r.value(QLatin1String("saved")).toArray().size(), 2);
+        QCOMPARE(r.value(QLatin1String("skipped_untitled")).toArray().size(), 1);
+        QCOMPARE(r.value(QLatin1String("skipped_protected")).toArray().size(), 1);
+        QCOMPARE(m_savedTabs.size(), 2);
+    }
+
+    void v0133_act_and_app_verbs() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const qint64 t1 = tabIdAt(s, 1);
+        QJsonObject r = callNoCard(s, 1, QStringLiteral("activate_tab"), {{"tab_id", t1}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_currentIndex, 1);
+        // activate_tab must name a tab: no "current" fallback.
+        QVERIFY(!callNoCard(s, 2, QStringLiteral("activate_tab"), {}).value(QLatin1String("ok")).toBool());
+        for (const auto &a : QVector<QPair<QString, QJsonObject>>{
+                 {QStringLiteral("set_read_only"), {{"on", true}}},
+                 {QStringLiteral("bookmarks"), {{"action", "toggle"}, {"line", 1}}},
+                 {QStringLiteral("fold"), {{"action", "unfold_all"}}},
+                 {QStringLiteral("set_preview"), {{"on", true}}}}) {
+            r = callNoCard(s, 3, a.first, a.second);
+            QVERIFY2(r.value(QLatin1String("ok")).toBool(), qPrintable(a.first));
+            QCOMPARE(m_tabActions.last(), a.first);
+        }
+        QVERIFY(!callNoCard(s, 4, QStringLiteral("bookmarks"), {{"action", "toggle"}})
+                     .value(QLatin1String("ok")).toBool()); // line missing
+        QVERIFY(!callNoCard(s, 5, QStringLiteral("set_read_only"), {})
+                     .value(QLatin1String("ok")).toBool());
+        r = callNoCard(s, 6, QStringLiteral("set_theme"), {{"theme", "dark"}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(r.value(QLatin1String("result")).toObject().value(QLatin1String("theme")).toString(),
+                 QStringLiteral("Dark"));
+        QVERIFY(!callNoCard(s, 7, QStringLiteral("set_theme"), {{"theme", "Solarized"}})
+                     .value(QLatin1String("ok")).toBool());
+        QVERIFY(callNoCard(s, 8, QStringLiteral("set_view"), {{"zoom", 14}, {"word_wrap", true}})
+                    .value(QLatin1String("ok")).toBool());
+        QVERIFY(!callNoCard(s, 9, QStringLiteral("set_view"), {{"zoom", 99}}).value(QLatin1String("ok")).toBool());
+        QVERIFY(!callNoCard(s, 10, QStringLiteral("set_view"), {}).value(QLatin1String("ok")).toBool());
+        // compare_with_file: a credential path is refused; a real file opens.
+        QTemporaryDir dir;
+        const QString key = dir.path() + QStringLiteral("/server.pem");
+        QFile kf(key);
+        QVERIFY(kf.open(QIODevice::WriteOnly));
+        kf.write("k");
+        kf.close();
+        QVERIFY(QFile::link(key, dir.path() + QStringLiteral("/innocent.txt")));
+        for (const QString &p : {key, dir.path() + QStringLiteral("/innocent.txt")}) {
+            r = callNoCard(s, 11, QStringLiteral("compare_with_file"), {{"path", p}});
+            QVERIFY2(r.value(QLatin1String("error")).toString().contains(QLatin1String("deny-list")),
+                     qPrintable(p));
+        }
+        const QString ok = dir.path() + QStringLiteral("/ok.txt");
+        QFile of(ok);
+        QVERIFY(of.open(QIODevice::WriteOnly));
+        of.write("x");
+        of.close();
+        QVERIFY(callNoCard(s, 12, QStringLiteral("compare_with_file"), {{"path", ok}})
+                    .value(QLatin1String("ok")).toBool());
+    }
+
+    void v0133_pure_tools_text_or_tab_and_deny_list() {
+        m_fakeTabs.append({QStringLiteral("id_rsa"), QStringLiteral("/home/u/.ssh/id_rsa"),
+                           QStringLiteral("-----BEGIN KEY-----\nsecret\n"), false});
+        const int key = m_fakeTabs.size() - 1;
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject r = callNoCard(s, 1, QStringLiteral("hash_text"), {{"text", "abc"}, {"algo", "md5"}});
+        QCOMPARE(r.value(QLatin1String("result")).toObject().value(QLatin1String("hash")).toString(),
+                 QStringLiteral("H(abc)"));
+        QCOMPARE(m_lastComputeArgs.value(QLatin1String("algo")).toString(), QStringLiteral("md5"));
+        r = callNoCard(s, 2, QStringLiteral("hash_text"), {{"tab_index", 0}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_lastComputeArgs.value(QLatin1String("text")).toString(), m_fakeTabs[0].text);
+        // The credential tab never reaches the host, through any pure tool.
+        m_lastComputeOp.clear();
+        for (const char *v : {"hash_text", "encode_text", "check_brackets", "list_symbols",
+                              "mermaid_to_npd", "repair_json"}) {
+            QJsonObject a{{"tab_index", key}};
+            if (QLatin1String(v) == QLatin1String("encode_text"))
+                a[QStringLiteral("op")] = QStringLiteral("base64_encode");
+            r = callNoCard(s, 3, QLatin1String(v), a);
+            QVERIFY2(!r.value(QLatin1String("ok")).toBool(), v);
+            QVERIFY(!QJsonDocument(r).toJson().contains("secret"));
+        }
+        QVERIFY(m_lastComputeOp.isEmpty());
+        QJsonObject d{{"left", QJsonObject{{"tab_index", key}}}, {"right", QJsonObject{{"text", "x"}}}};
+        QVERIFY(!callNoCard(s, 4, QStringLiteral("diff_text"), d).value(QLatin1String("ok")).toBool());
+        d[QStringLiteral("left")] = QJsonObject{{"text", "x"}};
+        QVERIFY(callNoCard(s, 5, QStringLiteral("diff_text"), d).value(QLatin1String("result"))
+                    .toObject().value(QLatin1String("identical")).toBool());
+        // Validation.
+        QVERIFY(!callNoCard(s, 6, QStringLiteral("hash_text"), {{"text", "x"}, {"algo", "crc"}})
+                     .value(QLatin1String("ok")).toBool());
+        QVERIFY(!callNoCard(s, 7, QStringLiteral("hash_text"), {{"text", "x"}, {"tab_index", 0}})
+                     .value(QLatin1String("ok")).toBool());
+        QVERIFY(!callNoCard(s, 8, QStringLiteral("generate_password"), {{"length", 3}})
+                     .value(QLatin1String("ok")).toBool());
+        QVERIFY(!callNoCard(s, 9, QStringLiteral("generate_password"),
+                            {{"classes", QJsonArray{"emoji"}}}).value(QLatin1String("ok")).toBool());
+        QVERIFY(callNoCard(s, 10, QStringLiteral("generate_password"),
+                           {{"mode", "passphrase"}, {"words", 5}}).value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_lastComputeArgs.value(QLatin1String("words")).toInt(), 5);
+        // Format options: only what the formatter has.
+        QVERIFY(!callNoCard(s, 11, QStringLiteral("format_text"),
+                            {{"kind", "html"}, {"text", "<p/>"}, {"minify", true}})
+                     .value(QLatin1String("ok")).toBool());
+        QVERIFY(callNoCard(s, 12, QStringLiteral("format_text"),
+                           {{"kind", "sql"}, {"text", "select 1"}, {"keyword_case", "lower"}})
+                    .value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_lastComputeOp, QStringLiteral("format"));
+    }
+
+    // match_case / whole_word / column on find_in_tab and search_project; the
+    // defaults keep the historical case-insensitive literal behaviour.
+    void v0133_find_options_and_columns() {
+        m_fakeTabs[0].text = QStringLiteral("  Foo food FOO\nbar\n");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        auto matches = [&](QJsonObject a) {
+            a[QStringLiteral("index")] = 0;
+            return call(s, 1, QStringLiteral("find_in_tab"), a)
+                .value(QLatin1String("result")).toObject()
+                .value(QLatin1String("matches")).toArray();
+        };
+        QJsonArray m = matches({{"query", "foo"}});
+        QCOMPARE(m.size(), 1);
+        QCOMPARE(m.at(0).toObject().value(QLatin1String("column")).toInt(), 3); // default: insensitive
+        m = matches({{"query", "FOO"}, {"match_case", true}});
+        QCOMPARE(m.at(0).toObject().value(QLatin1String("column")).toInt(), 12);
+        m = matches({{"query", "foo"}, {"match_case", true}});
+        QCOMPARE(m.at(0).toObject().value(QLatin1String("column")).toInt(), 7); // inside "food"
+        m = matches({{"query", "foo"}, {"match_case", true}, {"whole_word", true}});
+        QCOMPARE(m.size(), 0);
+        // A regex stays case-sensitive by default: "fo+" as a whole word finds
+        // nothing ("Foo", "FOO" differ in case; "food" is not a whole word).
+        QCOMPARE(matches({{"query", "fo+"}, {"regex", true}, {"whole_word", true}}).size(), 0);
+        m = matches({{"query", "fo+"}, {"regex", true}, {"whole_word", true},
+                     {"match_case", false}});
+        QCOMPARE(m.at(0).toObject().value(QLatin1String("column")).toInt(), 3);
+        QVERIFY(!call(s, 2, QStringLiteral("find_in_tab"), {{"query", "x"}, {"match_case", "yes"}})
+                     .value(QLatin1String("ok")).toBool());
+        const QJsonArray res = call(s, 3, QStringLiteral("search_project"),
+                                    {{"query", "bar"}, {"match_case", true}})
+                                   .value(QLatin1String("result")).toObject()
+                                   .value(QLatin1String("results")).toArray();
+        QVERIFY(!res.isEmpty());
+        QCOMPARE(res.at(0).toObject().value(QLatin1String("column")).toInt(), 1);
+    }
+
+    // apply_edit options: literal default unchanged; options go to the host
+    // engine; all_open shows one card with every tab and its count.
+    void v0133_apply_edit_options_and_all_open() {
+        m_fakeTabs[0].text = QStringLiteral("cat Cat\n");
+        m_fakeTabs[1].text = QStringLiteral("CAT\n");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        sendRequest(s, 1, QStringLiteral("apply_edit"),
+                    {{"find", "cat"}, {"replace", "dog"}, {"all", true},
+                     {"match_case", false}, {"scope", "all_open"}});
+        QFrame *card = waitForCard();
+        QVERIFY(card);
+        QVERIFY(cardText().contains(QLatin1String("2 open tab(s)")));
+        QVERIFY(cardText().contains(QLatin1String("case-insensitive")));
+        const QString prev = card->findChild<QLabel *>(QStringLiteral("mcpApprovalPreview"))->text();
+        QVERIFY2(prev.contains(QLatin1String("notes.txt: 2")) && prev.contains(QLatin1String("Untitled 1: 1")),
+                 qPrintable(prev));
+        // The document changes under the card: nothing is replaced anywhere.
+        m_fakeTabs[1].text = QStringLiteral("CAT cat\n");
+        QVERIFY(clickCard(true));
+        QJsonObject r = readObj(s);
+        QVERIFY(!r.value(QLatin1String("ok")).toBool());
+        QVERIFY(r.value(QLatin1String("error")).toString().contains(QLatin1String("changed while")));
+        QCOMPARE(m_fakeTabs[0].text, QStringLiteral("cat Cat\n"));
+        QVERIFY(waitForCardGone());
+        sendRequest(s, 2, QStringLiteral("apply_edit"),
+                    {{"find", "cat"}, {"replace", "dog"}, {"all", true},
+                     {"match_case", false}, {"scope", "all_open"}});
+        QVERIFY(clickCard(true));
+        r = readObj(s).value(QLatin1String("result")).toObject();
+        QCOMPARE(r.value(QLatin1String("count")).toInt(), 4);
+        QCOMPARE(r.value(QLatin1String("tabs")).toArray().size(), 2);
+        QVERIFY(waitForCardGone());
+        // all_open does not take a tab; the deny-listed tab is never touched.
+        QVERIFY(!callNoCard(s, 3, QStringLiteral("apply_edit"),
+                            {{"find", "x"}, {"replace", "y"}, {"scope", "all_open"}, {"tab_index", 0}})
+                     .value(QLatin1String("ok")).toBool());
+    }
+
+    // The literal default path never treats $1 as a template.
+    void v0133_literal_replace_keeps_dollar_one() {
+        m_fakeTabs[0].text = QStringLiteral("price: X\n");
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        sendRequest(s, 1, QStringLiteral("apply_edit"),
+                    {{"find", "X"}, {"replace", "$1.00"}, {"tab_index", 0}});
+        QVERIFY(clickCard(true));
+        QVERIFY(readObj(s).value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_fakeTabs[0].text, QStringLiteral("price: $1.00\n"));
+    }
+
+    void v0133_new_tab_language_title_and_diagram_template() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject r = call(s, 1, QStringLiteral("new_tab"),
+                             {{"text", "x"}, {"language", "py"}, {"title", "scratch.py"}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_fakeTabs.last().language, QStringLiteral("Python"));
+        QCOMPARE(m_fakeTabs.last().title, QStringLiteral("scratch.py"));
+        const int n = m_fakeTabs.size();
+        QVERIFY(!call(s, 2, QStringLiteral("new_tab"), {{"language", "klingon"}})
+                     .value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_fakeTabs.size(), n); // no tab created on a bad language
+        r = call(s, 3, QStringLiteral("create_diagram"), {{"template", "er"}});
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QCOMPARE(m_fakeTabs.last().text, QStringLiteral("diagram er\n"));
+        QVERIFY(!call(s, 4, QStringLiteral("create_diagram"), {{"template", "er"}, {"source", "x"}})
+                     .value(QLatin1String("ok")).toBool());
+        QVERIFY(!call(s, 5, QStringLiteral("create_diagram"), {{"template", "gantt"}})
+                     .value(QLatin1String("ok")).toBool());
+        // export_diagram's accepted set comes from the host (jpeg here).
+        m_fakeTabs.append({QStringLiteral("d.npd"), QString(), QStringLiteral("x"), false,
+                           QStringLiteral("Plain Text"), true});
+        r = callNoCard(s, 6, QStringLiteral("export_diagram"),
+                       {{"tab_index", int(m_fakeTabs.size() - 1)}, {"path", "/tmp/x.svg"}, {"format", "svg"}});
+        QVERIFY(r.value(QLatin1String("error")).toString().contains(QLatin1String("png|jpeg|pdf")));
     }
 
     void endpoint_file_is_published() {

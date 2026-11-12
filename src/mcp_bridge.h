@@ -312,6 +312,27 @@ private:
     void verbRenderChart(QLocalSocket *client, int id, const QJsonObject &args);       // ACT
     void verbExportQueryResults(QLocalSocket *client, int id, const QJsonObject &args); // WRITE (card)
     void verbExportChart(QLocalSocket *client, int id, const QJsonObject &args);       // WRITE (card)
+    // ── v0.1.133 ──
+    void verbTabAction(QLocalSocket *client, int id, const QJsonObject &args,
+                       const QString &verb);                                           // ACT
+    void verbCloseTab(QLocalSocket *client, int id, const QJsonObject &args);          // ACT / card
+    void verbSaveAll(QLocalSocket *client, int id, const QJsonObject &args);           // WRITE (card)
+    void verbTabEdit(QLocalSocket *client, int id, const QJsonObject &args,
+                     const QString &verb);                                             // WRITE (card)
+    void verbAppAction(QLocalSocket *client, int id, const QJsonObject &args,
+                       const QString &verb);                                           // ACT
+    void verbCompute(QLocalSocket *client, int id, const QJsonObject &args,
+                     const QString &verb);                                             // READ
+    // `text` from args["text"], or the buffer of the tab the args name (through
+    // tabTextFor, so the credential deny-list applies). false + *err otherwise.
+    bool textOrTab(const QJsonObject &args, const QString &prefix,
+                   QString *text, int *tabIdx, QString *err) const;
+    // apply_edit with regex / match_case / whole_word / scope:all_open.
+    void applyEditEx(QLocalSocket *client, int id, const QJsonObject &args,
+                     QJsonObject opts, bool allOpen);
+    // Card wording + argument check for one tab-edit verb; "" = valid.
+    QString describeTabEdit(const QString &verb, const QJsonObject &args, int idx,
+                            QString *what, QString *preview) const;
 
     // One held write request: the response is sent only after the human
     // decides (or the timeout / a disconnect decides for them).

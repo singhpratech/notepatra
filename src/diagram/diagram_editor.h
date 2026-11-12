@@ -46,6 +46,8 @@ public:
     // Replace the editor's .npd text (used by Open / template / AI insert).
     void setNpdText(const QString &text);
     QString npdText() const;
+    // Source of a New ▾ starter template ("flow", "er", "system"); "" if unknown.
+    static QString templateSource(const QString &kind);
 
     // Current on-disk path ("" if never saved). Used for the tab title.
     QString filePath() const { return m_path; }

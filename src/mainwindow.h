@@ -114,6 +114,10 @@ public:
                               SaveFailed, RenameFailed };
     RenameResult renameTabFile(int idx, const QString &newName, QString *errorOut = nullptr);
 
+    // Tools > Markdown Converter transform (op: table, list, code_block, bold,
+    // italic, link, heading, html_to_markdown); null = nothing to replace.
+    static QString markdownConvert(const QString &op, const QString &input);
+
     // Post-show non-modal notice queue (D5) — also used by main() for the
     // crash-recovery / standalone-fallback startup notices.
     void queueStartupNotice(const QString &msg);

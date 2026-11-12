@@ -106,6 +106,27 @@
 //                                           → {path}                 (phase 2,
 //                                              Full/WebEngine only)
 //
+// v0.1.133 — tab selector everywhere: tab_id | tab_index (title for reads).
+// Results that name a tab carry tab_index AND tab_id. find_in_tab and
+// search_project take match_case?/whole_word? and report a 1-based column;
+// apply_edit takes regex?/match_case?/whole_word?/scope("tab"|"all_open").
+//   READ  check_brackets/fix_brackets/hash_text{algo}/encode_text{op}/
+//         repair_json/markdown_convert{op}/mermaid_to_npd/list_symbols
+//         {text | tab_id | tab_index}; diff_text{left,right:{text|tab}};
+//         generate_password{mode,length,...}; format_text also takes
+//         indent?/minify?(json)/keyword_case?(sql).
+//   ACT   activate_tab, set_read_only{on}, bookmarks{action,line?},
+//         fold{action}, set_preview{on}, compare_with_file{path},
+//         set_view{word_wrap?,zoom?,show_whitespace?,show_eol?,
+//         indent_guides?}, set_theme{theme}; new_tab{language?,title?};
+//         create_diagram{template?}.
+//   WRITE close_tab{discard_unsaved?} and reload_tab (card only when unsaved
+//         changes would be lost), rename_file{new_name}, save_all,
+//         undo/redo{steps?}, transform_lines{op,scope?},
+//         convert_case{mode,scope?}, comment_lines{start_line,end_line,
+//         kind?,action?}, line_edit{line,op}, set_eol{eol,convert?},
+//         set_encoding{encoding,mode?,discard_unsaved?}.
+//
 // NOTE: write verbs take "tab_index"; read tab-arg verbs keep their existing
 // keys ("index" for read_tab/find_in_tab). This asymmetry is deliberate and
 // load-bearing — do not "unify" it. "tab_id" (v0.1.126) is spelled the same
@@ -121,6 +142,7 @@
 #include "notes_storage.h"
 #include "path_denylist.h"
 #include "singleinstance.h"
+#include "theme_detect.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -147,6 +169,8 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QtConcurrent/QtConcurrentRun>
+
+#include <climits>
 
 #ifndef NOTEPATRA_VERSION
 #define NOTEPATRA_VERSION "0.0.0-dev"
@@ -262,10 +286,143 @@ QString credentialRefusal(const QString &path) {
         .arg(QDir::toNativeSeparators(fi.fileName()));
 }
 
+// v0.1.133: the one line matcher find_in_tab and search_project share.
+// Defaults keep what shipped: a literal is case-INsensitive, a regex is
+// case-sensitive; match_case overrides either. Matched once per (capped)
+// line, never a match(str, offset) loop over a buffer.
+struct LineMatcher {
+    QString query;
+    bool regex = false;
+    bool matchCase = false;
+    bool wholeWord = false;
+    QRegularExpression re;
+    // 0-based column of the first match in `line`, -1 when none.
+    int find(const QString &line) const {
+        if (regex) {
+            const QRegularExpressionMatch m = re.match(line);
+            return m.hasMatch() ? m.capturedStart() : -1;
+        }
+        const Qt::CaseSensitivity cs =
+            matchCase ? Qt::CaseSensitive : Qt::CaseInsensitive;
+        const auto isWord = [](QChar c) {
+            return c.isLetterOrNumber() || c == QLatin1Char('_');
+        };
+        for (int at = line.indexOf(query, 0, cs); at >= 0;
+             at = line.indexOf(query, at + 1, cs)) {
+            if (!wholeWord) return at;
+            const int end = at + query.size();
+            if ((at == 0 || !isWord(line.at(at - 1))) &&
+                (end >= line.size() || !isWord(line.at(end))))
+                return at;
+        }
+        return -1;
+    }
+};
+
+// Builds the matcher from {query,regex?,match_case?,whole_word?}; returns
+// "" on success or the error to send.
+QString makeLineMatcher(const QJsonObject &args, LineMatcher *m) {
+    m->query = args.value(QLatin1String("query")).toString();
+    m->regex = args.value(QLatin1String("regex")).toBool(false);
+    for (const char *k : {"match_case", "whole_word"})
+        if (args.contains(QLatin1String(k)) &&
+            !args.value(QLatin1String(k)).isBool())
+            return QStringLiteral("%1 must be a boolean").arg(QLatin1String(k));
+    m->matchCase = args.value(QLatin1String("match_case")).toBool(m->regex);
+    m->wholeWord = args.value(QLatin1String("whole_word")).toBool(false);
+    if (m->regex) {
+        const QString pat = m->wholeWord
+                                ? QStringLiteral("\\b(?:%1)\\b").arg(m->query)
+                                : m->query;
+        QRegularExpression::PatternOptions o =
+            QRegularExpression::UseUnicodePropertiesOption;
+        if (!m->matchCase) o |= QRegularExpression::CaseInsensitiveOption;
+        m->re = QRegularExpression(pat, o);
+        if (!m->re.isValid())
+            return QStringLiteral("invalid regex: %1").arg(m->re.errorString());
+        m->re.optimize();
+    }
+    return QString();
+}
+
+// v0.1.133 argument helpers: one wording for every verb.
+QString optBool(const QJsonObject &a, const char *k, bool def, bool *out) {
+    const QLatin1String key(k);
+    *out = def;
+    if (!a.contains(key)) return QString();
+    if (!a.value(key).isBool())
+        return QStringLiteral("%1 must be a boolean").arg(key);
+    *out = a.value(key).toBool();
+    return QString();
+}
+
+QString optInt(const QJsonObject &a, const char *k, int lo, int hi, int def,
+               bool required, int *out) {
+    const QLatin1String key(k);
+    *out = def;
+    if (!a.contains(key))
+        return required ? QStringLiteral("missing %1").arg(key) : QString();
+    const QJsonValue v = a.value(key);
+    const double d = v.toDouble(-1e18);
+    if (!v.isDouble() || d != double(qint64(d)) || d < lo || d > hi)
+        return QStringLiteral("%1 must be an integer from %2 to %3")
+            .arg(key).arg(lo).arg(hi);
+    *out = int(d);
+    return QString();
+}
+
+// def empty ⇒ required. Returns the canonical spelling from `allowed`.
+QString optEnum(const QJsonObject &a, const char *k, const QStringList &allowed,
+                const QString &def, QString *out) {
+    const QLatin1String key(k);
+    *out = def;
+    if (!a.contains(key))
+        return def.isEmpty()
+                   ? QStringLiteral("missing %1 (%2)")
+                         .arg(key, allowed.join(QLatin1Char('|')))
+                   : QString();
+    const QString v = a.value(key).toString();
+    for (const QString &x : allowed)
+        if (x.compare(v, Qt::CaseInsensitive) == 0) {
+            *out = x;
+            return QString();
+        }
+    return QStringLiteral("%1 must be one of %2")
+        .arg(key, allowed.join(QLatin1Char('|')));
+}
+
+const QStringList &kLineOps() {
+    static const QStringList l = {
+        QStringLiteral("sort_asc"),      QStringLiteral("sort_desc"),
+        QStringLiteral("sort_int_asc"),  QStringLiteral("sort_int_desc"),
+        QStringLiteral("sort_len_asc"),  QStringLiteral("sort_len_desc"),
+        QStringLiteral("dedupe"),        QStringLiteral("dedupe_consecutive"),
+        QStringLiteral("remove_empty"),  QStringLiteral("remove_blank"),
+        QStringLiteral("join"),          QStringLiteral("reverse"),
+        QStringLiteral("trim_trailing"), QStringLiteral("trim_leading"),
+        QStringLiteral("trim_both"),     QStringLiteral("tab_to_space"),
+        QStringLiteral("space_to_tab")};
+    return l;
+}
+
+// The Encoding menu's own list (Reinterpret bytes as / Convert to).
+const QStringList &kEncodings() {
+    static const QStringList l = {
+        QStringLiteral("UTF-8"),         QStringLiteral("UTF-8 BOM"),
+        QStringLiteral("UTF-16 LE"),     QStringLiteral("UTF-16 LE BOM"),
+        QStringLiteral("UTF-16 BE"),     QStringLiteral("UTF-16 BE BOM"),
+        QStringLiteral("UTF-32 LE BOM"), QStringLiteral("UTF-32 BE BOM"),
+        QStringLiteral("ANSI (Windows-1252)"), QStringLiteral("ISO-8859-1")};
+    return l;
+}
+
+constexpr int kComputeMaxChars = 5 * 1024 * 1024;
+
 struct SearchHit {
     QString path;
     int line;
     QString text;
+    int column = 0; // 1-based, v0.1.133
 };
 
 QJsonArray hitsToJson(const QVector<SearchHit> &hits) {
@@ -274,6 +431,7 @@ QJsonArray hitsToJson(const QVector<SearchHit> &hits) {
         QJsonObject o;
         o[QStringLiteral("path")] = h.path;
         o[QStringLiteral("line")] = h.line;
+        o[QStringLiteral("column")] = h.column;
         o[QStringLiteral("text")] = h.text.left(kResultLinePreviewChars);
         arr.append(o);
     }
@@ -286,14 +444,13 @@ QJsonArray hitsToJson(const QVector<SearchHit> &hits) {
 // validated on the GUI thread before dispatch); it is compiled ONCE here and
 // matched at most once per line — every line is already capped at
 // kMaxLineScanBytes, so a megabyte one-liner never reaches the matcher.
-QJsonObject scanWorkspace(const QString &root, const QString &query,
-                          bool useRegex, const QSet<QString> &skipPaths,
+QJsonObject scanWorkspace(const QString &root, const LineMatcher &matcher,
+                          const QSet<QString> &skipPaths,
                           const QVector<SearchHit> &bufferHits,
                           int maxResults) {
     QVector<SearchHit> hits = bufferHits;
     bool truncated = false;
     int scanned = 0;
-    const QRegularExpression re(useRegex ? query : QString());
     const QString rootCanon = QDir(root).canonicalPath();
     const QString rootPrefix = rootCanon.endsWith(QLatin1Char('/')) ? rootCanon
                                                                     : rootCanon + QLatin1Char('/');
@@ -357,12 +514,17 @@ QJsonObject scanWorkspace(const QString &root, const QString &query,
                 skippingLongLine = true; // over the per-line scan cap
                 continue;
             }
-            const QString line = QString::fromUtf8(chunk).trimmed();
-            const bool matched = useRegex ? re.match(line).hasMatch()
-                                          : line.contains(query,
-                                                          Qt::CaseInsensitive);
-            if (matched)
-                hits.append({fi.absoluteFilePath(), lineNo, line});
+            // Matched against the trimmed line, as it always was (a regex
+            // anchor's meaning must not change); the column counts the
+            // stripped indentation back in.
+            const QString raw = QString::fromUtf8(chunk);
+            const QString line = raw.trimmed();
+            const int col = matcher.find(line);
+            if (col >= 0) {
+                int lead = 0;
+                while (lead < raw.size() && raw.at(lead).isSpace()) ++lead;
+                hits.append({fi.absoluteFilePath(), lineNo, line, lead + col + 1});
+            }
         }
     }
     if (hits.size() >= maxResults) truncated = true;
@@ -782,6 +944,42 @@ void McpBridge::handleLine(QLocalSocket *client, const QByteArray &line) {
         verbExportQueryResults(client, id, args);
     else if (verb == QLatin1String("export_chart"))
         verbExportChart(client, id, args);
+    // ── v0.1.133 ──
+    else if (verb == QLatin1String("activate_tab") ||
+             verb == QLatin1String("set_read_only") ||
+             verb == QLatin1String("bookmarks") ||
+             verb == QLatin1String("fold") ||
+             verb == QLatin1String("set_preview") ||
+             verb == QLatin1String("compare_with_file"))
+        verbTabAction(client, id, args, verb);
+    else if (verb == QLatin1String("close_tab"))
+        verbCloseTab(client, id, args);
+    else if (verb == QLatin1String("save_all"))
+        verbSaveAll(client, id, args);
+    else if (verb == QLatin1String("undo") || verb == QLatin1String("redo") ||
+             verb == QLatin1String("transform_lines") ||
+             verb == QLatin1String("convert_case") ||
+             verb == QLatin1String("comment_lines") ||
+             verb == QLatin1String("line_edit") ||
+             verb == QLatin1String("set_eol") ||
+             verb == QLatin1String("set_encoding") ||
+             verb == QLatin1String("reload_tab") ||
+             verb == QLatin1String("rename_file"))
+        verbTabEdit(client, id, args, verb);
+    else if (verb == QLatin1String("set_view") ||
+             verb == QLatin1String("set_theme"))
+        verbAppAction(client, id, args, verb);
+    else if (verb == QLatin1String("check_brackets") ||
+             verb == QLatin1String("fix_brackets") ||
+             verb == QLatin1String("hash_text") ||
+             verb == QLatin1String("encode_text") ||
+             verb == QLatin1String("repair_json") ||
+             verb == QLatin1String("markdown_convert") ||
+             verb == QLatin1String("mermaid_to_npd") ||
+             verb == QLatin1String("list_symbols") ||
+             verb == QLatin1String("generate_password") ||
+             verb == QLatin1String("diff_text"))
+        verbCompute(client, id, args, verb);
     else
         sendError(client, id,
                   QStringLiteral("unknown verb: %1").arg(verb));
@@ -955,18 +1153,12 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("missing query"));
         return;
     }
-    // Optional regex mode. Validate on the GUI thread BEFORE any worker is
-    // dispatched — the worker re-compiles the same pattern, so an invalid one
-    // must never reach it.
-    const bool useRegex = args.value(QLatin1String("regex")).toBool(false);
-    QRegularExpression re;
-    if (useRegex) {
-        re.setPattern(query);
-        if (!re.isValid()) {
-            sendError(client, id,
-                      QStringLiteral("invalid regex: %1").arg(re.errorString()));
-            return;
-        }
+    // Optional regex / match_case / whole_word. Validated on the GUI thread
+    // BEFORE any worker is dispatched; the worker gets a compiled copy.
+    LineMatcher matcher;
+    if (const QString merr = makeLineMatcher(args, &matcher); !merr.isEmpty()) {
+        sendError(client, id, merr);
+        return;
     }
     int maxResults = args.value(QLatin1String("max_results"))
                          .toInt(kMaxSearchResults);
@@ -996,11 +1188,9 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
             const int len = end - start;
             if (len <= kMaxLineScanBytes) {
                 const QString line = text.mid(start, len);
-                const bool matched =
-                    useRegex ? re.match(line).hasMatch()
-                             : line.contains(query, Qt::CaseInsensitive);
-                if (matched)
-                    hits.append({hitPath, lineNo, line.trimmed()});
+                const int col = matcher.find(line);
+                if (col >= 0)
+                    hits.append({hitPath, lineNo, line.trimmed(), col + 1});
             }
             start = end + 1;
             ++lineNo;
@@ -1066,9 +1256,8 @@ void McpBridge::verbSearchProject(QLocalSocket *client, int id,
                 if (guard) sendResult(guard, id, watcher->result());
             });
     watcher->setFuture(QtConcurrent::run(
-        [root, query, useRegex, openPaths, hits, maxResults]() {
-            return scanWorkspace(root, query, useRegex, openPaths, hits,
-                                 maxResults);
+        [root, matcher, openPaths, hits, maxResults]() {
+            return scanWorkspace(root, matcher, openPaths, hits, maxResults);
         }));
 }
 
@@ -1140,17 +1329,11 @@ void McpBridge::verbFindInTab(QLocalSocket *client, int id,
         sendError(client, id, QStringLiteral("missing query"));
         return;
     }
-    // Optional regex mode. Compile ONCE, up front — an invalid pattern is a
-    // fail-fast error, never a per-line surprise.
-    const bool useRegex = args.value(QLatin1String("regex")).toBool(false);
-    QRegularExpression re;
-    if (useRegex) {
-        re.setPattern(query);
-        if (!re.isValid()) {
-            sendError(client, id,
-                      QStringLiteral("invalid regex: %1").arg(re.errorString()));
-            return;
-        }
+    // Optional regex / match_case / whole_word. Compiled ONCE, up front.
+    LineMatcher matcher;
+    if (const QString merr = makeLineMatcher(args, &matcher); !merr.isEmpty()) {
+        sendError(client, id, merr);
+        return;
     }
     // NP-11: same selector set as read_tab — tab_id, index, or title.
     QString err;
@@ -1181,16 +1364,15 @@ void McpBridge::verbFindInTab(QLocalSocket *client, int id,
         // capped line per call — never a whole-buffer offset loop.
         if (len <= kMaxLineScanBytes) {
             const QString line = text.mid(start, len);
-            const bool lineMatch =
-                useRegex ? re.match(line).hasMatch()
-                         : line.contains(query, Qt::CaseInsensitive);
-            if (lineMatch) {
+            const int col = matcher.find(line);
+            if (col >= 0) {
                 if (matches.size() >= kMaxFindMatches) {
                     truncated = true;
                     break;
                 }
                 QJsonObject m;
                 m[QStringLiteral("line")] = lineNo;
+                m[QStringLiteral("column")] = col + 1;
                 m[QStringLiteral("text")] =
                     line.trimmed().left(kResultLinePreviewChars);
                 matches.append(m);
@@ -1213,12 +1395,46 @@ void McpBridge::verbNewTab(QLocalSocket *client, int id,
         return;
     }
     const QString text = args.value(QLatin1String("text")).toString();
+    // v0.1.133: language? and title?, validated BEFORE the tab exists.
+    QString lang = args.value(QLatin1String("language")).toString();
+    if (!lang.isEmpty()) {
+        if (!m_host.setLanguage) {
+            sendError(client, id, QStringLiteral("language not supported by host"));
+            return;
+        }
+        if (m_host.resolveLanguage) {
+            const QString resolved = m_host.resolveLanguage(lang);
+            if (resolved.isEmpty()) {
+                sendError(client, id,
+                          QStringLiteral("unknown language: %1 (see list_languages)")
+                              .arg(lang));
+                return;
+            }
+            lang = resolved;
+        }
+    }
+    const QString title = args.value(QLatin1String("title")).toString();
+    if (!title.isEmpty() && !m_host.tabAction) {
+        sendError(client, id, QStringLiteral("title not supported by host"));
+        return;
+    }
     const int idx = m_host.newTab(text);
     if (idx < 0) {
         sendError(client, id, QStringLiteral("could not create tab"));
         return;
     }
     QJsonObject result;
+    if (!lang.isEmpty()) {
+        m_host.setLanguage(idx, lang);
+        result[QStringLiteral("language")] = lang;
+    }
+    if (!title.isEmpty()) {
+        QString terr;
+        QJsonObject t;
+        t[QStringLiteral("title")] = title;
+        m_host.tabAction(idx, QStringLiteral("set_title"), t, &terr);
+        result[QStringLiteral("title")] = tabLabel(idx);
+    }
     result[QStringLiteral("tab_index")] = idx;
     if (const qint64 tid = tabIdOf(idx); tid >= 0)
         result[QStringLiteral("tab_id")] = tid;
@@ -1446,6 +1662,52 @@ void McpBridge::verbFormatText(QLocalSocket *client, int id,
     const QString text = args.value(QLatin1String("text")).toString();
     if (text.isEmpty()) {
         sendError(client, id, QStringLiteral("missing text"));
+        return;
+    }
+    // v0.1.133: formatter options, only those the formatter really has.
+    if (args.contains(QLatin1String("indent")) ||
+        args.contains(QLatin1String("minify")) ||
+        args.contains(QLatin1String("keyword_case"))) {
+        QJsonObject a;
+        a[QStringLiteral("kind")] = kind;
+        a[QStringLiteral("text")] = text;
+        QString e;
+        int indent = 0;
+        const bool json = kind == QLatin1String("json");
+        const bool sql = kind == QLatin1String("sql");
+        if (args.contains(QLatin1String("minify")) && !json)
+            e = QStringLiteral("minify is only supported for json");
+        else if (args.contains(QLatin1String("keyword_case")) && !sql)
+            e = QStringLiteral("keyword_case is only supported for sql");
+        if (e.isEmpty())
+            e = optInt(args, "indent", sql ? 1 : 0, 8, json ? 4 : (sql ? 4 : 2),
+                       false, &indent);
+        a[QStringLiteral("indent")] = indent;
+        if (e.isEmpty() && json) {
+            bool minify = false;
+            e = optBool(args, "minify", false, &minify);
+            a[QStringLiteral("minify")] = minify;
+        }
+        if (e.isEmpty() && sql) {
+            QString kc;
+            e = optEnum(args, "keyword_case",
+                        {QStringLiteral("upper"), QStringLiteral("lower")},
+                        QStringLiteral("upper"), &kc);
+            a[QStringLiteral("keyword_case")] = kc;
+        }
+        if (e.isEmpty() && !m_host.computeText)
+            e = QStringLiteral("formatter options not supported by host");
+        if (!e.isEmpty()) {
+            sendError(client, id, e);
+            return;
+        }
+        const QJsonObject r =
+            m_host.computeText(QStringLiteral("format"), a, &e);
+        if (!e.isEmpty()) {
+            sendError(client, id, e);
+            return;
+        }
+        sendResult(client, id, r);
         return;
     }
     QString errorMsg;
@@ -1844,6 +2106,33 @@ void McpBridge::verbApplyEdit(QLocalSocket *client, int id,
     }
     const QString replace = args.value(QLatin1String("replace")).toString();
     const bool all = args.value(QLatin1String("all")).toBool(false);
+    // v0.1.133: regex? match_case? whole_word? scope? — any non-default goes
+    // through the Replace dialog's engine (RustCore count + replace) on the
+    // host; the defaults keep the literal, case-sensitive path below.
+    {
+        bool regex = false, cs = true, ww = false;
+        QString scope, e;
+        if ((e = optBool(args, "regex", false, &regex)).isEmpty() &&
+            (e = optBool(args, "match_case", true, &cs)).isEmpty() &&
+            (e = optBool(args, "whole_word", false, &ww)).isEmpty())
+            e = optEnum(args, "scope", {QStringLiteral("tab"), QStringLiteral("all_open")},
+                        QStringLiteral("tab"), &scope);
+        if (!e.isEmpty()) {
+            sendError(client, id, e);
+            return;
+        }
+        if (regex || !cs || ww || scope == QLatin1String("all_open")) {
+            QJsonObject o;
+            o[QStringLiteral("find")] = find;
+            o[QStringLiteral("replace")] = replace;
+            o[QStringLiteral("all")] = all;
+            o[QStringLiteral("regex")] = regex;
+            o[QStringLiteral("match_case")] = cs;
+            o[QStringLiteral("whole_word")] = ww;
+            applyEditEx(client, id, args, o, scope == QLatin1String("all_open"));
+            return;
+        }
+    }
     QString err;
     const int idx = resolveWriteTab(args, &err);
     if (idx < 0) {
@@ -2495,10 +2784,39 @@ void McpBridge::verbCreateDiagram(QLocalSocket *client, int id,
                   QStringLiteral("create_diagram not supported by host"));
         return;
     }
-    const QString source = args.value(QLatin1String("source")).toString();
+    QString source = args.value(QLatin1String("source")).toString();
     if (source.size() > kDiagramSourceMaxChars) {
         sendError(client, id, QStringLiteral("source too large"));
         return;
+    }
+    // v0.1.133: template? — the Diagram tab's own New ▾ starter.
+    if (args.contains(QLatin1String("template"))) {
+        QString tpl;
+        if (const QString e = optEnum(args, "template",
+                                      {QStringLiteral("flow"), QStringLiteral("er"),
+                                       QStringLiteral("system")},
+                                      QString(), &tpl);
+            !e.isEmpty()) {
+            sendError(client, id, e);
+            return;
+        }
+        if (!source.isEmpty()) {
+            sendError(client, id,
+                      QStringLiteral("provide source or template, not both"));
+            return;
+        }
+        QString terr;
+        QJsonObject ta;
+        ta[QStringLiteral("template")] = tpl;
+        source = m_host.computeText
+                     ? m_host.computeText(QStringLiteral("diagram_template"), ta,
+                                          &terr)
+                           .value(QLatin1String("source")).toString()
+                     : QString();
+        if (source.isEmpty()) {
+            sendError(client, id, QStringLiteral("template not supported by host"));
+            return;
+        }
     }
     const QString title = args.value(QLatin1String("title")).toString();
     const int idx = m_host.createDiagram(source, title);
@@ -2901,6 +3219,789 @@ void McpBridge::verbExportChart(QLocalSocket *client, int id,
     });
 }
 
+// ── v0.1.133 — editing, tabs, view and pure tools ──────────────────────
+//
+// The bridge validates and words the card; the host runs the SAME function
+// the menu runs. A WRITE verb never executes before Approve, and the card
+// names the tool, the tab, the operation and its scope.
+
+
+bool McpBridge::textOrTab(const QJsonObject &args, const QString &prefix,
+                          QString *text, int *tabIdx, QString *err) const {
+    const QString tk = prefix + QStringLiteral("text");
+    const QString idk = prefix + QStringLiteral("tab_id");
+    const QString ixk = prefix + QStringLiteral("tab_index");
+    if (tabIdx) *tabIdx = -1;
+    const bool hasTab = args.contains(idk) || args.contains(ixk);
+    if (args.contains(tk) && hasTab) {
+        *err = QStringLiteral("provide %1 or a tab (%2 / %3), not both")
+                   .arg(tk, idk, ixk);
+        return false;
+    }
+    if (args.contains(tk)) {
+        if (!args.value(tk).isString()) {
+            *err = QStringLiteral("%1 must be a string").arg(tk);
+            return false;
+        }
+        *text = args.value(tk).toString();
+    } else if (hasTab) {
+        QJsonObject sel;
+        if (args.contains(idk)) sel[QStringLiteral("tab_id")] = args.value(idk);
+        else sel[QStringLiteral("tab_index")] = args.value(ixk);
+        const int idx = resolveTab(sel, "tab_index", false, err);
+        if (idx < 0) return false;
+        if (!tabIsEditable(idx)) {
+            *err = nonEditableReason(idx);
+            return false;
+        }
+        // Same door read_tab uses: a credential buffer never leaves.
+        if (!tabTextFor(idx, text, err)) return false;
+        if (tabIdx) *tabIdx = idx;
+    } else {
+        *err = QStringLiteral("provide %1 or a tab (%2 / %3)").arg(tk, idk, ixk);
+        return false;
+    }
+    if (text->size() > kComputeMaxChars) {
+        *err = QStringLiteral("text too large (%1 chars, cap %2)")
+                   .arg(text->size())
+                   .arg(kComputeMaxChars);
+        return false;
+    }
+    return true;
+}
+
+// ACT: view / navigation on one tab. No card: nothing in the document changes.
+void McpBridge::verbTabAction(QLocalSocket *client, int id,
+                              const QJsonObject &args, const QString &verb) {
+    if (!m_host.tabAction) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    // activate_tab must name its tab; the rest default to the focused one.
+    const int idx = verb == QLatin1String("activate_tab")
+                        ? resolveTab(args, "tab_index", false, &err)
+                        : resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    const bool needsEditor = verb != QLatin1String("activate_tab") &&
+                             verb != QLatin1String("set_preview");
+    if (needsEditor && !tabIsEditable(idx)) {
+        sendError(client, id, nonEditableReason(idx));
+        return;
+    }
+    QJsonObject a = args;
+    bool b = false;
+    int n = 0;
+    QString e;
+    if (verb == QLatin1String("set_read_only") ||
+        verb == QLatin1String("set_preview")) {
+        if (!args.contains(QLatin1String("on"))) e = QStringLiteral("missing on");
+        else e = optBool(args, "on", false, &b);
+    } else if (verb == QLatin1String("bookmarks")) {
+        QString act;
+        e = optEnum(args, "action",
+                    {QStringLiteral("list"), QStringLiteral("toggle"),
+                     QStringLiteral("clear")},
+                    QString(), &act);
+        if (e.isEmpty()) {
+            a[QStringLiteral("action")] = act;
+            e = optInt(args, "line", 1, INT_MAX, 0,
+                       act == QLatin1String("toggle"), &n);
+        }
+    } else if (verb == QLatin1String("fold")) {
+        QString act;
+        e = optEnum(args, "action",
+                    {QStringLiteral("fold_all"), QStringLiteral("unfold_all")},
+                    QString(), &act);
+        a[QStringLiteral("action")] = act;
+    } else if (verb == QLatin1String("compare_with_file")) {
+        const QString path = QDir::cleanPath(QDir::fromNativeSeparators(
+            args.value(QLatin1String("path")).toString()));
+        const QFileInfo fi(path);
+        if (path.isEmpty()) e = QStringLiteral("missing path");
+        else if (!fi.isAbsolute()) e = QStringLiteral("path must be absolute");
+        else if (!fi.isFile())
+            e = QStringLiteral("not found or not a file: %1")
+                    .arg(QDir::toNativeSeparators(path));
+        else if (fi.size() > kMaxSearchFileBytes)
+            e = QStringLiteral("file too large to compare (%1 bytes)").arg(fi.size());
+        else e = credentialRefusal(path); // canonical target judged too
+        // The tab side goes on screen next to it: same rule as read_tab.
+        if (e.isEmpty()) {
+            QString ignored;
+            if (!tabTextFor(idx, &ignored, &e)) {}
+        }
+        a[QStringLiteral("path")] = fi.canonicalFilePath();
+    }
+    if (!e.isEmpty()) {
+        sendError(client, id, e);
+        return;
+    }
+    QJsonObject r = m_host.tabAction(idx, verb, a, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    r[QStringLiteral("tab_index")] = idx;
+    if (const qint64 tid = tabIdOf(idx); tid >= 0)
+        r[QStringLiteral("tab_id")] = tid;
+    sendResult(client, id, r);
+}
+
+// Closing an unmodified tab loses nothing: ACT, no card. A tab with unsaved
+// changes is refused unless discard_unsaved is set, and then a card says so.
+void McpBridge::verbCloseTab(QLocalSocket *client, int id,
+                             const QJsonObject &args) {
+    if (!m_host.tabAction || !m_host.editTab) {
+        sendError(client, id, QStringLiteral("close_tab not supported by host"));
+        return;
+    }
+    QString err;
+    const int idx = resolveTab(args, "tab_index", false, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    bool discard = false;
+    if (const QString e = optBool(args, "discard_unsaved", false, &discard);
+        !e.isEmpty()) {
+        sendError(client, id, e);
+        return;
+    }
+    const bool modified = m_host.tabModified && m_host.tabModified(idx);
+    const qint64 tid = tabIdOf(idx);
+    if (!modified) {
+        QJsonObject r = m_host.tabAction(idx, QStringLiteral("close_tab"), args, &err);
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        r[QStringLiteral("closed")] = true;
+        r[QStringLiteral("tab_index")] = idx;
+        if (tid >= 0) r[QStringLiteral("tab_id")] = tid;
+        sendResult(client, id, r);
+        return;
+    }
+    if (!discard) {
+        sendError(client, id,
+                  QStringLiteral("tab '%1' has unsaved changes. Save it first "
+                                 "(save_tab), or pass discard_unsaved:true to "
+                                 "ask the user to approve losing them.")
+                      .arg(tabLabel(idx)));
+        return;
+    }
+    const QString desc =
+        QStringLiteral("close_tab: close '%1' and DISCARD its unsaved changes "
+                       "(they will be lost)")
+            .arg(elideForCard(tabLabel(idx), kApprovalDescChars));
+    enqueueTabApproval(client, id, idx, desc, QString(),
+                       [this, args](int live, QString *execErr) {
+        QJsonObject r = m_host.editTab(live, QStringLiteral("close_tab"), args,
+                                       execErr);
+        r[QStringLiteral("closed")] = execErr->isEmpty();
+        return r;
+    });
+}
+
+// One card listing every file that would be written.
+void McpBridge::verbSaveAll(QLocalSocket *client, int id,
+                            const QJsonObject &args) {
+    if (!m_host.saveTab) {
+        sendError(client, id, QStringLiteral("save_all not supported by host"));
+        return;
+    }
+    if (!args.isEmpty()) {
+        sendError(client, id, QStringLiteral("save_all takes no arguments"));
+        return;
+    }
+    struct Target { qint64 tid; int idx; QString title; QString path; };
+    QVector<Target> targets;
+    QJsonArray untitled, refused;
+    const int n = m_host.tabCount ? m_host.tabCount() : 0;
+    for (int i = 0; i < n; ++i) {
+        if (!tabIsEditable(i) || !m_host.tabModified || !m_host.tabModified(i))
+            continue;
+        const QString path = m_host.tabPath ? m_host.tabPath(i) : QString();
+        if (path.isEmpty()) {
+            untitled.append(tabLabel(i));
+            continue;
+        }
+        if (!writeDestinationRefusal(path).isEmpty()) {
+            refused.append(QDir::toNativeSeparators(path));
+            continue;
+        }
+        targets.append({tabIdOf(i), i, tabLabel(i), path});
+    }
+    QJsonObject base;
+    base[QStringLiteral("skipped_untitled")] = untitled;
+    base[QStringLiteral("skipped_protected")] = refused;
+    if (targets.isEmpty()) {
+        base[QStringLiteral("saved")] = QJsonArray();
+        base[QStringLiteral("failed")] = QJsonArray();
+        sendResult(client, id, base);
+        return;
+    }
+    QStringList shown;
+    for (const Target &t : targets)
+        shown << sanitizeForCard(QDir::toNativeSeparators(t.path));
+    QString desc = QStringLiteral("save_all: save %1 modified file(s) to disk")
+                       .arg(targets.size());
+    if (!untitled.isEmpty())
+        desc += QStringLiteral(" (%1 untitled tab(s) skipped)").arg(untitled.size());
+    enqueueApproval(client, id, desc,
+                    elideForCard(shown.join(QLatin1Char('\n')), 1200),
+                    [this, targets, base](QString *) {
+        QJsonArray saved, failed;
+        for (const Target &t : targets) {
+            QString why;
+            const int live = liveTabIndex(t.tid, t.idx, t.title, &why);
+            const QString now = live >= 0 && m_host.tabPath ? m_host.tabPath(live)
+                                                            : QString();
+            if (live >= 0 && QFileInfo(now).absoluteFilePath() !=
+                                 QFileInfo(t.path).absoluteFilePath())
+                why = QStringLiteral("the tab now points at another file");
+            if (why.isEmpty() && !m_host.saveTab(live))
+                why = QStringLiteral("could not save");
+            if (why.isEmpty()) {
+                saved.append(QDir::toNativeSeparators(t.path));
+            } else {
+                QJsonObject f;
+                f[QStringLiteral("path")] = QDir::toNativeSeparators(t.path);
+                f[QStringLiteral("error")] = why;
+                failed.append(f);
+            }
+        }
+        QJsonObject r = base;
+        r[QStringLiteral("saved")] = saved;
+        r[QStringLiteral("failed")] = failed;
+        return r;
+    });
+}
+
+QString McpBridge::describeTabEdit(const QString &verb, const QJsonObject &args,
+                                   int idx, QString *what,
+                                   QString *preview) const {
+    const QString label = elideForCard(tabLabel(idx), kApprovalDescChars);
+    const QString path = m_host.tabPath ? m_host.tabPath(idx) : QString();
+    const bool modified = m_host.tabModified && m_host.tabModified(idx);
+    const bool hasSel = !m_host.hasSelection || m_host.hasSelection(idx);
+    QString e;
+    if (verb == QLatin1String("undo") || verb == QLatin1String("redo")) {
+        int steps = 1;
+        if (!(e = optInt(args, "steps", 1, 100, 1, false, &steps)).isEmpty()) return e;
+        *what = QStringLiteral("%1 in '%2': %1 the last %3 edit(s)")
+                    .arg(verb, label).arg(steps);
+    } else if (verb == QLatin1String("transform_lines")) {
+        QString op, scope;
+        if (!(e = optEnum(args, "op", kLineOps(), QString(), &op)).isEmpty()) return e;
+        if (!(e = optEnum(args, "scope",
+                          {QStringLiteral("selection"), QStringLiteral("document")},
+                          QStringLiteral("document"), &scope)).isEmpty())
+            return e;
+        if (scope == QLatin1String("selection") && !hasSel) return QStringLiteral("no selection");
+        *what = QStringLiteral("transform_lines in '%1': %2 on the %3")
+                    .arg(label, op,
+                         scope == QLatin1String("selection")
+                             ? QStringLiteral("selection")
+                             : QStringLiteral("whole document"));
+    } else if (verb == QLatin1String("convert_case")) {
+        QString mode, scope;
+        if (!(e = optEnum(args, "mode",
+                          {QStringLiteral("upper"), QStringLiteral("lower"),
+                           QStringLiteral("proper"), QStringLiteral("sentence"),
+                           QStringLiteral("invert")},
+                          QString(), &mode)).isEmpty())
+            return e;
+        if (!(e = optEnum(args, "scope",
+                          {QStringLiteral("selection"), QStringLiteral("document")},
+                          QStringLiteral("selection"), &scope)).isEmpty())
+            return e;
+        if (scope == QLatin1String("selection") && !hasSel) return QStringLiteral("no selection");
+        *what = QStringLiteral("convert_case in '%1': %2 case on the %3")
+                    .arg(label, mode,
+                         scope == QLatin1String("selection")
+                             ? QStringLiteral("selection")
+                             : QStringLiteral("whole document"));
+    } else if (verb == QLatin1String("comment_lines")) {
+        int a = 0, b = 0;
+        QString kind, action;
+        if (!(e = optInt(args, "start_line", 1, INT_MAX, 0, true, &a)).isEmpty()) return e;
+        if (!(e = optInt(args, "end_line", 1, INT_MAX, 0, true, &b)).isEmpty()) return e;
+        if (b < a) return QStringLiteral("end_line must be >= start_line");
+        if (!(e = optEnum(args, "kind", {QStringLiteral("line"), QStringLiteral("block")},
+                          QStringLiteral("line"), &kind)).isEmpty())
+            return e;
+        if (!(e = optEnum(args, "action",
+                          {QStringLiteral("toggle"), QStringLiteral("comment"),
+                           QStringLiteral("uncomment")},
+                          QStringLiteral("toggle"), &action)).isEmpty())
+            return e;
+        *what = QStringLiteral("comment_lines in '%1': %2 %3 comments on lines %4-%5")
+                    .arg(label, action, kind).arg(a).arg(b);
+    } else if (verb == QLatin1String("line_edit")) {
+        int line = 0;
+        QString op;
+        if (!(e = optInt(args, "line", 1, INT_MAX, 0, true, &line)).isEmpty()) return e;
+        if (!(e = optEnum(args, "op",
+                          {QStringLiteral("duplicate"), QStringLiteral("delete"),
+                           QStringLiteral("move_up"), QStringLiteral("move_down")},
+                          QString(), &op)).isEmpty())
+            return e;
+        *what = QStringLiteral("line_edit in '%1': %2 line %3").arg(label, op).arg(line);
+    } else if (verb == QLatin1String("set_eol")) {
+        QString eol;
+        bool convert = true;
+        if (!(e = optEnum(args, "eol",
+                          {QStringLiteral("crlf"), QStringLiteral("lf"), QStringLiteral("cr")},
+                          QString(), &eol)).isEmpty())
+            return e;
+        if (!(e = optBool(args, "convert", true, &convert)).isEmpty()) return e;
+        *what = QStringLiteral("set_eol in '%1': line endings to %2, %3")
+                    .arg(label, eol.toUpper(),
+                         convert ? QStringLiteral("converting every existing line ending")
+                                 : QStringLiteral("for new lines only"));
+    } else if (verb == QLatin1String("set_encoding")) {
+        QString enc, mode;
+        bool discard = false;
+        if (!(e = optEnum(args, "encoding", kEncodings(), QString(), &enc)).isEmpty()) return e;
+        if (!(e = optEnum(args, "mode",
+                          {QStringLiteral("convert"), QStringLiteral("reinterpret")},
+                          QStringLiteral("convert"), &mode)).isEmpty())
+            return e;
+        if (!(e = optBool(args, "discard_unsaved", false, &discard)).isEmpty()) return e;
+        if (mode == QLatin1String("convert")) {
+            *what = QStringLiteral("set_encoding in '%1': save as %2 from now on "
+                                   "(the text is unchanged; the tab becomes modified)")
+                        .arg(label, enc);
+        } else {
+            if (path.isEmpty())
+                return QStringLiteral("reinterpret needs a file on disk; this tab "
+                                      "has never been saved");
+            if (modified && !discard)
+                return QStringLiteral("tab '%1' has unsaved changes and reinterpret "
+                                      "reloads it from disk. Pass "
+                                      "discard_unsaved:true to ask the user to "
+                                      "approve losing them.")
+                    .arg(tabLabel(idx));
+            *what = QStringLiteral("set_encoding in '%1': RELOAD from disk decoded "
+                                   "as %2%3")
+                        .arg(label, enc,
+                             modified ? QStringLiteral(" (UNSAVED CHANGES WILL BE LOST)")
+                                      : QString());
+        }
+    } else if (verb == QLatin1String("reload_tab")) {
+        if (path.isEmpty()) return QStringLiteral("tab '%1' has no file on disk").arg(tabLabel(idx));
+        *what = QStringLiteral("reload_tab: reload '%1' from disk (UNSAVED "
+                               "CHANGES WILL BE LOST)").arg(label);
+    } else if (verb == QLatin1String("rename_file")) {
+        const QString nn = args.value(QLatin1String("new_name")).toString();
+        if (path.isEmpty())
+            return QStringLiteral("tab '%1' has no file on disk to rename").arg(tabLabel(idx));
+        if (nn.trimmed().isEmpty()) return QStringLiteral("missing new_name");
+        if (nn.contains(QLatin1Char('/')) || nn.contains(QLatin1Char('\\')) ||
+            nn == QLatin1String(".") || nn == QLatin1String(".."))
+            return QStringLiteral("new_name must be a plain file name in the same "
+                                  "folder (no path separators)");
+        const QFileInfo oldFi(path);
+        const QString dest = oldFi.dir().filePath(nn);
+        if (nn != oldFi.fileName() &&
+            nn.compare(oldFi.fileName(), Qt::CaseInsensitive) != 0 &&
+            QFileInfo::exists(dest))
+            return QStringLiteral("a file named '%1' already exists in that folder").arg(nn);
+        if (const QString deny = writeDestinationRefusal(dest); !deny.isEmpty())
+            return deny;
+        *what = QStringLiteral("rename_file: rename %1 to '%2' in the same folder%3")
+                    .arg(sanitizeForCard(QDir::toNativeSeparators(path)),
+                         sanitizeForCard(nn),
+                         modified ? QStringLiteral(" (its unsaved changes are saved first)")
+                                  : QString());
+    } else {
+        return QStringLiteral("unknown verb: %1").arg(verb);
+    }
+    Q_UNUSED(preview);
+    return QString();
+}
+
+void McpBridge::verbTabEdit(QLocalSocket *client, int id,
+                            const QJsonObject &args, const QString &verb) {
+    if (!m_host.editTab) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QString err;
+    const int idx = resolveWriteTab(args, &err);
+    if (idx < 0) {
+        sendError(client, id, err);
+        return;
+    }
+    if (!tabIsEditable(idx)) {
+        sendError(client, id, nonEditableReason(idx));
+        return;
+    }
+    if (const QString deny = tabWriteRefusal(idx); !deny.isEmpty()) {
+        sendError(client, id, deny);
+        return;
+    }
+    QString what, preview;
+    if (const QString e = describeTabEdit(verb, args, idx, &what, &preview);
+        !e.isEmpty()) {
+        sendError(client, id, e);
+        return;
+    }
+    // Reloading a tab with nothing unsaved loses nothing: no card.
+    if (verb == QLatin1String("reload_tab") &&
+        !(m_host.tabModified && m_host.tabModified(idx))) {
+        QJsonObject r = m_host.editTab(idx, verb, args, &err);
+        if (!err.isEmpty()) {
+            sendError(client, id, err);
+            return;
+        }
+        r[QStringLiteral("tab_index")] = idx;
+        if (const qint64 tid = tabIdOf(idx); tid >= 0)
+            r[QStringLiteral("tab_id")] = tid;
+        sendResult(client, id, r);
+        return;
+    }
+    enqueueTabApproval(client, id, idx, what, preview,
+                       [this, verb, args](int live, QString *execErr) {
+        return m_host.editTab(live, verb, args, execErr);
+    });
+}
+
+// ACT: app-wide view state, through the same QActions the View menu uses.
+void McpBridge::verbAppAction(QLocalSocket *client, int id,
+                              const QJsonObject &args, const QString &verb) {
+    if (!m_host.appAction) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QJsonObject a;
+    QString e;
+    if (verb == QLatin1String("set_theme")) {
+        QString theme;
+        e = optEnum(args, "theme",
+                    {QStringLiteral("System"), QStringLiteral("Light"),
+                     QStringLiteral("Dark"), QStringLiteral("Monokai")},
+                    QString(), &theme);
+        a[QStringLiteral("theme")] = theme;
+    } else {
+        static const char *kBools[] = {"word_wrap", "show_whitespace", "show_eol",
+                                       "indent_guides"};
+        for (const char *k : kBools) {
+            if (!args.contains(QLatin1String(k))) continue;
+            bool b = false;
+            if (!(e = optBool(args, k, false, &b)).isEmpty()) break;
+            a[QLatin1String(k)] = b;
+        }
+        if (e.isEmpty() && args.contains(QLatin1String("zoom"))) {
+            int z = 0;
+            e = optInt(args, "zoom", 6, 48, 0, true, &z);
+            a[QStringLiteral("zoom")] = z;
+        }
+        if (e.isEmpty() && a.isEmpty())
+            e = QStringLiteral("set_view needs at least one of word_wrap, zoom, "
+                               "show_whitespace, show_eol, indent_guides");
+    }
+    if (!e.isEmpty()) {
+        sendError(client, id, e);
+        return;
+    }
+    QString err;
+    const QJsonObject r = m_host.appAction(verb, a, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    sendResult(client, id, r);
+}
+
+// READ: pure computation. Tab text comes through textOrTab (deny-list), the
+// result goes back to the client and nothing in the editor changes.
+void McpBridge::verbCompute(QLocalSocket *client, int id,
+                            const QJsonObject &args, const QString &verb) {
+    if (!m_host.computeText) {
+        sendError(client, id, QStringLiteral("%1 not supported by host").arg(verb));
+        return;
+    }
+    QJsonObject a;
+    QString e;
+    QString text;
+    int tab = -1;
+    if (verb == QLatin1String("generate_password")) {
+        QString mode;
+        int length = 0, words = 0, count = 0;
+        bool b = false;
+        if ((e = optEnum(args, "mode",
+                         {QStringLiteral("password"), QStringLiteral("passphrase")},
+                         QStringLiteral("password"), &mode)).isEmpty() &&
+            (e = optInt(args, "length", 4, 256, 20, false, &length)).isEmpty() &&
+            (e = optInt(args, "words", 3, 24, 6, false, &words)).isEmpty() &&
+            (e = optInt(args, "count", 1, 100, 1, false, &count)).isEmpty()) {
+            a[QStringLiteral("mode")] = mode;
+            a[QStringLiteral("length")] = length;
+            a[QStringLiteral("words")] = words;
+            a[QStringLiteral("count")] = count;
+            for (const char *k : {"exclude_lookalikes", "require_each",
+                                  "capitalise", "append_digits"}) {
+                const bool def = QLatin1String(k) == QLatin1String("require_each");
+                if (!(e = optBool(args, k, def, &b)).isEmpty()) break;
+                a[QLatin1String(k)] = b;
+            }
+        }
+        if (e.isEmpty() && args.contains(QLatin1String("separator"))) {
+            const QString sep = args.value(QLatin1String("separator")).toString();
+            if (!args.value(QLatin1String("separator")).isString() || sep.size() != 1)
+                e = QStringLiteral("separator must be a single character");
+            a[QStringLiteral("separator")] = sep;
+        }
+        if (e.isEmpty() && args.contains(QLatin1String("classes"))) {
+            const QJsonValue cv = args.value(QLatin1String("classes"));
+            static const QStringList known = {QStringLiteral("lower"),
+                                              QStringLiteral("upper"),
+                                              QStringLiteral("digits"),
+                                              QStringLiteral("symbols")};
+            if (!cv.isArray() || cv.toArray().isEmpty()) {
+                e = QStringLiteral("classes must be a non-empty array of lower, "
+                                   "upper, digits, symbols");
+            } else {
+                for (const QJsonValue &c : cv.toArray())
+                    if (!known.contains(c.toString()))
+                        e = QStringLiteral("unknown class: %1 (lower|upper|digits|"
+                                           "symbols)")
+                                .arg(c.toString());
+                a[QStringLiteral("classes")] = cv;
+            }
+        }
+    } else if (verb == QLatin1String("diff_text")) {
+        for (const char *side : {"left", "right"}) {
+            const QJsonValue v = args.value(QLatin1String(side));
+            if (!v.isObject()) {
+                e = QStringLiteral("%1 must be an object: {text} or {tab_id} or "
+                                   "{tab_index}")
+                        .arg(QLatin1String(side));
+                break;
+            }
+            QString t;
+            if (!textOrTab(v.toObject(), QString(), &t, nullptr, &e)) {
+                e = QStringLiteral("%1: %2").arg(QLatin1String(side), e);
+                break;
+            }
+            a[QLatin1String(side)] = t;
+        }
+    } else {
+        if (textOrTab(args, QString(), &text, &tab, &e)) {
+            a[QStringLiteral("text")] = text;
+            if (verb == QLatin1String("hash_text")) {
+                QString algo;
+                e = optEnum(args, "algo",
+                            {QStringLiteral("md5"), QStringLiteral("sha1"),
+                             QStringLiteral("sha256"), QStringLiteral("sha512")},
+                            QStringLiteral("sha256"), &algo);
+                a[QStringLiteral("algo")] = algo;
+            } else if (verb == QLatin1String("encode_text")) {
+                QString op;
+                e = optEnum(args, "op",
+                            {QStringLiteral("base64_encode"),
+                             QStringLiteral("base64_decode"),
+                             QStringLiteral("url_encode"),
+                             QStringLiteral("url_decode")},
+                            QString(), &op);
+                a[QStringLiteral("op")] = op;
+            } else if (verb == QLatin1String("markdown_convert")) {
+                QString op;
+                e = optEnum(args, "op",
+                            {QStringLiteral("table"), QStringLiteral("list"),
+                             QStringLiteral("code_block"), QStringLiteral("bold"),
+                             QStringLiteral("italic"), QStringLiteral("link"),
+                             QStringLiteral("heading"),
+                             QStringLiteral("html_to_markdown")},
+                            QString(), &op);
+                a[QStringLiteral("op")] = op;
+            } else if (verb == QLatin1String("list_symbols")) {
+                QString lang = args.value(QLatin1String("language")).toString();
+                if (lang.isEmpty() && tab >= 0 && m_host.tabLanguage)
+                    lang = m_host.tabLanguage(tab);
+                a[QStringLiteral("language")] = lang;
+            }
+        }
+    }
+    if (!e.isEmpty()) {
+        sendError(client, id, e);
+        return;
+    }
+    QString err;
+    QJsonObject r = m_host.computeText(verb, a, &err);
+    if (!err.isEmpty()) {
+        sendError(client, id, err);
+        return;
+    }
+    if (tab >= 0) {
+        r[QStringLiteral("tab_index")] = tab;
+        if (const qint64 tid = tabIdOf(tab); tid >= 0)
+            r[QStringLiteral("tab_id")] = tid;
+    }
+    sendResult(client, id, r);
+}
+
+void McpBridge::applyEditEx(QLocalSocket *client, int id,
+                            const QJsonObject &args, QJsonObject opts,
+                            bool allOpen) {
+    if (!m_host.editTab) {
+        sendError(client, id,
+                  QStringLiteral("apply_edit options not supported by host"));
+        return;
+    }
+    QVector<int> candidates;
+    if (allOpen) {
+        for (const char *k : {"tab_id", "tab_index", "title"})
+            if (args.contains(QLatin1String(k))) {
+                sendError(client, id,
+                          QStringLiteral("scope all_open edits every open tab; "
+                                         "do not name one"));
+                return;
+            }
+        const int n = m_host.tabCount ? m_host.tabCount() : 0;
+        for (int i = 0; i < n; ++i) {
+            QString ignored;
+            // Credential and write-protected buffers are skipped, not probed.
+            if (tabIsEditable(i) && tabWriteRefusal(i).isEmpty() &&
+                tabTextFor(i, &ignored, nullptr))
+                candidates << i;
+        }
+    } else {
+        QString err;
+        const int idx = resolveWriteTab(args, &err);
+        if (idx < 0) {
+            sendError(client, id, err);
+            return;
+        }
+        if (!tabIsEditable(idx)) {
+            sendError(client, id, nonEditableReason(idx));
+            return;
+        }
+        QString ignored;
+        if (!tabTextFor(idx, &ignored, &err)) {
+            sendError(client, id, err);
+            return;
+        }
+        if (const QString deny = tabWriteRefusal(idx); !deny.isEmpty()) {
+            sendError(client, id, deny);
+            return;
+        }
+        candidates << idx;
+    }
+    struct Target { qint64 tid; int idx; QString title; int count; };
+    QVector<Target> targets;
+    int total = 0;
+    QJsonObject dry = opts;
+    dry[QStringLiteral("dry_run")] = true;
+    for (int i : candidates) {
+        QString err;
+        const int c = m_host.editTab(i, QStringLiteral("apply_edit"), dry, &err)
+                          .value(QLatin1String("count")).toInt(-1);
+        if (!err.isEmpty()) {
+            sendError(client, id, err); // e.g. an invalid pattern
+            return;
+        }
+        if (c > 0) {
+            targets.append({tabIdOf(i), i, tabLabel(i), c});
+            total += c;
+        }
+    }
+    if (targets.isEmpty()) {
+        sendError(client, id, QStringLiteral("no match"));
+        return;
+    }
+    const bool all = opts.value(QLatin1String("all")).toBool();
+    QStringList flags;
+    flags << (opts.value(QLatin1String("regex")).toBool() ? QStringLiteral("regex")
+                                                         : QStringLiteral("literal"));
+    flags << (opts.value(QLatin1String("match_case")).toBool()
+                  ? QStringLiteral("case-sensitive")
+                  : QStringLiteral("case-insensitive"));
+    if (opts.value(QLatin1String("whole_word")).toBool())
+        flags << QStringLiteral("whole word");
+    const QString what =
+        QStringLiteral("replace %1 %2 match of '%3' with '%4'")
+            .arg(all ? QStringLiteral("every") : QStringLiteral("the first"),
+                 flags.join(QStringLiteral(", ")),
+                 elideForCard(opts.value(QLatin1String("find")).toString(),
+                              kApprovalDescChars),
+                 elideForCard(opts.value(QLatin1String("replace")).toString(),
+                              kApprovalDescChars));
+    QString desc;
+    QStringList lines;
+    if (allOpen) {
+        desc = QStringLiteral("apply_edit in %1 open tab(s): %2 (%3 match(es) "
+                              "in total)")
+                   .arg(targets.size()).arg(what).arg(total);
+        for (const Target &t : targets)
+            lines << QStringLiteral("%1: %2").arg(sanitizeForCard(t.title)).arg(t.count);
+    } else {
+        desc = QStringLiteral("apply_edit in '%1': %2 (%3 match(es))")
+                   .arg(elideForCard(targets.first().title, kApprovalDescChars),
+                        what)
+                   .arg(targets.first().count);
+    }
+    enqueueApproval(client, id, desc, elideForCard(lines.join(QLatin1Char('\n')), 1200),
+                    [this, targets, opts, dry, allOpen](QString *execErr) {
+        // Every target must still exist and still hold exactly the matches
+        // the card counted, or nothing is changed at all.
+        QVector<int> live;
+        for (const Target &t : targets) {
+            const int li = liveTabIndex(t.tid, t.idx, t.title, execErr);
+            if (li < 0) return QJsonObject();
+            if (const QString deny = tabWriteRefusal(li); !deny.isEmpty()) {
+                *execErr = deny;
+                return QJsonObject();
+            }
+            const int c = m_host.editTab(li, QStringLiteral("apply_edit"), dry, execErr)
+                              .value(QLatin1String("count")).toInt(-1);
+            if (!execErr->isEmpty()) return QJsonObject();
+            if (c != t.count) {
+                *execErr = QStringLiteral(
+                               "'%1' changed while the approval card was waiting "
+                               "(%2 matches, the card said %3). Nothing was "
+                               "changed; call apply_edit again.")
+                               .arg(t.title).arg(c).arg(t.count);
+                return QJsonObject();
+            }
+            live << li;
+        }
+        QJsonArray tabs;
+        int done = 0;
+        for (int k = 0; k < targets.size(); ++k) {
+            QString e;
+            const int c = m_host.editTab(live[k], QStringLiteral("apply_edit"), opts, &e)
+                              .value(QLatin1String("count")).toInt(-1);
+            QJsonObject o;
+            o[QStringLiteral("tab_index")] = live[k];
+            if (targets[k].tid >= 0) o[QStringLiteral("tab_id")] = targets[k].tid;
+            o[QStringLiteral("title")] = targets[k].title;
+            if (!e.isEmpty()) o[QStringLiteral("error")] = e;
+            else {
+                o[QStringLiteral("count")] = c;
+                done += c;
+            }
+            tabs.append(o);
+        }
+        QJsonObject r;
+        r[QStringLiteral("count")] = done;
+        if (allOpen) r[QStringLiteral("tabs")] = tabs;
+        else {
+            r[QStringLiteral("tab_index")] = live.first();
+            if (targets.first().tid >= 0)
+                r[QStringLiteral("tab_id")] = targets.first().tid;
+            if (tabs.first().toObject().contains(QLatin1String("error")))
+                *execErr = tabs.first().toObject().value(QLatin1String("error")).toString();
+        }
+        return r;
+    });
+}
+
 int McpBridge::liveTabIndex(qint64 tid, int idx, const QString &title,
                             QString *err) const {
     const int n = m_host.tabCount ? m_host.tabCount() : 0;
@@ -2990,20 +4091,21 @@ void McpBridge::showNextApproval() {
 
 // Non-modal banner overlaid on the host widget, styled after the AI panel's
 // write-approval card (accent left border, muted preview, Approve/Deny).
-// Palette-derived colors so Light, Dark, and Monokai all render sanely.
+// Theme colours from npPalette() so Light, Dark and Monokai all read well.
 void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
     dismissActiveCard();
     m_cardParent = parent;
     parent->installEventFilter(this);
 
-    const QPalette pal = parent->palette();
-    const QColor baseC = pal.color(QPalette::Base);
-    const QColor textC = pal.color(QPalette::Text);
-    const QColor accentC = pal.color(QPalette::Highlight);
-    const QColor borderC = pal.color(QPalette::Mid);
-    const QColor mutedC((baseC.red() + textC.red()) / 2,
-                        (baseC.green() + textC.green()) / 2,
-                        (baseC.blue() + textC.blue()) / 2);
+    // v0.1.133: colours from the app's theme SSOT (npPalette). The widget
+    // palette is not what Dark/Monokai repaint, so it left black header text
+    // on a dark card.
+    const NpPalette np = npPalette();
+    const QColor baseC(np.cardBg);
+    const QColor textC(np.text);
+    const QColor accentC(np.accent);
+    const QColor borderC(np.border);
+    const QColor mutedC(np.textMuted);
 
     auto *card = new QFrame(parent);
     card->setObjectName(QStringLiteral("mcpApprovalCard"));
@@ -3052,12 +4154,12 @@ void McpBridge::showApprovalCard(QWidget *parent, const PendingWrite &pw) {
     approveBtn->setStyleSheet(QStringLiteral(
         "QPushButton{background:%1;color:%2;border:1px solid %1;"
         "border-radius:6px;padding:4px 10px;font-weight:600;}")
-        .arg(accentC.name(), pal.color(QPalette::HighlightedText).name()));
+        .arg(accentC.name(), QColor(np.selectionFg).name()));
     denyBtn->setStyleSheet(QStringLiteral(
         "QPushButton{background:%1;color:%2;border:1px solid %3;"
         "border-radius:6px;padding:4px 10px;}")
-        .arg(pal.color(QPalette::Button).name(),
-             pal.color(QPalette::ButtonText).name(), borderC.name()));
+        .arg(QColor(np.btnBg).name(), QColor(np.btnFg).name(),
+             QColor(np.btnBorder).name()));
     btnRow->addWidget(approveBtn);
     btnRow->addStretch(1);
     // D16: the time left before the card auto-denies, refreshed each second.
