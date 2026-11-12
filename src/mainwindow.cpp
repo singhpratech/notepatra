@@ -1493,6 +1493,19 @@ MainWindow::MainWindow(bool standaloneNoSession)
         for (int i = 0; i < m_tabs->count(); i++) {
             auto *ed = m_tabs->editorAt(i);
             if (ed && ed->filePath() == canonical) {
+                // Unsaved edits: never reload over them — hand off to the
+                // watcher's "File Changed" prompt (keep / reload is the user's call).
+                if (ed->isModified()) {
+                    if (m_fileWatcher) {
+                        m_fileTimestamps.remove(canonical);
+                        if (!m_fileWatcher->files().contains(canonical))
+                            m_fileWatcher->addPath(canonical);
+                        QTimer::singleShot(0, this, [this, canonical]() {
+                            onWatchedFileChanged(canonical);
+                        });
+                    }
+                    return;
+                }
                 // Already open — silent reload. Update the watcher's
                 // timestamp first so its fileChanged dialog doesn't fire.
                 if (m_fileWatcher && m_fileTimestamps.contains(canonical))
