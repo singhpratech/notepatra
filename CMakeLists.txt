@@ -439,7 +439,7 @@ if(WIN32)
     # Rust staticlib needs these system libs on MSVC. Rust normally emits link
     # directives for them but being explicit avoids surprises across toolchains.
     target_link_libraries(${EXE_NAME} PRIVATE
-        ws2_32 userenv bcrypt ntdll
+        ws2_32 userenv bcrypt ntdll synchronization
         advapi32 ole32 shell32 dbghelp
         kernel32 user32 gdi32 winspool comdlg32
     )
@@ -619,7 +619,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_indent_guide_theme
     if(WIN32)
         target_compile_definitions(test_indent_guide_theme PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_indent_guide_theme PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32)
     elseif(APPLE)
         target_link_libraries(test_indent_guide_theme PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -1304,7 +1304,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_history.cp
     if(WIN32)
         target_compile_definitions(test_ai_chat_history PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_chat_history PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1367,7 +1367,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_write_gate.cpp"
     if(WIN32)
         target_compile_definitions(test_ai_write_gate PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_write_gate PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1430,7 +1430,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_fullscreen_exit
     if(WIN32)
         target_compile_definitions(test_ai_fullscreen_exit PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_fullscreen_exit PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1499,7 +1499,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_pane.cpp")
     if(WIN32)
         target_compile_definitions(test_preview_pane PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_preview_pane PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1558,7 +1558,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_persist.cp
     if(WIN32)
         target_compile_definitions(test_preview_persist PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_preview_persist PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1613,7 +1613,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history.cpp
     if(WIN32)
         target_compile_definitions(test_change_history PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history PRIVATE pthread dl m
@@ -1664,7 +1664,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_mai
     if(WIN32)
         target_compile_definitions(test_change_history_mainwindow PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history_mainwindow PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history_mainwindow PRIVATE pthread dl m
@@ -1718,7 +1718,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_restore_session_un
     if(WIN32)
         target_compile_definitions(test_restore_session_unreadable PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_restore_session_unreadable PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_restore_session_unreadable PRIVATE pthread dl m
@@ -1767,7 +1767,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_cold_start_order.c
     if(WIN32)
         target_compile_definitions(test_cold_start_order PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_cold_start_order PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_cold_start_order PRIVATE pthread dl m
@@ -1818,7 +1818,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_remote_open.cpp")
     if(WIN32)
         target_compile_definitions(test_remote_open PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_remote_open PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_remote_open PRIVATE pthread dl m
@@ -1869,7 +1869,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_file_open_event.cp
     if(WIN32)
         target_compile_definitions(test_file_open_event PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_file_open_event PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_file_open_event PRIVATE pthread dl m
@@ -1921,7 +1921,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_shortcuts_discover
     if(WIN32)
         target_compile_definitions(test_shortcuts_discoverability PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_shortcuts_discoverability PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_shortcuts_discoverability PRIVATE pthread dl m
@@ -1973,7 +1973,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_statusbar_wordcoun
     if(WIN32)
         target_compile_definitions(test_statusbar_wordcount_perf PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_statusbar_wordcount_perf PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_statusbar_wordcount_perf PRIVATE pthread dl m
@@ -2024,7 +2024,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_bulk_settext_guard
     if(WIN32)
         target_compile_definitions(test_bulk_settext_guard PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_bulk_settext_guard PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_bulk_settext_guard PRIVATE pthread dl m
@@ -2075,7 +2075,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preshow_modal_hygi
     if(WIN32)
         target_compile_definitions(test_preshow_modal_hygiene PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_preshow_modal_hygiene PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_preshow_modal_hygiene PRIVATE pthread dl m
@@ -2126,7 +2126,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_watcher_prompts.cp
     if(WIN32)
         target_compile_definitions(test_watcher_prompts PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_watcher_prompts PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_watcher_prompts PRIVATE pthread dl m
@@ -2227,7 +2227,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_standalone_window.
     if(WIN32)
         target_compile_definitions(test_standalone_window PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_standalone_window PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_standalone_window PRIVATE pthread dl m
@@ -2279,7 +2279,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_crash_notice_mainw
     if(WIN32)
         target_compile_definitions(test_crash_notice_mainwindow PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_crash_notice_mainwindow PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_crash_notice_mainwindow PRIVATE pthread dl m
@@ -2330,7 +2330,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_startup_lazy
     if(WIN32)
         target_compile_definitions(test_noter_startup_lazy PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_noter_startup_lazy PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_noter_startup_lazy PRIVATE pthread dl m
@@ -2413,7 +2413,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_session_autosave_g
     if(WIN32)
         target_compile_definitions(test_session_autosave_guard PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_session_autosave_guard PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_session_autosave_guard PRIVATE pthread dl m
@@ -2464,7 +2464,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_rename_tab_file.cp
     if(WIN32)
         target_compile_definitions(test_rename_tab_file PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_rename_tab_file PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_rename_tab_file PRIVATE pthread dl m
@@ -2516,7 +2516,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_tools.cpp
     if(WIN32)
         target_compile_definitions(test_mcp_host_tools PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_mcp_host_tools PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_mcp_host_tools PRIVATE pthread dl m
@@ -2591,7 +2591,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_control.c
     if(WIN32)
         target_compile_definitions(test_mcp_host_control PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_mcp_host_control PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_mcp_host_control PRIVATE pthread dl m
@@ -2643,7 +2643,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_occurrence_highlig
     if(WIN32)
         target_compile_definitions(test_occurrence_highlight_cap PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_occurrence_highlight_cap PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_occurrence_highlight_cap PRIVATE pthread dl m
@@ -2694,7 +2694,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_wat
     if(WIN32)
         target_compile_definitions(test_change_history_watcher PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history_watcher PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history_watcher PRIVATE pthread dl m
@@ -2735,7 +2735,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_str
     if(WIN32)
         target_compile_definitions(test_change_history_stress PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history_stress PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history_stress PRIVATE pthread dl m
@@ -2776,7 +2776,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_changehistory_stat
     if(WIN32)
         target_compile_definitions(test_changehistory_statusbar PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_changehistory_statusbar PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_changehistory_statusbar PRIVATE pthread dl m
@@ -2817,7 +2817,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_replace_correctnes
     if(WIN32)
         target_compile_definitions(test_replace_correctness PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_replace_correctness PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_replace_correctness PRIVATE pthread dl m
@@ -2857,7 +2857,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_findreplace_carry_
     if(WIN32)
         target_compile_definitions(test_findreplace_carry_forward PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_findreplace_carry_forward PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_findreplace_carry_forward PRIVATE pthread dl m
@@ -2927,7 +2927,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch.cpp"
         # main notepatra target links against. Without ntdll the stdlib's
         # sync I/O references go unresolved (LNK2019 NtWriteFile etc.).
         target_link_libraries(test_projectsearch PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -2966,7 +2966,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch_ui.c
     )
     if(WIN32)
         target_link_libraries(test_projectsearch_ui PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3264,7 +3264,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_edit_plan.cpp")
         # main notepatra target links against — without these the stdlib's
         # sync I/O symbols go unresolved.
         target_link_libraries(test_edit_plan PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3300,7 +3300,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_inline_diff.cpp")
     )
     if(WIN32)
         target_link_libraries(test_inline_diff PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3450,7 +3450,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_json_bracket_tools
     if(WIN32)
         target_compile_definitions(test_json_bracket_tools PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_json_bracket_tools PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32
         )
@@ -3508,7 +3508,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp
     if(WIN32)
         target_compile_definitions(test_compare_widget PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_compare_widget PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32
         )
@@ -3570,7 +3570,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
     if(WIN32)
         target_compile_definitions(test_options_actually_work PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_options_actually_work PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -3648,7 +3648,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
     endif()
     if(WIN32)
         target_link_libraries(test_sqlfmt PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3686,7 +3686,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_htmlfmt.cpp")
     )
     if(WIN32)
         target_link_libraries(test_htmlfmt PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3735,7 +3735,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen.cpp")
     target_link_libraries(test_passwordgen PRIVATE Qt5::Core ${RUST_LIB})
     if(WIN32)
         target_link_libraries(test_passwordgen PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32)
     elseif(APPLE)
         target_link_libraries(test_passwordgen PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -3765,7 +3765,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen_panel.
         Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test Qt5::Concurrent ${RUST_LIB})
     if(WIN32)
         target_link_libraries(test_passwordgen_panel PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32)
     elseif(APPLE)
         target_link_libraries(test_passwordgen_panel PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -3819,7 +3819,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_privacy.cp
     if(WIN32)
         target_compile_definitions(test_ai_chat_privacy PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_chat_privacy PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -3895,7 +3895,7 @@ if(NOTEPATRA_BUILD_TESTS)
         Qt5::Core Qt5::Gui Qt5::Widgets ${RUST_LIB})
     if(WIN32)
         target_link_libraries(test_edit_plan_same_file PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp kernel32 user32 gdi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp kernel32 user32 gdi32)
     elseif(APPLE)
         target_link_libraries(test_edit_plan_same_file PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -3926,7 +3926,7 @@ if(NOTEPATRA_BUILD_TESTS)
     if(WIN32)
         target_compile_definitions(test_agent_write_dirty_tab PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_agent_write_dirty_tab PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_agent_write_dirty_tab PRIVATE pthread dl m
@@ -4005,7 +4005,7 @@ if(NOTEPATRA_BUILD_TESTS)
     if(WIN32)
         target_compile_definitions(test_compose_apply_encoding PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_compose_apply_encoding PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_compose_apply_encoding PRIVATE pthread dl m
@@ -4109,7 +4109,7 @@ if(NOTEPATRA_BUILD_TESTS)
     if(WIN32)
         target_compile_definitions(test_rest_client PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_rest_client PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_rest_client PRIVATE pthread dl m
