@@ -529,6 +529,16 @@ public:
     // the legacy data so the user can roll back if something goes
     // wrong — that cleanup is a v0.1.97 follow-up.
     static QString appConfigDir() {
+        const QString dir = appConfigDirPath();
+        QDir().mkpath(dir);
+        migrateLegacyConfigDirOnce(dir);
+        return dir;
+    }
+
+    // The same location with no side effects (no mkpath, no migration): safe
+    // from any thread, used by PathDenylist to keep the AI / MCP tools out of
+    // the app's own settings (API keys, saved connections).
+    static QString appConfigDirPath() {
 #ifdef Q_OS_WIN
         // %APPDATA%\Notepatra  — e.g. C:\Users\<u>\AppData\Roaming\Notepatra
         QString dir = qEnvironmentVariable("APPDATA");
@@ -549,8 +559,6 @@ public:
                           ? QDir::homePath() + QStringLiteral("/.config/notepatra")
                           : xdg + QStringLiteral("/notepatra");
 #endif
-        QDir().mkpath(dir);
-        migrateLegacyConfigDirOnce(dir);
         return dir;
     }
 

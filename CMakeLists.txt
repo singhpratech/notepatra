@@ -3869,7 +3869,7 @@ endif()
 # (apply_diff/write_file), search deny-list + symlink escape, Compose same-file
 # merge, and agent writes never discarding a dirty tab.
 if(NOTEPATRA_BUILD_TESTS)
-    foreach(_agent_t test_agent_edit_encoding test_ai_search_denylist)
+    foreach(_agent_t test_agent_edit_encoding test_ai_search_denylist test_ai_write_denylist)
         add_executable(${_agent_t}
             ${_agent_t}.cpp
             src/ai_tools.cpp

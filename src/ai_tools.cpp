@@ -60,6 +60,14 @@ bool isHardDenied(const QString &absPath) {
     return PathDenylist::isSecretPath(absPath);
 }
 
+// The write rule every AI writer shares (write_file, apply_diff, and Compose
+// apply through resolveSafeWritePath): never a secret, and never a file that
+// runs code later (shell rc, git hook / git config, autostart, the app's own
+// settings). The MCP bridge applies the same pair.
+static bool isWriteDenied(const QString &absPath) {
+    return isHardDenied(absPath) || PathDenylist::isWriteDangerous(absPath);
+}
+
 bool resolveSafePath(const QString &pathArg,
                      const QString &workspaceRoot,
                      QString *outCanonical,
@@ -170,6 +178,12 @@ bool resolveSafeWritePath(const QString &pathArg,
     const QString parentDir = fi.absolutePath();
     QFileInfo parentFi(parentDir);
 
+    // Refuse a protected destination before creating any missing parent
+    // (write_file(".git/hooks/pre-commit") must not leave a .git/ behind).
+    if (isWriteDenied(QDir::cleanPath(fi.absoluteFilePath()))) {
+        setError("denied"); return false;
+    }
+
     QString wsPrefix = canonicalWs;
     if (!wsPrefix.endsWith(QDir::separator()) && !wsPrefix.endsWith('/')) {
         wsPrefix += '/';
@@ -211,7 +225,7 @@ bool resolveSafeWritePath(const QString &pathArg,
 
     // Apply the hardcoded deny-list to the candidate target — block
     // writes to credential paths even if the parent dir is in workspace.
-    if (isHardDenied(targetAbs)) {
+    if (isWriteDenied(targetAbs)) {
         setError("denied"); return false;
     }
 
@@ -222,7 +236,7 @@ bool resolveSafeWritePath(const QString &pathArg,
         if (real.isEmpty() || (real != canonicalWs && !real.startsWith(wsPrefix))) {
             setError("outside_workspace"); return false;
         }
-        if (isHardDenied(real)) { setError("denied"); return false; }
+        if (isWriteDenied(real)) { setError("denied"); return false; }
         targetAbs = real;
     }
 
@@ -1559,6 +1573,16 @@ ToolResult executeApplyDiff(const ToolCall &call, const QString &workspaceRoot) 
         else
             msg = "File not found.";
         return makeError(call, errorKind, msg);
+    }
+    // The read rule above is not the write rule: a git hook, git config or
+    // shell rc file is readable but never an agent edit target.
+    {
+        const QString asNamed = QDir::cleanPath(
+            QDir::isAbsolutePath(pathArg) ? pathArg : QDir(workspaceRoot).absoluteFilePath(pathArg));
+        if (isWriteDenied(canonical) || isWriteDenied(asNamed))
+            return makeError(call, "denied",
+                             "Access to this path is restricted (it runs code or holds "
+                             "credentials; edit it yourself).");
     }
 
     QFileInfo fi(canonical);
