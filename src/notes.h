@@ -118,6 +118,12 @@ public:
     QString restoreNote(const QString &trashedPath, QString *err = nullptr);
     bool deleteNotePermanently(const QString &trashedPath, QString *err = nullptr);
     QString currentNotePath() const { return m_currentPath; }
+    // Edits that closing the panel would LOSE: the panel saves a dirty note
+    // on close, so only an unsaved note with no file, or one whose last save
+    // failed, counts.
+    bool hasUnsavedChanges() const {
+        return m_dirty && (m_currentPath.isEmpty() || m_lastSaveFailed);
+    }
     // The same operations with no panel open (no note can be on screen).
     static QString renameNoteFiles(NotesStorage &storage, NotesTodos *todos,
                                    const QString &path, const QString &newTitle,

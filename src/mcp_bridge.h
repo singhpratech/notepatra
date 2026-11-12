@@ -43,6 +43,14 @@ struct McpEditorHost {
     // of the tab. An unset field means the host cannot supply one; the bridge
     // then omits `id` and keeps working on indices alone.
     std::function<qint64(int)> tabId;
+    // v0.1.133 (R7): false when tab i is a kind of tab that cannot say whether
+    // it holds unsaved work (a terminal, a tool panel): close_tab then always
+    // asks on a card. Unset ⇒ tabModified is taken as the whole truth.
+    std::function<bool(int)> tabReportsModified;
+    // v0.1.133 (R18): a value that changes whenever tab i's content changes
+    // (empty when the host cannot tell). A write that would discard unsaved
+    // work compares it, and the modified flag, between card and Approve.
+    std::function<QByteArray(int)> tabRevision;
     std::function<int(const QString &)> openFile; // → tab index, -1 on failure
     std::function<QString(int *)> selection;      // text; *out = current tab index
     std::function<QString()> workspaceRoot;       // "" when no folder root is set

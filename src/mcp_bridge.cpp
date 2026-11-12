@@ -580,6 +580,19 @@ QString bulletList(const QStringList &items, int cap = 50) {
     return lines.join(QLatin1Char('\n'));
 }
 
+// R18: a write that discards unsaved work (reload, reinterpret, close with
+// discard) runs only on the document the card described. "" when tab `live`
+// still has the modified state and content it had at card time.
+QString changedSinceCard(const McpEditorHost &h, int live, const QString &title,
+                         bool wasModified, const QByteArray &revision) {
+    const bool nowModified = h.tabModified && h.tabModified(live);
+    const QByteArray nowRevision = h.tabRevision ? h.tabRevision(live) : QByteArray();
+    if (nowModified == wasModified && nowRevision == revision) return QString();
+    return QStringLiteral("'%1' was edited while the approval card was waiting, so the card "
+                          "no longer describes what would be lost. Nothing was changed; "
+                          "call it again.").arg(title);
+}
+
 QStringList jsonStrings(const QJsonValue &v) {
     QStringList out;
     for (const QJsonValue &x : v.toArray()) out << x.toString();
@@ -3613,8 +3626,10 @@ void McpBridge::verbCloseTab(QLocalSocket *client, int id,
         return;
     }
     const bool modified = m_host.tabModified && m_host.tabModified(idx);
+    // R7: a tab type that cannot report unsaved work is never assumed clean.
+    const bool reports = !m_host.tabReportsModified || m_host.tabReportsModified(idx);
     const qint64 tid = tabIdOf(idx);
-    if (!modified) {
+    if (!modified && reports) {
         QJsonObject r = m_host.tabAction(idx, QStringLiteral("close_tab"), args, &err);
         if (!err.isEmpty()) {
             sendError(client, id, err);
@@ -3626,7 +3641,7 @@ void McpBridge::verbCloseTab(QLocalSocket *client, int id,
         sendResult(client, id, r);
         return;
     }
-    if (!discard) {
+    if (modified && !discard) {
         sendError(client, id,
                   QStringLiteral("tab '%1' has unsaved changes. Save it first "
                                  "(save_tab), or pass discard_unsaved:true to "
@@ -3634,12 +3649,22 @@ void McpBridge::verbCloseTab(QLocalSocket *client, int id,
                       .arg(tabLabel(idx)));
         return;
     }
+    const QString label = elideForCard(tabLabel(idx), kApprovalDescChars);
     const QString desc =
-        QStringLiteral("close_tab: close '%1' and DISCARD its unsaved changes "
-                       "(they will be lost)")
-            .arg(elideForCard(tabLabel(idx), kApprovalDescChars));
+        modified ? QStringLiteral("close_tab: close '%1' and DISCARD its unsaved changes "
+                                  "(they will be lost)").arg(label)
+                 : QStringLiteral("close_tab: close '%1'. This kind of tab cannot report "
+                                  "whether it holds unsaved work; anything typed or running "
+                                  "in it is lost").arg(label);
+    const QByteArray revision = m_host.tabRevision ? m_host.tabRevision(idx) : QByteArray();
+    const QString title = tabLabel(idx);
     enqueueTabApproval(client, id, idx, desc, QString(),
-                       [this, args](int live, QString *execErr) {
+                       [this, args, modified, revision, title](int live, QString *execErr) {
+        if (const QString moved = changedSinceCard(m_host, live, title, modified, revision);
+            !moved.isEmpty()) {
+            *execErr = moved;
+            return QJsonObject();
+        }
         QJsonObject r = m_host.editTab(live, QStringLiteral("close_tab"), args,
                                        execErr);
         r[QStringLiteral("closed")] = execErr->isEmpty();
@@ -3906,8 +3931,26 @@ void McpBridge::verbTabEdit(QLocalSocket *client, int id,
         sendResult(client, id, r);
         return;
     }
+    // R18: reload and reinterpret throw the buffer away; they run only if
+    // the tab is exactly as the card saw it (no typing during the wait).
+    const bool discards =
+        verb == QLatin1String("reload_tab") ||
+        (verb == QLatin1String("set_encoding") &&
+         args.value(QLatin1String("mode")).toString() == QLatin1String("reinterpret"));
+    const bool wasModified = m_host.tabModified && m_host.tabModified(idx);
+    const QByteArray revision =
+        discards && m_host.tabRevision ? m_host.tabRevision(idx) : QByteArray();
+    const QString title = tabLabel(idx);
     enqueueTabApproval(client, id, idx, what, preview,
-                       [this, verb, args](int live, QString *execErr) {
+                       [this, verb, args, discards, wasModified, revision,
+                        title](int live, QString *execErr) {
+        if (discards) {
+            if (const QString moved = changedSinceCard(m_host, live, title, wasModified, revision);
+                !moved.isEmpty()) {
+                *execErr = moved;
+                return QJsonObject();
+            }
+        }
         return m_host.editTab(live, verb, args, execErr);
     });
 }

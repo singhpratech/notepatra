@@ -51,6 +51,9 @@ public:
 
     // Current on-disk path ("" if never saved). Used for the tab title.
     QString filePath() const { return m_path; }
+    // True when the .npd text has edits that are not on disk (the tab
+    // title's bullet). Closing the tab would lose them.
+    bool isModified() const { return m_dirty; }
 
 signals:
     // Emitted when the document path or modified state changes, so the host

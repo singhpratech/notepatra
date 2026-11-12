@@ -19,6 +19,7 @@
 #include "passwordgen_core.h"
 #include "diagram/mermaid_import.h"
 #include <QSaveFile>
+#include <QCryptographicHash>
 #include <QTemporaryFile>
 #include <QPointer>
 #include <QScopeGuard>
@@ -1877,9 +1878,28 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = m_tabs->editorAt(i);
             return ed ? ed->filePath() : QString();
         };
-        host.tabModified = [this](int i) {
-            auto *ed = m_tabs->editorAt(i);
-            return ed && ed->isModified();
+        // R7: unsaved work by tab TYPE: 1 = modified, 0 = nothing to lose,
+        // -1 = this kind of tab cannot say (a terminal, a tool panel), so
+        // close_tab must ask the human instead of assuming "clean".
+        auto dirtyState = [this](int i) -> int {
+            QWidget *w = m_tabs->widget(i);
+            if (!w) return 0;
+            if (Editor *ed = m_tabs->editorAt(i)) return ed->isModified() ? 1 : 0;
+            if (auto *de = qobject_cast<DiagramEditor *>(w)) return de->isModified() ? 1 : 0;
+            if (auto *np = qobject_cast<NotesPanel *>(w)) return np->hasUnsavedChanges() ? 1 : 0;
+            if (qobject_cast<WelcomeWidget *>(w)) return 0;
+            return -1;
+        };
+        host.tabModified = [dirtyState](int i) { return dirtyState(i) == 1; };
+        host.tabReportsModified = [dirtyState](int i) { return dirtyState(i) >= 0; };
+        // R18: changes whenever the tab's text does; the bridge compares it
+        // at Approve so typing during the wait is never discarded unseen.
+        host.tabRevision = [this](int i) -> QByteArray {
+            QString text;
+            if (Editor *ed = m_tabs->editorAt(i)) text = ed->text();
+            else if (auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i))) text = de->npdText();
+            else return QByteArray();
+            return QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256);
         };
         host.tabText = [this](int i) {
             auto *ed = m_tabs->editorAt(i);
@@ -2770,8 +2790,8 @@ MainWindow::MainWindow(bool standaloneNoSession)
 #endif
         // ── v0.1.133: tabs, editing, view, pure tools. Every op calls the
         //    function the menu calls; nothing here opens a dialog. ──
-        host.tabAction = [this](int i, const QString &op, const QJsonObject &a,
-                                QString *err) -> QJsonObject {
+        host.tabAction = [this, dirtyState](int i, const QString &op, const QJsonObject &a,
+                                            QString *err) -> QJsonObject {
             QJsonObject r;
             QWidget *w = m_tabs->widget(i);
             auto *ed = m_tabs->editorAt(i);
@@ -2785,8 +2805,13 @@ MainWindow::MainWindow(bool standaloneNoSession)
             } else if (op == QLatin1String("set_title")) {
                 m_tabs->setTabText(i, a.value(QLatin1String("title")).toString());
             } else if (op == QLatin1String("close_tab")) {
-                if (ed && ed->isModified()) { // the bridge checked; never prompt
-                    *err = QStringLiteral("tab has unsaved changes");
+                // The card-less close: only a tab that provably loses nothing.
+                // An open Noter note is written first (as closing it would).
+                if (auto *np = qobject_cast<NotesPanel *>(w)) np->saveCurrentNote();
+                if (const int d = dirtyState(i); d != 0) { // the bridge checked; never prompt
+                    *err = d > 0 ? QStringLiteral("tab has unsaved changes")
+                                 : QStringLiteral("this kind of tab cannot report unsaved "
+                                                  "work; closing it needs approval");
                     return r;
                 }
                 closeTab(i);
@@ -2864,6 +2889,14 @@ MainWindow::MainWindow(bool standaloneNoSession)
                               QString *err) -> QJsonObject {
             QJsonObject r;
             auto *ed = m_tabs->editorAt(i);
+            if (op == QLatin1String("close_tab") && m_tabs->widget(i)) {
+                // Any tab type: the card carried the consent (unsaved edits,
+                // or a tab that cannot report them). A Diagram tab closes
+                // without a prompt; a Noter panel writes its note on close.
+                if (ed) ed->setModified(false);
+                closeTab(i);
+                return r;
+            }
             if (!ed) {
                 *err = QStringLiteral("tab %1 is not a text editor").arg(i);
                 return r;
@@ -3075,9 +3108,6 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 default:
                     *err = rerr.isEmpty() ? QStringLiteral("rename failed") : rerr;
                 }
-            } else if (op == QLatin1String("close_tab")) {
-                ed->setModified(false); // the card carried the discard consent
-                closeTab(i);
             } else if (op == QLatin1String("apply_edit")) {
                 // Search > Replace: the dialog's Replace All engine.
                 QString find = a.value(QLatin1String("find")).toString();
