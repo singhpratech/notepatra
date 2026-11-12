@@ -156,6 +156,21 @@ QJsonObject connectionJson(const DbConnections::Record &r) {
             {QStringLiteral("has_options"), !r.options.isEmpty()}};
 }
 
+// A file database (SQLite, DuckDB) is opened by test_connection and
+// describe_table only when the file is already there: a test or a schema
+// read never creates one. "" when fine.
+QString missingDatabaseFile(const DbConnections::Record &r) {
+    if (r.driver != QLatin1String("QSQLITE") && r.driver != QLatin1String("DUCKDB"))
+        return QString();
+    const QString db = r.database.trimmed();
+    if (db == QLatin1String(":memory:")) return QString();
+    if (db.isEmpty()) return QStringLiteral("the connection names no database file");
+    if (!QFileInfo(db).isFile())
+        return QStringLiteral("the database file does not exist: %1 (nothing was created)")
+            .arg(QDir::toNativeSeparators(db));
+    return QString();
+}
+
 const char *kNoPasswordNote =
     "No password, token or connection options are stored by MCP. If the database needs "
     "one, the user enters it in Manage Connections (open_connections_dialog opens it).";
@@ -817,6 +832,10 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
                 return out;
             }
 #endif
+            if (const QString missing = missingDatabaseFile(rec); !missing.isEmpty()) {
+                *err = missing;
+                return out;
+            }
             QString e;
             const QVector<DbSchema::Table> tables = DbSchema::introspect(rec, &e);
             if (tables.isEmpty() && !e.isEmpty()) {
@@ -941,6 +960,13 @@ void MainWindow::installMcpControlHost(McpEditorHost &host) {
 #endif
         }
         if (op == QLatin1String("test_connection")) {
+            if (const QString missing = missingDatabaseFile(rec); !missing.isEmpty()) {
+                done(QJsonObject{{QStringLiteral("connection_name"), name},
+                                 {QStringLiteral("ok"), false},
+                                 {QStringLiteral("error"), missing}},
+                     QString());
+                return;
+            }
             runGuarded(this, kDbTimeoutMs, [rec, name](QString *) {
                 QString cname, e;
                 const bool ok = DbConnections::open(rec, &cname, &e);

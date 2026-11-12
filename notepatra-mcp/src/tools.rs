@@ -62,7 +62,6 @@ pub const READ_TOOLS: &[&str] = &[
     "search_notes",
     "get_preferences",
     "describe_table",
-    "test_connection",
     "parse_http_file",
     "curl_to_request",
     "request_to_curl",
@@ -93,6 +92,8 @@ pub const ACT_TOOLS: &[&str] = &[
     // v0.1.133 phase 3: non-modal windows
     "open_connections_dialog",
     "open_schema_browser",
+    // Opens an outbound, authenticated connection: an action, not a read.
+    "test_connection",
 ];
 pub const WRITE_TOOLS: &[&str] = &[
     "insert_text",

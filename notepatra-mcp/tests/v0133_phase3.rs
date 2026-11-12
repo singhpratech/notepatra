@@ -14,13 +14,17 @@ const READS: &[&str] = &[
     "search_notes",
     "get_preferences",
     "describe_table",
-    "test_connection",
     "parse_http_file",
     "curl_to_request",
     "request_to_curl",
     "hex_dump",
 ];
-const ACTS: &[&str] = &["open_connections_dialog", "open_schema_browser"];
+const ACTS: &[&str] = &[
+    "open_connections_dialog",
+    "open_schema_browser",
+    // Outbound, authenticated connection: ACT (remote scope read_act), not READ.
+    "test_connection",
+];
 const WRITES: &[&str] = &[
     "git_stage",
     "git_unstage",

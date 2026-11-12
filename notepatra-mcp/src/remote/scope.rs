@@ -177,8 +177,8 @@ mod tests {
                 scope.as_str()
             );
         }
-        // Concretely: 47 / 68 / 114 / 119.
-        assert_eq!(READ_TOOLS.len(), 47);
+        // Concretely: 46 / 68 / 114 / 119.
+        assert_eq!(READ_TOOLS.len(), 46);
         assert_eq!(READ_TOOLS.len() + ACT_TOOLS.len(), 68);
         assert_eq!(EXTERNAL_WRITE_TOOLS.len(), 5);
     }

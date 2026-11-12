@@ -241,7 +241,7 @@ pub(super) fn definitions() -> Vec<Value> {
         ),
         tool(
             "test_connection",
-            "Try to open a saved connection with its stored settings and report {ok, error?}; the error text never contains the password or key=value secrets. 20 s timeout.".into(),
+            "Try to open a saved connection with its stored settings and report {ok, error?}; the error text never contains the password or key=value secrets. This opens a real, authenticated connection to the database server (an action, not a read: remote clients need the read_act scope). A SQLite/DuckDB file that does not exist is reported, never created. 20 s timeout.".into(),
             one("connection_name", s("Saved connection name (list_connections)")),
             &["connection_name"],
         ),

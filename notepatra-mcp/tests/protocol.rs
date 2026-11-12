@@ -1475,8 +1475,8 @@ fn p0a_list_languages_and_get_capabilities() {
         .len();
     assert_eq!(caps["tool_count"], expected as u64);
     assert_eq!(caps["tool_count"], 119);
-    assert_eq!(caps["tiers"]["read"], 47); // v0.1.133 phase 3: +10
-    assert_eq!(caps["tiers"]["act"], 21); // +2 non-modal windows
+    assert_eq!(caps["tiers"]["read"], 46); // v0.1.133 phase 3: +9
+    assert_eq!(caps["tiers"]["act"], 22); // +2 non-modal windows, test_connection
     assert_eq!(caps["tiers"]["write"], 51); // +28
                                             // v0.1.133: export_diagram's accepted formats come from the editor.
     assert!(caps["diagram_export_formats"]
