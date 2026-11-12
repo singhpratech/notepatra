@@ -55,6 +55,8 @@ _Nothing yet._
 - MCP project search and file open judge a symlink by its target. Saving or exporting over MCP to shell start-up files, `authorized_keys`, autostart folders, cron spools, git hooks, `.gitconfig` or credential files is refused before any card.
 - `config.json` (API keys) and `db-connections.json` are written owner-only (0600) on Linux and macOS, atomically, and a looser existing file is tightened on load.
 - The cloud-free build has no cloud Settings button or dialog.
+- Pre-release review hardening: approval cards show every line break, control character and the full text; a REST request, git write, tab close or reload runs only if it still matches its card; the SQL approval path scans the whole statement and SQL Server reads refuse number-glued keywords and ODBC `{call}`; nothing under `.git/` and nothing in Notepatra's own settings folder can be read or written by the AI or MCP; agent edits, notes, drafts, the session file and chat history never write through a planted symlink; ODBC field values cannot inject connection-string keywords.
+- MCP `execute_sql` can approve one ordinary write on SQL Server (ODBC) connections.
 
 ### Known issues
 - The PostgreSQL, MySQL and SQL Server safety rules were not run against live servers.
