@@ -1104,6 +1104,7 @@ ToolResult executeListDir(const ToolCall &call, const QString &workspaceRoot) {
         QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden,
         QDir::DirsFirst | QDir::Name);
 
+    const QString wsCanon = QDir(workspaceRoot).canonicalPath();
     QJsonArray items;
     int total = 0;
     int truncated = 0;
@@ -1117,7 +1118,13 @@ ToolResult executeListDir(const ToolCall &call, const QString &workspaceRoot) {
         QJsonObject item;
         item["name"] = e.fileName();
         item["type"] = e.isDir() ? "dir" : "file";
-        if (!e.isDir()) item["size"] = e.size();
+        // Deny-listed (or escaping) entries keep their name so they are not overwritten, but no metadata.
+        const QString real = e.canonicalFilePath();
+        const bool restricted = isHardDenied(e.absoluteFilePath())
+            || (!real.isEmpty() && (isHardDenied(real)
+                                    || (real != wsCanon && !real.startsWith(wsCanon + '/'))));
+        if (restricted) item["restricted"] = true;
+        else if (!e.isDir()) item["size"] = e.size();
         items.push_back(item);
     }
 
