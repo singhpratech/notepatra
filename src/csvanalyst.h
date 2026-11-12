@@ -38,12 +38,16 @@ QString sqliteTypeFor(ColumnType t);   // SQLite affinity: INTEGER / REAL / TEXT
 
 struct ColumnInfo {
     QString name;             // header name (or "col_N" if no header detected)
+    QString ident;            // queryable column name in table `csv` (sanitized, unique)
     ColumnType type = ColumnType::Text;
+    bool    percent = false;  // parsed from "12.5%" text; stored as 12.5
+    int     dateLayout = 0;   // source date layout for Date columns (csvanalyst.cpp)
+    QString sourceExample;    // a raw value when it is stored converted ("$1,234.50")
     int    nonNullCount = 0;
     int    nullCount = 0;
     QString sampleMin;        // stringified min (for Integer/Real/Date types)
     QString sampleMax;
-    QStringList sampleValues; // up to 5 representative values, deduped
+    QStringList sampleValues; // up to 5 representative values as stored, deduped
 };
 
 struct CsvSchema {

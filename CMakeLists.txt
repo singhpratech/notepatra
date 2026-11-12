@@ -669,6 +669,18 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_gate_keyword_ar
         LABELS "unit;ai;db;security" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_db_gate_keyword_args")
 endif()
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_csv_loader_typing.cpp")
+    add_executable(test_csv_loader_typing
+        test_csv_loader_typing.cpp
+        src/csvanalyst.cpp
+    )
+    target_include_directories(test_csv_loader_typing PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_csv_loader_typing PRIVATE Qt5::Core Qt5::Sql)
+    notepatra_add_qt_test(test_csv_loader_typing)
+    set_tests_properties(test_csv_loader_typing PROPERTIES
+        LABELS "unit;ai;data-analyst" TIMEOUT 300)
+    message(STATUS "Regression test enabled — target: test_csv_loader_typing")
+endif()
 
 # ── .npd diagram parser (diagram subsystem; pure C++, no WebEngine) ──
 # The parser is the source-of-truth engine the diagram canvas projects from,
