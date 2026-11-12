@@ -3178,7 +3178,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
                                   (unsigned long)hits[0].start,
                                   (long)(hits[0].start + hits[0].length));
                 ed->SendScintilla(QsciScintillaBase::SCI_REPLACETARGET,
-                                  (unsigned long)out8.size(), out8.constData());
+                                  (uintptr_t)out8.size(), out8.constData());
                 ed->endUndoAction();
                 r[QStringLiteral("count")] = 1;
             } else {
