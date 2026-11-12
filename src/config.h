@@ -265,6 +265,9 @@ public:
     bool previewPaneVisible = false;
     QList<int> previewPaneSizes;
 
+    // v0.1.133 — Noter in use: 1 yes, 0 no, -1 unknown (profile older than the flag).
+    int noterInUse = 0;
+
     // Window
     int windowX = -1, windowY = -1, windowW = 1280, windowH = 800;
     bool maximized = false;
@@ -366,6 +369,8 @@ public:
         const QJsonArray paneSizes = o.value("previewPaneSizes").toArray();
         if (paneSizes.size() == 2)
             previewPaneSizes = {paneSizes.at(0).toInt(), paneSizes.at(1).toInt()};
+        // Missing key on an existing profile = upgrade: startup probes once.
+        noterInUse = o.value("noterInUse").toInt(-1);
     }
 
     void save() {
@@ -442,6 +447,7 @@ public:
         QJsonArray paneSizes;
         for (int v : previewPaneSizes) paneSizes.append(v);
         o["previewPaneSizes"] = paneSizes;
+        o["noterInUse"] = noterInUse;
 
         QSaveFile f(configPath());
         if (!f.open(QIODevice::WriteOnly)) return;

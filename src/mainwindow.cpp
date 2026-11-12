@@ -1812,14 +1812,19 @@ MainWindow::MainWindow(bool standaloneNoSession)
         }
     }
 
-    // Noter reminders are app-lifetime. One stat() decides — users who never
-    // opened Noter pay nothing and get zero Documents/ side effects (the
-    // service ctor path would mkpath .notepatra). The 1.5s delay lets the
-    // window paint before a catch-up digest can pop. If the user opens Noter
-    // within the window, ensureNoterTab ran the service first and this
-    // no-ops via the idempotence guard.
+    // Noter reminders are app-lifetime. The app's own config decides, never a
+    // probe of ~/Documents: on macOS even a stat there raises the Documents
+    // permission prompt and blocks the GUI thread until it is answered. Runs
+    // from the event loop after the window is shown, so the window paints
+    // and the MCP bridge greets before any blocking open. Profiles older
+    // than the flag (-1) probe the DB path once and record the answer.
     QTimer::singleShot(1500, this, [this]() {
-        if (QFileInfo::exists(NotesPanel::todosDbPath()))
+        auto &cfg = Config::instance();
+        if (cfg.noterInUse < 0) {
+            cfg.noterInUse = QFileInfo::exists(NotesPanel::todosDbPath()) ? 1 : 0;
+            cfg.save();
+        }
+        if (cfg.noterInUse == 1)
             ensureNoterReminderService();
     });
 
@@ -2161,8 +2166,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
         //    + runQuery, NotesStorage/NotesTodos, DiagramView export). ──
         // READ: Noter reminders (unbucketed; the bridge buckets them).
         host.reminders = [this]() -> QJsonArray {
-            ensureNoterReminderService(); // idempotent; guarantees m_noterTodos
             QJsonArray arr;
+            // A read must not create the Noter DB for someone who never used it.
+            if (!m_noterReminderEngine && Config::instance().noterInUse != 1)
+                return arr;
+            ensureNoterReminderService(); // idempotent; guarantees m_noterTodos
             if (!m_noterTodos) return arr;
             const QVector<TodoRow> rows = m_noterTodos->allScheduledReminders();
             for (const TodoRow &r : rows) {
@@ -5874,6 +5882,12 @@ NotesPanel *MainWindow::findNoterPanel(int *indexOut) const {
 
 void MainWindow::ensureNoterReminderService() {
     if (m_noterReminderEngine) return;                      // idempotent
+    // Every Noter use funnels through here; later launches start reminders.
+    auto &cfg = Config::instance();
+    if (cfg.noterInUse != 1) {
+        cfg.noterInUse = 1;
+        cfg.save();
+    }
     m_noterTodos = new NotesTodos(NotesPanel::todosDbPath(), this);
     m_noterTodos->open(nullptr);
     m_noterReminderEngine = new NotesReminderEngine(m_noterTodos, this);

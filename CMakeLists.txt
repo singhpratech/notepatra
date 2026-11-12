@@ -2287,6 +2287,58 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_crash_notice_mainw
     message(STATUS "Regression test enabled — target: test_crash_notice_mainwindow")
 endif()
 
+# v0.1.133 — Noter startup touches ~/Documents only when config says Noter
+# is in use (macOS Documents prompt froze the GUI thread at launch).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_startup_lazy.cpp")
+    set(NOTER_LAZY_SOURCES ${SOURCES})
+    list(FILTER NOTER_LAZY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_noter_startup_lazy
+        test_noter_startup_lazy.cpp
+        ${NOTER_LAZY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_noter_startup_lazy rust_core)
+    target_compile_definitions(test_noter_startup_lazy PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_noter_startup_lazy PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_noter_startup_lazy PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_noter_startup_lazy PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_noter_startup_lazy PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_noter_startup_lazy PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_noter_startup_lazy PRIVATE
+            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_noter_startup_lazy PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_noter_startup_lazy PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_noter_startup_lazy PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_noter_startup_lazy PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_noter_startup_lazy PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_noter_startup_lazy COMMAND $<TARGET_FILE:test_noter_startup_lazy>)
+    set_tests_properties(test_noter_startup_lazy PROPERTIES
+        LABELS "integration;mainwindow;noter"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_noter_startup_lazy")
+endif()
+
 # D8 (win-open-ghost) — session autosave change-detection (idle ticks
 # are free), atomic session.json write, .restoring marker PID liveness.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_session_autosave_guard.cpp")
