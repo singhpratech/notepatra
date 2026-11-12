@@ -669,6 +669,18 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_gate_keyword_ar
         LABELS "unit;ai;db;security" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_db_gate_keyword_args")
 endif()
+# v0.1.133 SQL gate bypasses (nested comments, EXPLAIN bodies, U& names, file
+# scans)
+foreach(_npt test_db_gate_bypasses)
+    if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/${_npt}.cpp")
+        add_executable(${_npt} ${_npt}.cpp src/dbconnections.cpp src/atomic_write.cpp)
+        target_include_directories(${_npt} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_npt} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+        notepatra_add_qt_test(${_npt})
+        set_tests_properties(${_npt} PROPERTIES LABELS "unit;ai;db;security" TIMEOUT 120)
+        message(STATUS "Regression test enabled — target: ${_npt}")
+    endif()
+endforeach()
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_csv_loader_typing.cpp")
     add_executable(test_csv_loader_typing
         test_csv_loader_typing.cpp
