@@ -26,6 +26,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPlainTextEdit>
 #include <QLocalSocket>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -2558,10 +2559,11 @@ private slots:
             QLatin1String("AI tool (MCP) requests")));
         QVERIFY(desc->text().contains(
             QLatin1String("insert 4 chars into 'notes.txt'")));
-        auto *prev = card->findChild<QLabel *>(
-            QStringLiteral("mcpApprovalPreview"));
+        // R17: inserted text is previewed whole, in the scrollable box.
+        auto *prev = card->findChild<QPlainTextEdit *>(
+            QStringLiteral("mcpApprovalPreviewFull"));
         QVERIFY(prev);
-        QVERIFY(prev->text().contains(QLatin1String("XYZ-")));
+        QVERIFY(prev->toPlainText().contains(QLatin1String("XYZ-")));
         // Held: no response, no mutation until the human decides.
         QTest::qWait(150);
         QVERIFY(!s.canReadLine());
@@ -5028,7 +5030,10 @@ private slots:
         QVERIFY(card);
         QVERIFY(cardText().contains(QLatin1String("2 open tab(s)")));
         QVERIFY(cardText().contains(QLatin1String("case-insensitive")));
-        const QString prev = card->findChild<QLabel *>(QStringLiteral("mcpApprovalPreview"))->text();
+        // R17: find, replace and the per-tab counts, in the scrollable box.
+        auto *full = card->findChild<QPlainTextEdit *>(QStringLiteral("mcpApprovalPreviewFull"));
+        QVERIFY(full);
+        const QString prev = full->toPlainText();
         QVERIFY2(prev.contains(QLatin1String("notes.txt: 2")) && prev.contains(QLatin1String("Untitled 1: 1")),
                  qPrintable(prev));
         // The document changes under the card: nothing is replaced anywhere.
