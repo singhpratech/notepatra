@@ -364,6 +364,9 @@ static void sectionHistory() {
     QFile f2(path);
     f2.open(QIODevice::ReadOnly);
     const QByteArray raw2 = f2.readAll();
+    // Closed before the next write: on Windows an open handle blocks the
+    // save's rename over the file.
+    f2.close();
     EXPECT("R10: a login body's password / client_secret never reach rest-client.json",
            !raw2.contains("BODYSECRET3") && !raw2.contains("BODYSECRET4") &&
                load(path).first().body.contains("\"user\": \"a\""));
