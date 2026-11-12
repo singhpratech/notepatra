@@ -11,11 +11,14 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLayout>
 #include <QPushButton>
 #include <QSet>
 #include <QSpacerItem>
 #include <QStyle>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 // Slice B+C — EditPlanList implementation.
 //
@@ -71,6 +74,107 @@ static QString statsHtml(int added, int removed) {
         .arg(removed);
 }
 
+
+// ── Same-file merge (Compose) ───────────────────────────────────────────
+// Every dry-run proposal is computed against the file on disk, so a second
+// edit to a pending file must be merged into the row, not queued beside it
+// (Apply writes rows in order: the last one would overwrite the first).
+
+// Lines WITH their endings, split the way the Rust line diff (similar) splits:
+// "\r\n", lone "\r" and "\n" each end a line.
+static QStringList splitKeepEnds(const QString &s) {
+    QStringList out;
+    int start = 0;
+    for (int i = 0; i < s.size(); ++i) {
+        const QChar c = s.at(i);
+        if (c == QLatin1Char('\r') && i + 1 < s.size() && s.at(i + 1) == QLatin1Char('\n'))
+            ++i;
+        else if (c != QLatin1Char('\r') && c != QLatin1Char('\n'))
+            continue;
+        out << s.mid(start, i - start + 1);
+        start = i + 1;
+    }
+    if (start < s.size()) out << s.mid(start);
+    return out;
+}
+
+// One change: base lines [bStart, bEnd) become `lines`.
+struct MergeHunk {
+    int bStart = 0;
+    int bEnd = 0;
+    QStringList lines;
+    bool theirs = false;
+};
+
+static bool diffHunks(const QString &base, const QString &side, bool theirs,
+                      QVector<MergeHunk> *out) {
+    const QStringList sideLines = splitKeepEnds(side);
+    const RustCore::DiffInfo d = RustCore::computeDiff(base, side);
+    int b = 0, r = 0;
+    MergeHunk cur;
+    bool open = false;
+    for (const RustCore::DiffEntry &e : d.entries) {
+        if (e.tag == 0) {
+            if (open) { out->append(cur); open = false; }
+            ++b; ++r;
+            continue;
+        }
+        if (!open) { cur = MergeHunk{b, b, {}, theirs}; open = true; }
+        if (e.tag == 2) {
+            cur.bEnd = ++b;
+        } else {
+            if (r >= sideLines.size()) return false;
+            cur.lines << sideLines.at(r++);
+        }
+    }
+    if (open) out->append(cur);
+    return b == splitKeepEnds(base).size() && r == sideLines.size();
+}
+
+// Three-way merge of two edits made against the same base. Non-overlapping
+// changes both land; where they overlap, the newer edit (theirs) wins.
+static bool mergeEdits(const QString &base, const QString &ours, const QString &theirs,
+                       QString *merged) {
+    QVector<MergeHunk> hs;
+    if (!diffHunks(base, ours, false, &hs) || !diffHunks(base, theirs, true, &hs))
+        return false;
+    std::stable_sort(hs.begin(), hs.end(), [](const MergeHunk &a, const MergeHunk &b) {
+        if (a.bStart != b.bStart) return a.bStart < b.bStart;
+        return (a.bStart == a.bEnd) && (b.bStart != b.bEnd);  // insertions first
+    });
+    const QStringList baseLines = splitKeepEnds(base);
+    QString out;
+    int pos = 0;
+    for (int i = 0; i < hs.size();) {
+        int cs = hs[i].bStart, ce = hs[i].bEnd;
+        QVector<int> insertsAt;
+        if (cs == ce) insertsAt << cs;
+        int j = i + 1;
+        for (; j < hs.size(); ++j) {
+            const MergeHunk &h = hs[j];
+            const bool isInsert = h.bStart == h.bEnd;
+            if (!(h.bStart < ce || (isInsert && insertsAt.contains(h.bStart)))) break;
+            ce = std::max(ce, h.bEnd);
+            if (isInsert) insertsAt << h.bStart;
+        }
+        for (; pos < cs; ++pos) out += baseLines.at(pos);
+        const bool mixed = j - i > 1;
+        int r = cs;
+        for (int k = i; k < j; ++k) {
+            if (mixed && !hs[k].theirs) continue;
+            for (; r < hs[k].bStart; ++r) out += baseLines.at(r);
+            out += hs[k].lines.join(QString());
+            r = hs[k].bEnd;
+        }
+        for (; r < ce; ++r) out += baseLines.at(r);
+        pos = ce;
+        i = j;
+    }
+    for (; pos < baseLines.size(); ++pos) out += baseLines.at(pos);
+    *merged = out;
+    return true;
+}
+
 }  // namespace
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -111,9 +215,9 @@ EditPlanRow::EditPlanRow(const QString &absPath, const QString &displayPath,
     pathLabel->setStyleSheet("font-weight: 500;");
     header->addWidget(pathLabel, 1);  // stretch to push buttons right
 
-    auto *stats = new QLabel(statsHtml(m_added, m_removed));
-    stats->setTextFormat(Qt::RichText);
-    header->addWidget(stats);
+    m_statsLabel = new QLabel(statsHtml(m_added, m_removed));
+    m_statsLabel->setTextFormat(Qt::RichText);
+    header->addWidget(m_statsLabel);
 
     // Hidden until setApplied() — a green ✓ badge that makes "this edit was
     // written to disk" unmissable, so the user never wonders whether Apply
@@ -212,6 +316,18 @@ void EditPlanRow::onToggleDiff() {
     m_diffContainer->setVisible(show);
 }
 
+void EditPlanRow::setAfterText(const QString &after) {
+    m_after = after;
+    computeStats();
+    if (m_statsLabel) m_statsLabel->setText(statsHtml(m_added, m_removed));
+    // Drop the stale lazily-built DiffView; rebuild now if it is showing.
+    if (QLayoutItem *item = m_diffContainer->layout()->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    if (m_diffBtn->isChecked()) onToggleDiff();
+}
+
 void EditPlanRow::computeStats() {
     // We could just count line-count deltas, but that hides edits inside a
     // file with the same line count. Use the same Rust diff routine the
@@ -297,6 +413,22 @@ void EditPlanList::markPending(const QList<QString> &absPaths) {
 
 void EditPlanList::addEdit(const QString &absPath, const QString &before,
                            const QString &after) {
+    // A pending row for this file absorbs the new edit (see mergeEdits).
+    for (EditPlanRow *existing : m_rows) {
+        if (existing->isApplied() || existing->absPath() != absPath) continue;
+        QString merged;
+        if (existing->afterText() == before) {
+            merged = after;   // proposal already built on top of the pending edit
+        } else if (existing->beforeText() != before
+                   || !mergeEdits(before, existing->afterText(), after, &merged)) {
+            continue;
+        }
+        existing->setAfterText(merged);
+        showUndoButton(false);
+        updateActionBarEnabled();
+        return;
+    }
+
     // Compute display path: strip workspace root if it's a prefix, otherwise
     // fall back to the absolute path. We use QDir to handle trailing
     // separators uniformly across platforms.

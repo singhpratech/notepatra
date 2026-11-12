@@ -133,6 +133,7 @@ public:
     QString absPath() const { return m_absPath; }
     QString afterText() const { return m_after; }
     QString beforeText() const { return m_before; }  // v0.1.111 — for rollback
+    void setAfterText(const QString &after);  // a later edit to the same file merged in
     bool isSelected() const;
 
     // v0.1.110 — applied-state tracking so the row reflects reality after a
@@ -169,6 +170,7 @@ private:
 
     bool m_applied = false;
     QCheckBox *m_selectBox = nullptr;
+    QLabel *m_statsLabel = nullptr;
     QLabel *m_appliedTag = nullptr;      // hidden "✓ applied" badge, shown by setApplied()
     QPushButton *m_diffBtn = nullptr;
     QPushButton *m_removeBtn = nullptr;
