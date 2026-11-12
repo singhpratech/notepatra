@@ -156,17 +156,28 @@ bool saveAll(const QVector<Record> &records) {
     // QSaveFile writes a temp file and renames it over the target on commit, so
     // a failed write never loses the old copy. Owner-only on Unix: the file
     // holds hosts, user names and (only XOR-obfuscated) passwords.
+    // No direct-write fallback: it would truncate the file before writing.
     QSaveFile f(path);
-    if (!f.open(QIODevice::WriteOnly)) return false;
+    if (!f.open(QIODevice::WriteOnly)) {
+        qWarning("Notepatra: connections not saved: cannot write %s: %s",
+                 qPrintable(QDir::toNativeSeparators(path)), qPrintable(f.errorString()));
+        return false;
+    }
 #ifndef Q_OS_WIN
     f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 #endif
     const QByteArray bytes = QJsonDocument(arr).toJson(QJsonDocument::Indented);
     if (f.write(bytes) != bytes.size()) {
         f.cancelWriting();
+        qWarning("Notepatra: connections not saved: short write to %s",
+                 qPrintable(QDir::toNativeSeparators(path)));
         return false;
     }
-    if (!f.commit()) return false;
+    if (!f.commit()) {
+        qWarning("Notepatra: connections not saved: cannot replace %s: %s",
+                 qPrintable(QDir::toNativeSeparators(path)), qPrintable(f.errorString()));
+        return false;
+    }
     NpAtomic::syncDirectoryOf(path);
     return true;
 }

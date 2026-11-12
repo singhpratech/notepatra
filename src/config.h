@@ -449,13 +449,30 @@ public:
         o["previewPaneSizes"] = paneSizes;
         o["noterInUse"] = noterInUse;
 
-        QSaveFile f(configPath());
-        if (!f.open(QIODevice::WriteOnly)) return;
+        // A failed save leaves the old file as it was. There is no direct-write
+        // fallback: it would truncate config.json first, and a failure after
+        // that loses every setting and key. A read-only directory, or a
+        // config.json symlinked into one, is reported, not silently ignored.
+        const QString path = configPath();
+        QSaveFile f(path);
+        if (!f.open(QIODevice::WriteOnly)) {
+            qWarning("Notepatra: settings not saved: cannot write %s: %s",
+                     qPrintable(QDir::toNativeSeparators(path)), qPrintable(f.errorString()));
+            return;
+        }
 #ifndef Q_OS_WIN
         f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);  // holds API keys
 #endif
-        f.write(QJsonDocument(o).toJson());
-        f.commit();
+        const QByteArray bytes = QJsonDocument(o).toJson();
+        if (f.write(bytes) != bytes.size()) {
+            f.cancelWriting();
+            qWarning("Notepatra: settings not saved: short write to %s",
+                     qPrintable(QDir::toNativeSeparators(path)));
+            return;
+        }
+        if (!f.commit())
+            qWarning("Notepatra: settings not saved: cannot replace %s: %s",
+                     qPrintable(QDir::toNativeSeparators(path)), qPrintable(f.errorString()));
     }
 
     // Owner-only (0600) on Unix; Windows ACLs are left alone.

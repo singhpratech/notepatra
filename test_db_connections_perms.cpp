@@ -23,6 +23,10 @@
 #endif
 
 static int g_pass = 0, g_fail = 0;
+static QStringList g_warnings;
+static void captureWarnings(QtMsgType type, const QMessageLogContext &, const QString &msg) {
+    if (type == QtWarningMsg) g_warnings << msg;
+}
 
 static void check(const char *what, bool ok) {
     std::printf("  [%s] %s\n", ok ? "PASS" : "FAIL", what);
@@ -54,6 +58,7 @@ int main(int argc, char **argv) {
     ::umask(022);  // the common default that used to leave the file world-readable
 #endif
     QCoreApplication app(argc, argv);
+    qInstallMessageHandler(captureWarnings);
 
     const QString path = DbConnections::configPath();
     check("config path is inside the isolated HOME", path.startsWith(home.path()));
@@ -110,6 +115,32 @@ int main(int argc, char **argv) {
     check("the new contents replaced the old",
           DbConnections::loadAll().value(0).name == QStringLiteral("perm-test-2"));
 
+    std::printf("== a save that cannot land is reported, the file kept ==\n");
+    {
+        const QString dir = QFileInfo(path).path();
+        QFile before(path);
+        before.open(QIODevice::ReadOnly);
+        const QByteArray old = before.readAll();
+        before.close();
+        QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+        QFile probe(dir + "/.probe");
+        if (probe.open(QIODevice::WriteOnly)) {
+            probe.close();
+            probe.remove();
+            std::printf("  (skipped: running with privileges that ignore directory modes)\n");
+        } else {
+            g_warnings.clear();
+            r.name = QStringLiteral("perm-test-3");
+            check("read-only directory: saveAll returns false", !DbConnections::saveAll({r}));
+            check("read-only directory: a warning is emitted",
+                  g_warnings.join('\n').contains("connections not saved"));
+            QFile after(path);
+            after.open(QIODevice::ReadOnly);
+            check("read-only directory: file byte-identical", after.readAll() == old);
+        }
+        QFile::setPermissions(dir, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                       | QFileDevice::ExeOwner);
+    }
 #else
     std::printf("  (permission checks skipped on Windows: ACLs are left alone)\n");
 #endif
