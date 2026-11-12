@@ -13,6 +13,56 @@ _Nothing yet._
 
 ---
 
+## [0.1.133] — 2026-11-12
+
+**The tools that change your text can no longer change what it means, the AI assistant stops losing work, MCP goes from 49 to 119 tools, and the REST client runs `.http` files.** Several old behaviours changed because they could lose or alter data; see "Changed" below.
+
+### Added
+- **MCP server: 49 → 119 tools** (Read 46 / Act 22 / Write 51). Editing (sort, dedupe, trim, join and reverse lines; case; comments; duplicate, delete and move lines; line endings and encoding; undo and redo; regex, match-case and whole-word find and replace, also across all open tabs on one card); tabs and files (activate, close, reload, rename, save all, read-only); pure text tools (hash, Base64 and URL encoding, diff, bracket check and fix, explicit JSON repair, Markdown conversion, Mermaid import, symbol list, password generation, hex dump); view and settings (theme, word wrap, zoom, folding, bookmarks, Preview pane, an allow-listed set of preferences, workspace folder); Git (stage, unstage, commit, branches, stash, discard, hunks, conflict resolution, fetch, pull fast-forward only, push never forced); Noter (search, rename, trash, restore, delete, export, reminder snooze / dismiss / delete); data (`describe_table`, `test_connection`, connection management without passwords, approved single-statement `execute_sql`); REST (`parse_http_file`, cURL conversion both ways, `rest_request` after approval). Every write still shows an Approve/Deny card. Not exposed: shell commands or the terminal, plugins, the updater, SSH key generation, stored passwords or keys.
+- MCP remote gateway scope `write_external`, required for the five writes that reach outside the editor (`execute_sql`, `rest_request`, `git_fetch`, `git_pull`, `git_push`); never granted by default.
+- MCP Approve card shows a countdown and flashes the taskbar entry; clients that send a progress token receive progress notifications while a card waits.
+- **REST client runs `.http` / `.rest` files**: several requests per file separated by `###`, a Send marker beside each, Send Request in the context menu and `Ctrl+Alt+R`. `{{variables}}` from `@name = value` lines and `http-client.env.json` / `http-client.private.env.json` through an Environment dropdown; a request with an undefined variable is not sent. Import cURL and Copy as cURL (variables stay unexpanded). Response headers view, Open in tab, Save, Cancel; binary and very large responses are summarised. History of the last 50 requests, with secret header values and password/token-style body fields saved as `<redacted>`.
+- CI starts every packaged Linux and Windows artifact for real: Linux tarballs (Lite and Full), `.deb` (in a clean container), `.rpm`, AppImage and the Windows portable zips.
+
+### Changed
+- **JSON Format** no longer repairs invalid JSON; it leaves the text untouched and reports the line and column. Use **Fix + Format**.
+- **JSON Fix + Format** repairs only unambiguous faults (trailing commas, comments, single or curly quotes, unquoted keys, Python `True`/`False`/`None`, raw control characters in strings, a missing colon, a comma missing at a line break), lists every change with its line and column in the banner, and declines anything ambiguous with the reason: brackets missing at the end of a file (indistinguishable from truncation), `NaN`, an extra closing bracket.
+- **HTML "Fix + Format" is now "Check + Format"**: it formats the page, or leaves it unchanged and says what to fix and where. It never adds closing tags or writes a report into the page.
+- AI quick actions honour **Auto-attach**: with it off, or outside Coding mode, they send only the selection and ask for one if there is none.
+- On SQL Server connections a column literally named `receive` now asks for approval.
+- MCP: `format_json`, `format_sql` and `format_html` moved to the read tier; `format_html` returns an error when the formatter declines.
+- Changing a saved connection's driver, host, port or user through MCP clears its stored password.
+- Noter no longer touches the Documents folder at startup unless you use Noter (removes a macOS permission prompt for people who never opened it). When the system blocks the Noter folder, Noter and the MCP note tools say so.
+
+### Fixed
+- **JSON Format and Minify changed meaning**: `-0` became `-0.0`, 30-digit integers were rounded, duplicate keys were dropped, escapes were re-encoded, and Minify could remove spaces inside strings. Only whitespace changes now.
+- **HTML Format and Minify changed rendered output**: spaces between inline tags, `<pre>` / `<textarea>` content, `<` inside scripts, comments and attribute values; Minify could join script lines so a `//` comment swallowed the following code. Tags, attributes, text, scripts and comments are now copied byte for byte.
+- **Bracket Auto-Fix altered balanced code** (more than half of balanced samples) and counted brackets inside strings, comments, regexes and template text. It now never touches balanced code and lists what it inserted or removed. Bracket Check no longer replaces your text with its report.
+- AI Fix reported success when the model's reply was not valid JSON, or was HTML the formatter could not follow.
+- AI chat: a quick action with no model selected wiped the conversation on screen and on disk; sending while a reply streamed lost the partial reply.
+- OpenAI-compatible models that reject `max_tokens` or `temperature` get one automatic retry with `max_completion_tokens` / without temperature, remembered for the session (no model names are matched).
+- Data mode works with just a CSV open or attached.
+- Coding agent: a write no longer reloads over a tab with unsaved edits (you get the normal "File Changed" prompt); `apply_diff`, `write_file` and Compose's Apply keep the file's encoding, byte-order mark and line endings, and refuse a file that cannot be written back safely; two Compose edits to the same file both land; `write_file` is atomic.
+- Data analyst CSV loading follows RFC 4180; money and percentages load as numbers; unambiguous dates are stored as ISO; the preview shows the exact column names SQL needs; header detection handles a pandas-style empty first cell and numeric header cells.
+- MCP: `goto_line` and `set_language` ignored `tab_id`; a stale id is now an error everywhere. A write waiting on its card follows its document if tabs move, or fails cleanly if it closes. The card header was black on dark in Dark and Monokai. Diagram tools accept `tab_id`, and `export_diagram` offers only the formats the app supports. Exports are written atomically. `mcp-endpoint.json` is removed on SIGTERM/SIGINT.
+- The `.deb` and `.rpm` now declare the Qt SVG library; the `.deb` did not start on a clean install made without recommended packages.
+- The macOS launch test no longer changes a developer's own preferences when run outside CI.
+
+### Security
+- **Read-only SQL check: six bypasses closed** after an adversarial review that ran about a thousand inputs and executed many on DuckDB and SQLite: statements behind nested block comments; `EXPLAIN ANALYSE` and quoted-option forms that execute a write; PostgreSQL `U&"…"` names that dodged the function deny-list; the wider `dblink_*`, large-object, advisory-lock and admin function families; SQL Server Service Broker, loop and `xp_cmdshell`-family statements after a `SELECT`; DuckDB file reads through quoted or dotted table names. The PostgreSQL, MySQL and SQL Server rules were verified against the classifier, not live servers. Ordinary queries the check used to block (`COUNT(comment)`, `MIN(start)`, nested `REPLACE()`, DuckDB `PIVOT`, `EXPLAIN ANALYZE SELECT`) now run.
+- The AI agent's `search` applies the secrets deny-list and no longer follows symlinks out of the workspace; `write_file` through a symlink that points outside the workspace is refused; `list_dir` shows deny-listed files by name only.
+- `git_show` and `git_diff` cannot print deny-listed files (`HEAD:.env` and similar), redact them from larger diffs, and never run external diff or textconv commands.
+- MCP project search and file open judge a symlink by its target. Saving or exporting over MCP to shell start-up files, `authorized_keys`, autostart folders, cron spools, git hooks, `.gitconfig` or credential files is refused before any card.
+- `config.json` (API keys) and `db-connections.json` are written owner-only (0600) on Linux and macOS, atomically, and a looser existing file is tightened on load.
+- The cloud-free build has no cloud Settings button or dialog.
+
+### Known issues
+- The PostgreSQL, MySQL and SQL Server safety rules were not run against live servers.
+- The Windows MSI and setup program have no launch test.
+- `.http` files have no syntax highlighting; request bodies from a file (`< path`) and response chaining are not supported. Redirects are not followed (the target is shown).
+
+---
+
 ## [0.1.132] — 2026-11-12
 
 **macOS hotfix: the v0.1.131 DMGs did not start.** No application source changed; Linux and Windows builds are functionally identical to v0.1.131.
