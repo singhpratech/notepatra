@@ -670,8 +670,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_gate_keyword_ar
     message(STATUS "Regression test enabled — target: test_db_gate_keyword_args")
 endif()
 # v0.1.133 SQL gate bypasses (nested comments, EXPLAIN bodies, U& names, file
-# scans)
-foreach(_npt test_db_gate_bypasses)
+# scans) + owner-only db-connections.json
+foreach(_npt test_db_gate_bypasses test_db_connections_perms)
     if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/${_npt}.cpp")
         add_executable(${_npt} ${_npt}.cpp src/dbconnections.cpp src/atomic_write.cpp)
         target_include_directories(${_npt} PRIVATE ${CMAKE_SOURCE_DIR}/src)

@@ -13,6 +13,7 @@
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QVector>
 #include <QJsonArray>
@@ -134,7 +135,9 @@ Record Record::fromJson(const QJsonObject &o) {
 
 QVector<Record> loadAll() {
     QVector<Record> out;
-    QFile f(configPath());
+    const QString path = configPath();
+    Config::restrictToOwner(path);  // tighten a file written by an older build
+    QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return out;
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
     if (!doc.isArray()) return out;
@@ -150,19 +153,22 @@ bool saveAll(const QVector<Record> &records) {
     QDir().mkpath(QFileInfo(path).path());
     QJsonArray arr;
     for (const auto &r : records) arr.append(r.toJson());
-    const QString tmp = path + QStringLiteral(".tmp");
-    QFile f(tmp);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+    // QSaveFile writes a temp file and renames it over the target on commit, so
+    // a failed write never loses the old copy. Owner-only on Unix: the file
+    // holds hosts, user names and (only XOR-obfuscated) passwords.
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) return false;
+#ifndef Q_OS_WIN
+    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+#endif
     const QByteArray bytes = QJsonDocument(arr).toJson(QJsonDocument::Indented);
-    const qint64 written = f.write(bytes);
-    NpAtomic::syncData(f);
-    f.close();
-    if (written != bytes.size()) {
-        QFile::remove(tmp);
+    if (f.write(bytes) != bytes.size()) {
+        f.cancelWriting();
         return false;
     }
-    // Never remove-then-rename: a failed rename would lose both copies.
-    return NpAtomic::replaceFile(tmp, path);
+    if (!f.commit()) return false;
+    NpAtomic::syncDirectoryOf(path);
+    return true;
 }
 
 bool findByName(const QString &name, Record *out) {

@@ -347,6 +347,8 @@ private slots:
     }
 
     // ── 8. The four historically-broken call sites use the helper ─────
+    // (or QSaveFile, which renames over the target on commit and never
+    // removes it first; dbconnections.cpp moved to it for owner-only perms)
     void knownCallSitesUseTheHelper() {
         const QStringList mustUse = {
             QStringLiteral("src/notes_storage.cpp"),
@@ -361,10 +363,11 @@ private slots:
             QVERIFY2(f.open(QIODevice::ReadOnly | QIODevice::Text),
                      qPrintable("cannot read " + path));
             const QString body = QString::fromUtf8(f.readAll());
-            if (!body.contains(QStringLiteral("NpAtomic::replaceFile"))) missing << rel;
+            if (!body.contains(QStringLiteral("NpAtomic::replaceFile"))
+                && !body.contains(QStringLiteral("QSaveFile f("))) missing << rel;
         }
         QVERIFY2(missing.isEmpty(),
-                 qPrintable("must route the save through NpAtomic::replaceFile: " +
+                 qPrintable("must route the save through NpAtomic::replaceFile or QSaveFile: " +
                             missing.join(QStringLiteral(", "))));
     }
 };
