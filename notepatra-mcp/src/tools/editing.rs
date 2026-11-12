@@ -332,9 +332,13 @@ pub(super) fn definitions() -> Vec<Value> {
             "close_tab",
             format!(
                 "Close one open tab, selected by tab_id (preferred) or tab_index. A tab with no \
-                 unsaved changes closes at once, with no card. A tab WITH unsaved changes is refused \
-                 unless discard_unsaved is true, and then the user must approve a card that says \
-                 the changes will be lost. Returns {{closed, tab_index, tab_id}}. {APPROVAL_NOTE}"
+                 unsaved changes closes at once, with no card. A tab WITH unsaved changes (an \
+                 editor, a Diagram, a Noter note that could not be saved) is refused unless \
+                 discard_unsaved is true, and then the user must approve a card that says the \
+                 changes will be lost. A kind of tab that cannot report unsaved work (Terminal, \
+                 REST Client, tool panels) always needs the user's approval on a card. If the tab \
+                 is edited while the card waits, nothing is closed. Returns {{closed, tab_index, \
+                 tab_id}}. {APPROVAL_NOTE}"
             ),
             add(tab_props(false), "discard_unsaved", b("Close even though the tab has unsaved changes, which are then lost (default false). Requires the user's approval.")),
             &[],
@@ -559,7 +563,7 @@ pub(super) fn definitions() -> Vec<Value> {
         ),
         tool(
             "fix_brackets",
-            "Auto-fix unbalanced brackets in text or a tab, as Bracket Tools > Auto-Fix does, and return the result WITHOUT changing the tab: {fixed, changed, report} where report lists what the checker found. Write it back yourself (e.g. apply_edit / insert_text) if wanted.".into(),
+            "Auto-fix unbalanced brackets in text or a tab, as Bracket Tools > Auto-Fix does, and return the result WITHOUT changing the tab: {fixed, changed, report} where report is the fixer's own account: each bracket it inserted or removed, with line and column. Write it back yourself (e.g. apply_edit / insert_text) if wanted.".into(),
             text_or_tab_props(),
             &[],
         ),

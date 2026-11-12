@@ -260,6 +260,12 @@ int main(int argc, char *argv[]) {
     EXPECT("check_brackets reports", ok(r) && !res(r).value("report").toString().isEmpty());
     r = call("fix_brackets", {{"tab_id", lt}});
     EXPECT("fix_brackets on a tab does not change it", ok(r) && le->text().startsWith("A\n"));
+    r = call("fix_brackets", {{"text", "f(x\ng(y"}});
+    EXPECT("R21b: fix_brackets reports what the FIXER inserted, with line and column",
+           ok(r) && res(r).value("changed").toBool() &&
+               res(r).value("report").toString().startsWith("Fixed") &&
+               res(r).value("report").toString().contains("inserted ')'") &&
+               res(r).value("report").toString().contains("line "));
     r = call("generate_password", {{"length", 16}, {"count", 2}});
     const QJsonArray pw = res(r).value("passwords").toArray();
     EXPECT("generate_password", pw.size() == 2 && pw.at(0).toString().size() == 16);

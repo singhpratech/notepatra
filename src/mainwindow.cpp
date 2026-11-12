@@ -3239,8 +3239,9 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 const QString fixed = RustCore::fixBrackets(text);
                 r[QStringLiteral("fixed")] = fixed;
                 r[QStringLiteral("changed")] = fixed != text;
-                // What the fixer found, in the Check button's words.
-                r[QStringLiteral("report")] = RustCore::checkBrackets(text);
+                // The fixer's own report: what it inserted or removed, at which
+                // line:column (checkBrackets would only re-describe the input).
+                r[QStringLiteral("report")] = RustCore::fixBracketsReport(text);
             } else if (op == QLatin1String("hash_text")) {
                 static const QStringList algos = {
                     QStringLiteral("md5"), QStringLiteral("sha1"),
