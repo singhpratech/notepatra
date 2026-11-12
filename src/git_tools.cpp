@@ -12,6 +12,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <cctype>
+
 namespace GitTools {
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -169,6 +171,119 @@ QJsonObject capDiffPayload(const QByteArray &raw, int capBytes) {
     out["truncated"] = true;
     out["size_bytes"] = raw.size();
     return out;
+}
+
+// Diff flags for every patch-printing call: no colour (keeps headers parseable),
+// fixed a/ b/ prefixes, and no external diff / textconv command from repo config.
+const QStringList kSafeDiffFlags = {"--no-color", "--no-ext-diff", "--no-textconv",
+                                    "--src-prefix=a/", "--dst-prefix=b/"};
+
+// A repo-relative path is secret when the shared deny-list matches it.
+bool isSecretRepoPath(const QString &rel) {
+    if (rel.trimmed().isEmpty()) return false;
+    return AiTools::isHardDenied(QLatin1Char('/') + rel)
+        || AiTools::isHardDenied(QLatin1Char('/') + QDir::cleanPath(rel));
+}
+
+// Undo git's C-style quoting ("a/\303\251 x.env") of unusual path names.
+QByteArray unquoteGitPath(const QByteArray &s) {
+    if (s.size() < 2 || !s.startsWith('"')) return s;
+    QByteArray out;
+    for (int i = 1; i < s.size(); ++i) {
+        char c = s[i];
+        if (c == '"') break;
+        if (c != '\\' || i + 1 >= s.size()) { out += c; continue; }
+        c = s[++i];
+        if (c >= '0' && c <= '7') {
+            int v = 0, k = 0;
+            for (; k < 3 && i < s.size() && s[i] >= '0' && s[i] <= '7'; ++k, ++i)
+                v = v * 8 + (s[i] - '0');
+            --i;
+            out += char(v);
+            continue;
+        }
+        switch (c) {
+        case 'a': out += '\a'; break;
+        case 'b': out += '\b'; break;
+        case 'f': out += '\f'; break;
+        case 'n': out += '\n'; break;
+        case 'r': out += '\r'; break;
+        case 't': out += '\t'; break;
+        case 'v': out += '\v'; break;
+        default:  out += c; break;
+        }
+    }
+    return out;
+}
+
+bool isFileDiffHeader(const QByteArray &l) {
+    return l.startsWith("diff --git ") || l.startsWith("diff --cc ")
+        || l.startsWith("diff --combined ");
+}
+
+bool isCommitHeader(const QByteArray &l) {
+    if (!l.startsWith("commit ") || l.size() < 14) return false;
+    for (int i = 7; i < 14; ++i)
+        if (!isxdigit(static_cast<unsigned char>(l[i]))) return false;
+    return true;
+}
+
+// Every path a file block's header names: both sides of `diff --git`, every
+// ambiguous split of an unquoted header, ---/+++ and rename/copy lines.
+QStringList blockHeaderPaths(const QList<QByteArray> &lines, int begin, int end) {
+    QList<QByteArray> raw;
+    const QByteArray &first = lines[begin];
+    const int sp = first.indexOf(' ', first.indexOf("--") + 2);
+    const QByteArray rest = sp >= 0 ? first.mid(sp + 1) : QByteArray();
+    raw << rest;
+    for (int i = 0; i < rest.size(); ++i)
+        if (rest[i] == ' ' && (rest.mid(i + 1).startsWith("b/")
+                               || rest.mid(i + 1).startsWith("\"b/")))
+            raw << rest.left(i) << rest.mid(i + 1);
+    static const char *kPrefixes[] = {"--- ", "+++ ", "rename from ", "rename to ",
+                                      "copy from ", "copy to "};
+    for (int i = begin + 1; i < end; ++i) {
+        const QByteArray &l = lines[i];
+        if (l.startsWith("@@") || l.startsWith("Binary files")
+            || l.startsWith("GIT binary patch")) break;
+        for (const char *p : kPrefixes)
+            if (l.startsWith(p)) {
+                QByteArray v = l.mid(int(qstrlen(p)));
+                if (v.endsWith('\t')) v.chop(1);
+                raw << v;
+            }
+    }
+    QStringList out;
+    for (const QByteArray &r : raw) {
+        out << QString::fromUtf8(r);
+        if (r.startsWith('"')) out << QString::fromUtf8(unquoteGitPath(r));
+    }
+    return out;
+}
+
+// Replace each deny-listed file's patch with a one-line placeholder. Checks
+// old AND new names, so a rename to or from a secret name is redacted too.
+QByteArray redactSecretDiffs(const QByteArray &raw) {
+    const QList<QByteArray> lines = raw.split('\n');
+    QList<QByteArray> out;
+    int i = 0;
+    while (i < lines.size()) {
+        if (!isFileDiffHeader(lines[i])) { out << lines[i++]; continue; }
+        int j = i + 1;
+        while (j < lines.size() && !isFileDiffHeader(lines[j]) && !isCommitHeader(lines[j]))
+            ++j;
+        bool secret = false;
+        for (const QString &p : blockHeaderPaths(lines, i, j))
+            if (isSecretRepoPath(p)) { secret = true; break; }
+        if (secret) {
+            out << lines[i] << QByteArray("[redacted: secret-pattern path]");
+            if (j == lines.size() && lines.last().isEmpty()) out << QByteArray();
+        } else {
+            for (int k = i; k < j; ++k) out << lines[k];
+        }
+        i = j;
+    }
+    return out.join('\n');
 }
 
 } // anonymous namespace
@@ -370,7 +485,7 @@ AiTools::ToolResult executeGitDiff(const AiTools::ToolCall &call,
     const QString pathArg = call.args.value("path").toString();
 
     QStringList argv;
-    argv << "diff";
+    argv << "diff" << kSafeDiffFlags;
     if (staged) argv << "--cached";
 
     // If a path was supplied, validate it sits inside the workspace and
@@ -397,6 +512,12 @@ AiTools::ToolResult executeGitDiff(const AiTools::ToolCall &call,
             // Pass relative to working dir.
             argv << "--" << QDir(workspaceRoot).relativeFilePath(canonical);
         } else {
+            const QString real = QFileInfo(QDir(workspaceRoot).absoluteFilePath(pathArg))
+                                     .canonicalFilePath();
+            if (isSecretRepoPath(pathArg) || (!real.isEmpty() && AiTools::isHardDenied(real))) {
+                return makeError(call, "denied",
+                                 "Access to this path is restricted (credential deny-list).");
+            }
             argv << "--" << pathArg;
         }
     }
@@ -411,7 +532,7 @@ AiTools::ToolResult executeGitDiff(const AiTools::ToolCall &call,
                          QString::fromUtf8(rv.stderrBytes).trimmed());
     }
 
-    QJsonObject result = capDiffPayload(rv.stdoutBytes, Limits::kDiffMaxBytes);
+    QJsonObject result = capDiffPayload(redactSecretDiffs(rv.stdoutBytes), Limits::kDiffMaxBytes);
     result["staged"] = staged;
     if (!pathArg.trimmed().isEmpty()) result["path"] = pathArg;
     return makeSuccess(call, result);
@@ -544,7 +665,47 @@ AiTools::ToolResult executeGitShow(const AiTools::ToolCall &call,
                          "Invalid commit reference.");
     }
 
-    GitRunResult rv = runGit({"show", "--no-color", commit}, workspaceRoot);
+    // Resolve to one object id first, so what git prints is what was checked.
+    auto gitLine = [&](const QStringList &args, QString *outLine) -> AiTools::ToolResult {
+        GitRunResult r = runGit(args, workspaceRoot);
+        if (r.timedOut)
+            return makeError(call, "timeout", "git show timed out after 5 seconds.");
+        if (!r.exitOk) {
+            const QString e = QString::fromUtf8(r.stderrBytes).trimmed();
+            return makeError(call, "git_error",
+                             e.isEmpty() ? QStringLiteral("Unknown revision: %1").arg(commit) : e);
+        }
+        *outLine = QString::fromUtf8(r.stdoutBytes).trimmed();
+        return AiTools::ToolResult{};
+    };
+    QString oid, type;
+    AiTools::ToolResult err = gitLine({"rev-parse", "--verify", "--quiet", commit}, &oid);
+    if (err.isError) return err;
+    err = gitLine({"cat-file", "-t", oid}, &type);
+    if (err.isError) return err;
+    if (type == QLatin1String("tag")) {
+        QString peeled;
+        err = gitLine({"rev-parse", "--verify", "--quiet", oid + "^{}"}, &peeled);
+        if (err.isError) return err;
+        err = gitLine({"cat-file", "-t", peeled}, &type);
+        if (err.isError) return err;
+    }
+    if (type == QLatin1String("blob")) {
+        // File contents only as <rev>:<path>, and never for a deny-listed path.
+        if (!commit.contains(':')) {
+            return makeError(call, "denied",
+                             "git_show shows file contents only as <rev>:<path>.");
+        }
+        for (int i = commit.indexOf(':'); i >= 0; i = commit.indexOf(':', i + 1)) {
+            if (isSecretRepoPath(commit.mid(i + 1))) {
+                return makeError(call, "denied",
+                                 "Access to this path is restricted (credential deny-list).");
+            }
+        }
+    }
+
+    GitRunResult rv = runGit(QStringList{"show"} << kSafeDiffFlags << oid << "--",
+                             workspaceRoot);
     if (rv.timedOut) {
         return makeError(call, "timeout",
                          "git show timed out after 5 seconds.");
@@ -554,7 +715,7 @@ AiTools::ToolResult executeGitShow(const AiTools::ToolCall &call,
                          QString::fromUtf8(rv.stderrBytes).trimmed());
     }
 
-    QJsonObject result = capDiffPayload(rv.stdoutBytes, Limits::kShowMaxBytes);
+    QJsonObject result = capDiffPayload(redactSecretDiffs(rv.stdoutBytes), Limits::kShowMaxBytes);
     result["commit"] = commit;
     return makeSuccess(call, result);
 }

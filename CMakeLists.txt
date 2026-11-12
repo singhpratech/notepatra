@@ -3722,6 +3722,26 @@ if(NOTEPATRA_BUILD_TESTS)
     message(STATUS "Regression tests enabled — coding-agent write path (4 targets)")
 endif()
 
+# v0.1.133 follow-ups — secret files stay out of git/MCP/list_dir output.
+if(NOTEPATRA_BUILD_TESTS)
+    foreach(_sec_t test_git_tools_secrets)
+        add_executable(${_sec_t}
+            ${_sec_t}.cpp
+            src/ai_tools.cpp
+            src/path_denylist.cpp
+            src/atomic_write.cpp
+            src/git_tools.cpp
+            src/csvanalyst.cpp
+            src/dbconnections.cpp
+        )
+        target_include_directories(${_sec_t} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_sec_t} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+        add_test(NAME ${_sec_t} COMMAND $<TARGET_FILE:${_sec_t}>)
+        set_tests_properties(${_sec_t} PROPERTIES
+            LABELS "unit;ai;tools;security" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+    endforeach()
+endif()
+
 # ── Install ──
 if(APPLE)
     install(TARGETS ${EXE_NAME} BUNDLE DESTINATION .)
