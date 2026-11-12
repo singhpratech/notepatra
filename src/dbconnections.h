@@ -106,6 +106,12 @@ struct SqlVerdict {
     bool mutation = false;         // authoritative "this changes data/state"
                                    // verdict for the human-approval gate
     QString reason;                // why it was rejected (empty if readOnly)
+    // v0.1.133: refusals no approval may override (statement stacking, an
+    // ambiguous comment or U& escape, a file/URL read, a side-effecting or
+    // command-running function or procedure). The MCP execute_sql gate.
+    bool hardFail = false;
+    QString hardReason;
+    int statementCount = 0;        // most statements any engine's lexing sees
 };
 // `restrictFilesystem` (default false) additionally rejects call-form use of
 // DuckDB filesystem-reading table functions (read_text/read_csv_auto/
@@ -120,6 +126,13 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem = false,
 
 // True for drivers whose server executes a whole batch without ';' separators.
 bool driverRunsUnterminatedBatches(const QString &driver);
+
+// v0.1.133: the gate for a write a human approves over MCP (execute_sql).
+// classifySql with the filesystem restriction and the driver's batch rules,
+// plus hardFail for statements that reach files, the network, code or session
+// state (COPY, ATTACH, LOAD/INSTALL, CALL/EXECUTE, SET, transaction control,
+// CREATE FUNCTION/EXTENSION/..., ALTER SYSTEM): no approval card runs those.
+SqlVerdict classifyApprovedWrite(const QString &sql, const QString &driver);
 
 // Convenience wrappers over classifySql.
 //   isReadOnlyQuery: safe to run in the default (no-approval) path.

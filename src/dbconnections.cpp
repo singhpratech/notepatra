@@ -1098,7 +1098,10 @@ static bool isObjectNameOnly(const QString &body, const QStringList &words) {
 static void classifyOneStatement(const QString &stmt, bool *mutation,
                                  bool *readOnly, QString *why,
                                  bool restrictFilesystem = false,
-                                 bool strictBatch = false, int explainDepth = 0) {
+                                 bool strictBatch = false, int explainDepth = 0,
+                                 bool *hard = nullptr) {
+    // Marks a refusal that approval must never override (v0.1.133).
+    auto hardStop = [hard]() { if (hard) *hard = true; };
     const QStringList toks = wordTokens(stmt);
     const QVector<StructToken> stoks = structTokens(stmt);
     *mutation = false;
@@ -1127,16 +1130,19 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         case FileTableRef::String:
             if (why) *why = QStringLiteral(
                 "a quoted string used as a table name is read as a file or URL and is not allowed");
+            hardStop();
             return;
         case FileTableRef::QuotedPath:
             if (why) *why = QStringLiteral(
                 "a quoted table name that looks like a file path, URL or glob is read as a "
                 "file and is not allowed");
+            hardStop();
             return;
         case FileTableRef::DottedFile:
             if (why) *why = QStringLiteral(
                 "a table name ending in a data-file extension (like data.csv) is read as a "
                 "file and is not allowed");
+            hardStop();
             return;
         case FileTableRef::None:
             break;
@@ -1158,6 +1164,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
             if (why) *why = QStringLiteral(
                 "call to the side-effecting function '%1' requires approval")
                 .arg(fn);
+            hardStop();
             return;
         }
         // MCP run_sql path only: DuckDB filesystem-reading functions are a
@@ -1168,6 +1175,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
             && fileReadingFunctions().contains(fn)) {
             if (why) *why = QStringLiteral(
                 "filesystem-reading function '%1' is not allowed").arg(fn);
+            hardStop();
             return;
         }
         if (tk.text == QStringLiteral("NEXT") && idx + 2 < stoks.size()
@@ -1224,6 +1232,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
                 *mutation = true;
                 if (why) *why = QStringLiteral(
                     "T-SQL procedure '%1' runs commands or dynamic SQL").arg(proc);
+                hardStop();
                 return;
             }
             if (!tk.afterDot && !tk.afterAs && tsqlConditionalBatchKeyword(tk.text, next)) {
@@ -1231,6 +1240,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
                 if (why) *why = QStringLiteral(
                     "T-SQL statement keyword '%1 %2' starts another statement "
                     "(this driver runs batches without ';')").arg(tk.text, next);
+                hardStop();
                 return;
             }
             if (tk.afterDot || tk.afterAs || !tsqlBatchKeywords().contains(tk.text)) continue;
@@ -1247,6 +1257,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
             if (why) *why = QStringLiteral(
                 "T-SQL statement keyword '%1' starts another statement "
                 "(this driver runs batches without ';')").arg(tk.text);
+            hardStop();
             return;
         }
     }
@@ -1273,7 +1284,7 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         bool innerMut = false, innerRo = false;
         QString innerWhy;
         classifyOneStatement(body, &innerMut, &innerRo, &innerWhy, restrictFilesystem,
-                             strictBatch, explainDepth + 1);
+                             strictBatch, explainDepth + 1, hard);
         const QString inner = btoks.first();
         if (readBaseKeywords().contains(inner)) {
             if (innerRo) { *readOnly = true; return; }
@@ -1363,14 +1374,19 @@ static SqlVerdict classifyLexed(const QString &sql, const LexMode &mode,
         return v;
     }
     v.singleStatement = (stmts.size() == 1);
+    v.statementCount = stmts.size();
 
     bool anyMutation = false;
     bool allReadOnly = true;
     QString firstReason;
     for (const QString &st : stmts) {
-        bool mut = false, ro = false;
+        bool mut = false, ro = false, hard = false;
         QString why;
-        classifyOneStatement(st, &mut, &ro, &why, restrictFilesystem, strictBatch);
+        classifyOneStatement(st, &mut, &ro, &why, restrictFilesystem, strictBatch, 0, &hard);
+        if (hard && !v.hardFail) {
+            v.hardFail = true;
+            v.hardReason = why;
+        }
         if (mut) anyMutation = true;
         if (!ro) {
             allReadOnly = false;
@@ -1387,6 +1403,8 @@ static SqlVerdict classifyLexed(const QString &sql, const LexMode &mode,
         v.reason = QStringLiteral(
             "a block comment containing '/*' is not allowed: nested comments are read "
             "differently by different databases and can hide a statement");
+        v.hardFail = true;
+        v.hardReason = v.reason;
         return v;
     }
     if (flags.unicodeQuote) {
@@ -1394,6 +1412,8 @@ static SqlVerdict classifyLexed(const QString &sql, const LexMode &mode,
         v.reason = QStringLiteral(
             "Unicode-escaped U&\"...\" / U&'...' names and strings are not allowed "
             "(escapes can spell a blocked function name)");
+        v.hardFail = true;
+        v.hardReason = v.reason;
         return v;
     }
     if (!v.readOnly) {
@@ -1429,6 +1449,11 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictB
         const SqlVerdict v = classifyLexed(sql, m, restrictFilesystem, strictBatch && m.brackets);
         out.mutation = out.mutation || v.mutation;
         out.singleStatement = out.singleStatement && v.singleStatement;
+        out.statementCount = qMax(out.statementCount, v.statementCount);
+        if (v.hardFail && !out.hardFail) {
+            out.hardFail = true;
+            out.hardReason = v.hardReason;
+        }
         if (!v.readOnly && out.readOnly) {
             out.readOnly = false;
             out.reason = v.reason;  // first (standard-first) rejection wins
@@ -1442,6 +1467,51 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictB
 
 bool driverRunsUnterminatedBatches(const QString &driver) {
     return driver == QStringLiteral("QODBC") || driver == QStringLiteral("QODBC3");
+}
+
+SqlVerdict classifyApprovedWrite(const QString &sql, const QString &driver) {
+    SqlVerdict v = classifySql(sql, /*restrictFilesystem=*/true,
+                               driverRunsUnterminatedBatches(driver));
+    if (v.hardFail) return v;
+    // Statement forms that escape the database: files, network, code, session.
+    static const QSet<QString> escapeBases = {
+        "ATTACH", "DETACH", "COPY", "EXPORT", "IMPORT", "INSTALL", "LOAD", "CALL",
+        "EXEC", "EXECUTE", "PREPARE", "DEALLOCATE", "SET", "RESET", "USE", "PRAGMA",
+        "BEGIN", "START", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "LOCK", "UNLOCK",
+        "DO", "HANDLER", "SHUTDOWN", "KILL"};
+    static const QSet<QString> createdCode = {
+        "FUNCTION", "PROCEDURE", "EXTENSION", "SECRET", "SERVER", "FOREIGN", "LANGUAGE",
+        "TRIGGER", "EVENT", "RULE", "MACRO", "AGGREGATE", "OPERATOR", "CAST",
+        "TRANSFORM", "SUBSCRIPTION", "PUBLICATION", "USER", "ROLE", "LOGIN"};
+    LexMode m;
+    m.nestedComments = true;
+    const QStringList toks = wordTokens(stripSqlNoise(sql, m));
+    auto refuse = [&v](const QString &why) {
+        v.hardFail = true;
+        v.hardReason = why;
+        return v;
+    };
+    for (int i = 0; i < toks.size(); ++i) {
+        const QString &t = toks[i];
+        if ((i == 0 && escapeBases.contains(t)) || t == QLatin1String("OUTFILE") ||
+            t == QLatin1String("DUMPFILE") || t == QLatin1String("INFILE"))
+            return refuse(QStringLiteral("'%1' reads or writes files, reaches the network, runs "
+                                         "code or changes session state").arg(t));
+        if (t == QLatin1String("ALTER") && toks.value(i + 1) == QLatin1String("SYSTEM"))
+            return refuse(QStringLiteral("'ALTER SYSTEM' changes the server configuration"));
+        if (t == QLatin1String("CREATE") || t == QLatin1String("ALTER") ||
+            t == QLatin1String("DROP")) {
+            static const QSet<QString> modifiers = {
+                "OR", "REPLACE", "TEMP", "TEMPORARY", "TRUSTED", "PROCEDURAL",
+                "CONSTRAINT", "PERSISTENT", "GLOBAL", "LOCAL", "DEFINER"};
+            int k = i + 1;
+            while (k < toks.size() && modifiers.contains(toks[k])) ++k;
+            if (k < toks.size() && createdCode.contains(toks[k]))
+                return refuse(QStringLiteral("'%1 %2' manages code, accounts or external "
+                                             "access").arg(t, toks[k]));
+        }
+    }
+    return v;
 }
 
 bool isReadOnlyQuery(const QString &sql) {
