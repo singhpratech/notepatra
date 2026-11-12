@@ -214,6 +214,16 @@ bool resolveSafeWritePath(const QString &pathArg,
         setError("denied"); return false;
     }
 
+    // An existing leaf may be a symlink: anchor + deny-check its target too.
+    const QFileInfo leaf(targetAbs);
+    if (leaf.isSymLink() || leaf.exists()) {
+        const QString real = leaf.canonicalFilePath();
+        if (real.isEmpty() || (real != canonicalWs && !real.startsWith(wsPrefix))) {
+            setError("outside_workspace"); return false;
+        }
+        if (isHardDenied(real)) { setError("denied"); return false; }
+        targetAbs = real;
+    }
 
     if (outAbsTarget) *outAbsTarget = targetAbs;
     return true;
@@ -1373,6 +1383,12 @@ ToolResult executeSearch(const ToolCall &call, const QString &workspaceRoot) {
         if (skip) continue;
 
         QFileInfo fi(fp);
+        // Same deny-list as read_file, on the link AND its target; never
+        // follow a symlink out of the workspace.
+        const QString real = fi.canonicalFilePath();
+        if (real.isEmpty() || (real != canonicalWs && !real.startsWith(wsPrefix))
+            || isHardDenied(fp) || isHardDenied(real))
+            continue;
         if (!globMatches(fi.fileName())) continue;
         // Skip absurdly large files to keep the tool snappy.
         if (fi.size() > 5 * 1024 * 1024) continue;
