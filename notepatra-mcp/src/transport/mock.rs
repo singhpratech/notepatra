@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use serde_json::{json, Value};
 
+mod verbs;
+
 use super::{
-    EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef, TabSelector,
-    TransportError,
+    EditorTransport, OpenedTab, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef,
+    TabSelector, TransportError,
 };
 
 /// Cap mirrored from the C++ bridge (kMaxFindMatches in src/mcp_bridge.cpp):
 /// find_in_tab stops after this many matches and sets `truncated`.
 const FIND_IN_TAB_CAP: usize = 500;
+
+/// Diagram export formats the mock pretends this build supports.
+const MOCK_DIAGRAM_FORMATS: &[&str] = &["png", "jpeg", "pdf"];
 
 /// Mock Noter root: create_note echoes note paths under this directory so
 /// `notepatra-mcp` (no --socket) demos the full write surface believably.
@@ -108,6 +113,8 @@ pub struct MockEditor {
     reminders: Vec<MockReminder>,
     connections: Vec<MockConnection>,
     approval: ApprovalMode,
+    /// Test hook: list_notes fails with this text (blocked Noter folder).
+    notes_error: Option<String>,
     /// Monotonic source for MockTab::id — never reused, so a closed tab's id
     /// can never silently resolve to a different document (v0.1.126, NP-13).
     next_tab_id: i64,
@@ -246,6 +253,7 @@ impl Default for MockEditor {
                 database: ":memory:",
             }],
             approval: ApprovalMode::Approve,
+            notes_error: None,
         }
     }
 }
@@ -316,6 +324,28 @@ impl MockEditor {
         self.approval = mode;
     }
 
+    /// Test hook: add a Diagram tab holding `source`; returns its tab id.
+    pub fn add_diagram_tab(&mut self, title: &str, source: &str) -> i64 {
+        let id = self.next_tab_id();
+        self.tabs.push(MockTab {
+            title: title.to_string(),
+            path: None,
+            content: source.to_string(),
+            modified: false,
+            language: "Plain Text".into(),
+            truncated: false,
+            is_diagram: true,
+            editable: false,
+            id,
+        });
+        id
+    }
+
+    /// Test hook: make list_notes fail the way a blocked Noter folder does.
+    pub fn simulate_notes_error(&mut self, message: &str) {
+        self.notes_error = Some(message.to_string());
+    }
+
     /// Test hook: mark a tab so reads report `truncated: true` (the real
     /// editor caps read_tab at 5 MB).
     pub fn simulate_truncated_tab(&mut self, index: usize) {
@@ -361,13 +391,20 @@ impl EditorTransport for MockEditor {
         true
     }
 
-    fn open_file(&mut self, path: &str) -> Result<usize, TransportError> {
+    fn call_verb(&mut self, verb: &str, args: Value) -> Result<Value, TransportError> {
+        self.mock_verb(verb, &args)
+    }
+
+    fn open_file(&mut self, path: &str) -> Result<OpenedTab, TransportError> {
         if let Some(i) = self
             .tabs
             .iter()
             .position(|t| t.path.as_deref() == Some(path))
         {
-            return Ok(i);
+            return Ok(OpenedTab {
+                index: i,
+                id: Some(self.tabs[i].id),
+            });
         }
         let title = path.rsplit('/').next().unwrap_or(path).to_string();
         let new_id = self.next_tab_id();
@@ -382,7 +419,10 @@ impl EditorTransport for MockEditor {
             editable: true,
             id: new_id,
         });
-        Ok(self.tabs.len() - 1)
+        Ok(OpenedTab {
+            index: self.tabs.len() - 1,
+            id: Some(new_id),
+        })
     }
 
     fn list_open_tabs(&self) -> Result<Vec<TabInfo>, TransportError> {
@@ -468,6 +508,8 @@ impl EditorTransport for MockEditor {
         let t = &self.tabs[i];
         Ok(json!({
             "tab_index": i,
+            "tab_id": t.id,
+            "modified": t.modified,
             "title": t.title,
             "path": t.path,
             "language": t.language,
@@ -547,7 +589,7 @@ impl EditorTransport for MockEditor {
             editable: true,
             id: new_id,
         });
-        Ok(json!({ "tab_index": self.tabs.len() - 1 }))
+        Ok(json!({ "tab_index": self.tabs.len() - 1, "tab_id": new_id }))
     }
 
     fn goto_line(&mut self, line: usize, tab: TabRef) -> Result<Value, TransportError> {
@@ -616,9 +658,12 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "ok": true, "tab_index": i, "language": language }))
     }
 
-    fn compare_tabs(&mut self, index_a: usize, index_b: usize) -> Result<Value, TransportError> {
-        self.check_index(index_a)?;
-        self.check_index(index_b)?;
+    fn compare_tabs(&mut self, a: TabRef, b: TabRef) -> Result<Value, TransportError> {
+        if a.is_unset() || b.is_unset() {
+            return Err(TransportError("compare needs two tabs".into()));
+        }
+        let index_a = self.resolve(a)?;
+        let index_b = self.resolve(b)?;
         if index_a == index_b {
             return Err(TransportError("compare needs two different tabs".into()));
         }
@@ -652,6 +697,9 @@ impl EditorTransport for MockEditor {
     }
 
     fn list_notes(&self) -> Result<Value, TransportError> {
+        if let Some(e) = &self.notes_error {
+            return Err(TransportError(e.clone()));
+        }
         let notes: Vec<Value> = self
             .notes
             .iter()
@@ -908,6 +956,7 @@ impl EditorTransport for MockEditor {
             "platform": std::env::consts::OS,
             "version": "0.1.119",
             "features": { "duckdb": false, "webengine": false, "noter": true },
+            "diagram_export_formats": MOCK_DIAGRAM_FORMATS,
         }))
     }
 
@@ -1002,13 +1051,19 @@ impl EditorTransport for MockEditor {
         path: &str,
         format: &str,
     ) -> Result<Value, TransportError> {
-        self.check_approval()?;
-        self.resolve(tab)?;
-        if format != "png" && format != "pdf" {
+        let i = self.resolve(tab)?;
+        if !self.tabs[i].is_diagram {
             return Err(TransportError(format!(
-                "unsupported export format {format:?} (expected png or pdf)"
+                "tab {i} is not a diagram (.npd) tab"
             )));
         }
+        if !MOCK_DIAGRAM_FORMATS.contains(&format) {
+            return Err(TransportError(format!(
+                "unsupported format: {format} (this build supports: {})",
+                MOCK_DIAGRAM_FORMATS.join("|")
+            )));
+        }
+        self.check_approval()?;
         // Bridge result shape: {path}.
         Ok(json!({ "path": path }))
     }
@@ -1037,6 +1092,7 @@ impl EditorTransport for MockEditor {
         });
         Ok(json!({
             "tab_index": self.tabs.len() - 1,
+            "tab_id": new_id,
             "valid": errors.is_empty(),
             "errors": errors,
         }))

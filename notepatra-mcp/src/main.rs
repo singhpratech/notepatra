@@ -83,7 +83,19 @@ fn main() -> std::io::Result<()> {
     let stdin = std::io::stdin().lock();
     let stdout = std::io::stdout().lock();
     if use_socket {
-        Server::new(SocketEditor::new()).run(stdin, stdout)
+        // Progress lines share stdout with responses; Stdout's lock is
+        // re-entrant, and every line is written whole and flushed.
+        let notifier: notepatra_mcp::server::Notifier = std::sync::Arc::new(|v| {
+            use std::io::Write;
+            let mut out = std::io::stdout().lock();
+            if serde_json::to_writer(&mut out, v).is_ok() {
+                let _ = out.write_all(b"\n");
+                let _ = out.flush();
+            }
+        });
+        Server::new(SocketEditor::new())
+            .with_notifier(notifier)
+            .run(stdin, stdout)
     } else {
         Server::new(MockEditor::default()).run(stdin, stdout)
     }

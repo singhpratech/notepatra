@@ -36,6 +36,13 @@ pub struct TabInfo {
     pub id_legacy: Option<i64>,
 }
 
+/// `open_file` result: `{opened,tab_index,tab_id?}` (tab_id: v0.1.133).
+#[derive(Debug, Clone, Copy)]
+pub struct OpenedTab {
+    pub index: usize,
+    pub id: Option<i64>,
+}
+
 /// `read_tab` result — wire shape `{title,path,text}` plus `truncated:true`
 /// only when the editor capped the text (absent otherwise).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -185,6 +192,10 @@ impl From<Option<usize>> for TabRef {
     }
 }
 
+/// Called while a request waits on the human approval card:
+/// `(seconds waited, seconds the card allows)` (v0.1.133, D16).
+pub type ProgressHook = std::sync::Arc<dyn Fn(f64, f64) + Send + Sync>;
+
 /// Editor-side failure; surfaces to MCP clients as an `isError: true` tool
 /// result (per spec, tool execution errors are results, not protocol errors).
 #[derive(Debug)]
@@ -309,8 +320,16 @@ pub trait EditorTransport {
         false
     }
 
-    /// Returns the tab index the file landed in.
-    fn open_file(&mut self, path: &str) -> Result<usize, TransportError>;
+    /// Install (or clear) the hook a long approval wait reports through.
+    /// Transports that never wait ignore it.
+    fn set_progress(&mut self, _hook: Option<ProgressHook>) {}
+
+    /// Generic verb round-trip for the v0.1.133 tools: `args` goes to the
+    /// bridge as-is and its JSON result comes back verbatim.
+    fn call_verb(&mut self, verb: &str, args: Value) -> Result<Value, TransportError>;
+
+    /// Returns the tab the file landed in (index + stable id when known).
+    fn open_file(&mut self, path: &str) -> Result<OpenedTab, TransportError>;
     fn list_open_tabs(&self) -> Result<Vec<TabInfo>, TransportError>;
     /// `max_bytes` caps the returned text below the editor's own 5 MB ceiling
     /// (v0.1.126, NP-10).
@@ -353,7 +372,8 @@ pub trait EditorTransport {
         end_col: usize,
     ) -> Result<Value, TransportError>;
     fn set_language(&mut self, language: &str, tab: TabRef) -> Result<Value, TransportError>;
-    fn compare_tabs(&mut self, index_a: usize, index_b: usize) -> Result<Value, TransportError>;
+    /// Each side is a tab_id or an index (v0.1.133, D3).
+    fn compare_tabs(&mut self, a: TabRef, b: TabRef) -> Result<Value, TransportError>;
     fn format_text(&self, kind: &str, text: &str) -> Result<Value, TransportError>;
     fn list_notes(&self) -> Result<Value, TransportError>;
     fn read_note(&self, file: &str) -> Result<Value, TransportError>;

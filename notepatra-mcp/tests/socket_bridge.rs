@@ -100,7 +100,10 @@ fn greeting_then_round_trips_with_sequential_ids() {
     assert_eq!(info["edition"], "Full");
     // Second call reuses the connection with the next id, and the typed
     // wave-1 parsing maps {opened,tab_index} into the tab index.
-    let index = ed.open_file("/tmp/x.txt").expect("open_file round-trip");
+    let index = ed
+        .open_file("/tmp/x.txt")
+        .expect("open_file round-trip")
+        .index;
     assert_eq!(index, 4);
     cleanup(
         path,
@@ -800,4 +803,73 @@ fn phase2_verbs_send_exact_arg_keys() {
     ed.export_chart(&spec, "/tmp/c.png", "png", None)
         .expect("export_chart");
     cleanup(path, bridge, "phase2_verbs_send_exact_arg_keys");
+}
+
+/// v0.1.133 (D16): a tools/call that carries `_meta.progressToken` hears
+/// `notifications/progress` while the editor holds the request on the human
+/// approval card, and the final response still arrives afterwards.
+#[test]
+fn approval_wait_emits_progress_notifications() {
+    use notepatra_mcp::server::{Notifier, Server};
+    use std::sync::{Arc, Mutex};
+
+    let _wd = Watchdog::new(SUITE, "approval_wait_emits_progress_notifications");
+    let (path, bridge) = spawn_bridge(|stream| {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+        let mut stream = stream;
+        writeln!(stream, "{GREETING}").unwrap();
+        for delay in [700u64, 0] {
+            let mut line = String::new();
+            if reader.read_line(&mut line).unwrap() == 0 {
+                return;
+            }
+            let req: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(req["verb"], "insert_text");
+            // The human takes a while: several progress ticks elapse.
+            std::thread::sleep(Duration::from_millis(delay));
+            let resp = json!({ "id": req["id"], "ok": true, "result": { "tab_index": 0 } });
+            writeln!(stream, "{resp}").unwrap();
+        }
+    });
+    let ed = SocketEditor::with_socket_path(path.to_str().unwrap())
+        .with_timeouts(Duration::from_millis(100), Duration::from_millis(100))
+        .with_approval_timeout(Duration::from_secs(3))
+        .with_progress_tick(Duration::from_millis(150));
+    let seen: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    let notifier: Notifier = Arc::new(move |v: &Value| sink.lock().unwrap().push(v.clone()));
+    let mut server = Server::new(ed).with_notifier(notifier);
+    let call = json!({
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": { "name": "insert_text", "arguments": { "text": "x" },
+                    "_meta": { "progressToken": "tok-1" } }
+    });
+    let resp = server.handle_line(&call.to_string()).expect("a response");
+    assert_eq!(resp["id"], 9);
+    assert_eq!(resp["result"]["isError"], false, "{resp}");
+    let notes = seen.lock().unwrap().clone();
+    assert!(
+        notes.len() >= 2,
+        "expected progress during the wait, got {notes:?}"
+    );
+    let mut last = -1.0;
+    for n in &notes {
+        assert_eq!(n["method"], "notifications/progress");
+        assert_eq!(n["params"]["progressToken"], "tok-1");
+        assert_eq!(n["params"]["total"], 3.0);
+        let p = n["params"]["progress"].as_f64().unwrap();
+        // MCP: progress MUST increase with each notification.
+        assert!(p > last, "progress must increase: {notes:?}");
+        last = p;
+    }
+    // Without a token the same wait is silent, exactly as before.
+    seen.lock().unwrap().clear();
+    let plain = json!({
+        "jsonrpc": "2.0", "id": 10, "method": "tools/call",
+        "params": { "name": "insert_text", "arguments": { "text": "y" } }
+    });
+    let resp = server.handle_line(&plain.to_string()).expect("a response");
+    assert_eq!(resp["result"]["isError"], false, "{resp}");
+    assert!(seen.lock().unwrap().is_empty());
+    cleanup(path, bridge, "approval_wait_emits_progress_notifications");
 }

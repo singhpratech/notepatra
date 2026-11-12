@@ -34,6 +34,10 @@ pub const READ_TOOLS: &[&str] = &[
     "list_languages",
     "get_capabilities",
     "get_diagram_source",
+    // v0.1.133 (D14): pure text-in/text-out, no editor state touched.
+    "format_json",
+    "format_sql",
+    "format_html",
     // phase 2
     "list_connections",
     "run_query",
@@ -46,9 +50,6 @@ pub const ACT_TOOLS: &[&str] = &[
     "select_range",
     "set_language",
     "compare_tabs",
-    "format_json",
-    "format_sql",
-    "format_html",
     "open_note",
     "create_diagram",
     "open_noter",
@@ -259,14 +260,16 @@ pub fn definitions() -> Value {
         },
         {
             "name": "compare_tabs",
-            "description": "Open Notepatra's side-by-side Compare view for two open tabs. Use when the user wants to diff two documents they have open.",
+            "description": "Open Notepatra's side-by-side Compare view for two open tabs. Name each side by tab_id_a / tab_id_b (stable ids from list_open_tabs, preferred) or index_a / index_b (exactly one selector per side). Use when the user wants to see two open documents side by side; use diff_text to get the hunks back as data instead.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id_a": { "type": "integer", "description": "Stable tab id of the first tab (from list_open_tabs)" },
+                    "tab_id_b": { "type": "integer", "description": "Stable tab id of the second tab (from list_open_tabs)" },
                     "index_a": { "type": "integer", "minimum": 0, "description": "Zero-based index of the first tab" },
                     "index_b": { "type": "integer", "minimum": 0, "description": "Zero-based index of the second tab" }
                 },
-                "required": ["index_a", "index_b"],
+                "required": [],
                 "additionalProperties": false
             }
         },
@@ -419,7 +422,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "validate_npd",
-            "description": "Validate a Notepatra Diagram (.npd) document and return whether it parses plus any errors with line and column. Provide exactly one of tab_index (validate an open tab) or source (validate a string). Use before export_diagram to confirm the diagram is well-formed.",
+            "description": "Validate a Notepatra Diagram (.npd) document and return whether it parses plus any errors with line and column. Provide exactly one of tab_id / tab_index (validate an open Diagram tab) or source (validate a string). Use before export_diagram to confirm the diagram is well-formed.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -509,7 +512,12 @@ pub fn definitions() -> Value {
         {
             "name": "export_diagram",
             "description": format!(
-                "Export the Notepatra Diagram (.npd) in an open tab to an image or PDF at a path on disk. \
+                "Export the Notepatra Diagram (.npd) in an open tab (tab_id or tab_index) to a \
+                 file on disk. png, jpeg and pdf are always available; webp, svg and html \
+                 only where this build supports them (get_capabilities lists \
+                 diagram_export_formats). The file is written to a temporary name and \
+                 replaced in one step. Protected destinations (shell start-up files, \
+                 credential stores, git hooks, autostart entries) are refused. \
                  {APPROVAL_NOTE}"
             ),
             "inputSchema": {
@@ -517,10 +525,10 @@ pub fn definitions() -> Value {
                 "properties": {
                     "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the tab holding the .npd diagram" },
-                    "path": { "type": "string", "description": "Absolute output path for the exported file" },
-                    "format": { "type": "string", "enum": ["png", "pdf"], "description": "Export format: png or pdf" }
+                    "path": { "type": "string", "description": "Absolute output path for the exported file; its folder must exist" },
+                    "format": { "type": "string", "description": "Export format, lowercase: png, jpeg, pdf, and webp / svg / html where supported (see get_capabilities.diagram_export_formats)" }
                 },
-                "required": ["tab_index", "path", "format"],
+                "required": ["path", "format"],
                 "additionalProperties": false
             }
         },
@@ -551,21 +559,22 @@ pub fn definitions() -> Value {
         },
         {
             "name": "get_diagram_source",
-            "description": "Read the .npd source of an open Diagram tab by index. Errors if the tab is not a Diagram tab; use list_open_tabs to find it.",
+            "description": "Read the .npd source of an open Diagram tab, selected by tab_id (preferred) or tab_index. Errors if the tab is not a Diagram tab; use list_open_tabs to find it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" }
                 },
-                "required": ["tab_index"],
+                "required": [],
                 "additionalProperties": false
             }
         },
         {
             "name": "set_diagram_source",
             "description": format!(
-                "Replace the entire .npd source of an open Diagram tab; the canvas \
+                "Replace the entire .npd source of an open Diagram tab (tab_id or \
+                 tab_index); the canvas \
                  re-renders immediately and the result reports valid plus any parse \
                  errors. {APPROVAL_NOTE}"
             ),
@@ -576,7 +585,7 @@ pub fn definitions() -> Value {
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" },
                     "source": { "type": "string", "description": "The new .npd document text (replaces the whole source)" }
                 },
-                "required": ["tab_index", "source"],
+                "required": ["source"],
                 "additionalProperties": false
             }
         },
@@ -776,15 +785,6 @@ fn optional_str<'a>(
     }
 }
 
-fn required_index(args: &Map<String, Value>, key: &str) -> Result<usize, CallOutcome> {
-    match args.get(key) {
-        Some(v) => v.as_u64().map(|n| n as usize).ok_or_else(|| {
-            CallOutcome::InvalidParams(format!("{key} must be a non-negative integer"))
-        }),
-        None => Err(CallOutcome::InvalidParams(format!("{key} is required"))),
-    }
-}
-
 fn optional_index(args: &Map<String, Value>, key: &str) -> Result<Option<usize>, CallOutcome> {
     match args.get(key) {
         None => Ok(None),
@@ -923,7 +923,10 @@ fn open_file(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
         Err(e) => return e,
     };
     match transport.open_file(path) {
-        Ok(index) => CallOutcome::Ok(format!("Opened {path} as tab {index}")),
+        Ok(t) => CallOutcome::Ok(match t.id {
+            Some(id) => format!("Opened {path} as tab {} (tab_id {id})", t.index),
+            None => format!("Opened {path} as tab {}", t.index),
+        }),
         Err(e) => CallOutcome::ToolError(e.0),
     }
 }
@@ -1145,18 +1148,37 @@ fn set_language(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
 }
 
 fn compare_tabs(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["index_a", "index_b"]) {
+    if let Err(e) = reject_extras(args, &["index_a", "index_b", "tab_id_a", "tab_id_b"]) {
         return e;
     }
-    let index_a = match required_index(args, "index_a") {
-        Ok(i) => i,
-        Err(e) => return e,
-    };
-    let index_b = match required_index(args, "index_b") {
-        Ok(i) => i,
-        Err(e) => return e,
-    };
-    to_outcome(transport.compare_tabs(index_a, index_b))
+    let mut sides = [TabRef::default(); 2];
+    for (n, side) in ["a", "b"].iter().enumerate() {
+        let id_key = format!("tab_id_{side}");
+        let idx_key = format!("index_{side}");
+        let id = match args.get(&id_key) {
+            None => None,
+            Some(v) => match v.as_i64() {
+                Some(i) => Some(i),
+                None => return CallOutcome::InvalidParams(format!("{id_key} must be an integer")),
+            },
+        };
+        let index = match optional_index(args, &idx_key) {
+            Ok(i) => i,
+            Err(e) => return e,
+        };
+        match (id, index) {
+            (Some(_), Some(_)) => {
+                return CallOutcome::InvalidParams(format!(
+                    "provide {id_key} or {idx_key}, not both"
+                ))
+            }
+            (None, None) => {
+                return CallOutcome::InvalidParams(format!("provide {id_key} or {idx_key}"))
+            }
+            _ => sides[n] = TabRef { index, id },
+        }
+    }
+    to_outcome(transport.compare_tabs(sides[0], sides[1]))
 }
 
 fn format_text(
@@ -1323,15 +1345,16 @@ fn validate_npd(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
     if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "source"]) {
         return e;
     }
-    // Exactly one selector, mirroring read_tab's index-or-title contract.
-    match (args.get("tab_index"), args.get("source")) {
-        (Some(_), Some(_)) => {
+    // Exactly one selector: a tab (tab_id or tab_index) or a source string.
+    let has_tab = args.contains_key("tab_index") || args.contains_key("tab_id");
+    match (has_tab, args.contains_key("source")) {
+        (true, true) => {
             return CallOutcome::InvalidParams(
-                "provide exactly one of tab_index or source, not both".into(),
+                "provide exactly one of tab_id, tab_index or source".into(),
             )
         }
-        (None, None) => {
-            return CallOutcome::InvalidParams("provide tab_index or source".into());
+        (false, false) => {
+            return CallOutcome::InvalidParams("provide tab_id, tab_index or source".into());
         }
         _ => {}
     }
@@ -1437,8 +1460,12 @@ fn export_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>
         Ok(f) => f,
         Err(e) => return e,
     };
-    if format != "png" && format != "pdf" {
-        return CallOutcome::InvalidParams("format must be \"png\" or \"pdf\"".into());
+    // The accepted set is the running editor's (DiagramView, asked at
+    // runtime); only reject what no build could ever produce.
+    if format.is_empty() || !format.chars().all(|c| c.is_ascii_lowercase()) {
+        return CallOutcome::InvalidParams(
+            "format must be a lowercase format name such as \"png\" or \"pdf\"".into(),
+        );
     }
     to_outcome(transport.export_diagram(tab, path, format))
 }
