@@ -96,21 +96,21 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 |---|---|
 | **Format** | Pretty-print changing whitespace only: key order, duplicate keys, number text (`1.0`, `-0`, 30-digit integers) and escapes are kept byte for byte. Invalid JSON is left untouched and the error says where (`line 3, column 7: expected ',' or ']' ...`) |
 | **Minify** | Compact to one line (whitespace between tokens only; never inside strings) |
-| **Fix + Format** | Rust-powered repair of unambiguous faults — trailing commas, `//` / `/* */` comments, single or curly quotes, unquoted keys, Python `True`/`False`/`None`, raw line breaks in strings, a missing `:` or a missing `,` at a line end — listing every change with its line and column. When the right repair would be a guess (unclosed brackets at the end: missing closer or truncated file?, `NaN`, a stray `]`) it changes nothing and says exactly where |
+| **Fix + Format** | Rust-powered repair of unambiguous faults — trailing commas, `//` / `/* */` comments, single or curly quotes, unquoted keys, Python `True`/`False`/`None`, raw line breaks in strings, a missing `:` or a missing `,` at a line end. The output is only the repaired JSON; the status banner summarises the changes and its tooltip lists every one with its line and column. When the right repair would be a guess (unclosed brackets at the end: missing closer or truncated file?, `NaN`, a stray `]`) it changes nothing and says exactly where |
 | **AI Fix (Ollama)** | Sends truly broken JSON to your local AI — fixes what regex can't |
 
 #### HTML Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Format (2/4 spaces)** | Proper HTML indentation |
-| **Minify** | Strip all whitespace |
-| **Fix + Format** | Auto-close unclosed tags, detect missing closers, report issues |
+| **Format (2/4 spaces)** | Re-indent changing only whitespace a browser does not render (`<pre>`, `<textarea>`, scripts and spaces between inline elements are kept). A document it cannot follow exactly (mis-nested or stray tags, server-side code, ...) is left unchanged and the banner says what and where (line, column) |
+| **Minify** | Remove only unrendered whitespace, same rules |
+| **Check + Format** | The same check, then 2-space re-indent; it never adds or rewrites tags |
 | **AI Fix (Ollama)** | AI repairs broken nesting, malformed tags, missing attributes |
 
 #### Bracket Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Check** | Line and column of every unmatched `()` `[]` `{}` (brackets in strings, comments, templates, regexes and heredocs are skipped); shell `if`/`fi`, `case`/`esac`, `do`/`done` mismatches |
+| **Check** | Line and column of every unmatched `()` `[]` `{}` (brackets in strings, comments, templates, regexes and heredocs are skipped); shell `if`/`fi`, `case`/`esac`, `do`/`done` mismatches. Reported in the status banner (hover for the full list); the text is not changed |
 | **Auto-Fix** | Inserts missing closers and removes stray ones — nothing else — and lists each change with its line and column. Balanced code is never touched |
 | **AI Fix (Ollama)** | AI understands your code structure and fixes all bracket issues |
 

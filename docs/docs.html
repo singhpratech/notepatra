@@ -1188,11 +1188,11 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
 
   <h3>Buttons</h3>
   <ul>
-    <li><strong>Format</strong> — parses JSON, pretty-prints with 4-space indent via Rust's <code>serde_json</code>. Falls through to a manual pretty printer for broken JSON.</li>
-    <li><strong>Minify</strong> — strips all whitespace. Attempts to fix first, then minifies; if unparseable, strips whitespace with <code>replace(whitespace, "")</code>.</li>
-    <li><strong>Fix + Format</strong> — runs the deterministic Rust fixer (<code>RustCore::fixJson</code>) which handles: single→double quote conversion, unquoted keys, missing closing braces/brackets (stack-based), trailing comma removal, nested-brace insertion via regex passes. Produces a human-readable report like <code>"Fixed 2 issue(s): Added 3 missing closer(s) at end: ]}}; Removed 1 trailing comma(s)"</code>.</li>
+    <li><strong>Format</strong> — pretty-prints with 4-space indent, changing whitespace only (key order, duplicate keys, number text and escapes are kept byte for byte). Invalid JSON is left untouched and the status banner says where: <code>Not changed: Format — not valid JSON: line 3, column 7: ...</code>.</li>
+    <li><strong>Minify</strong> — removes the whitespace between tokens (never inside strings). Invalid JSON is left untouched, with the same positioned error.</li>
+    <li><strong>Fix + Format</strong> — runs the conservative Rust fixer, then Format. It repairs only what is unambiguous (trailing commas, comments, single or curly quotes, unquoted keys, Python <code>True</code>/<code>False</code>/<code>None</code>, raw line breaks in strings, a missing <code>:</code>, a missing <code>,</code> at a line end). The output pane holds only the repaired JSON; the status banner summarises what changed (<code>Done: Fix + Format — Repaired 4 issue(s); the result is valid JSON with the same content — line 1, column 2: quoted the key 'name' (hover for the full report)</code>) and hovering it shows every change with its line and column (positions in the text before the fix). When the right repair would be a guess (unclosed brackets at the end: missing closer or truncated file?, <code>NaN</code>, a stray <code>]</code>) nothing is changed and the banner says why and where.</li>
     <li><strong>AI Fix (Ollama)</strong> — sends the broken JSON to your local Ollama model with a strict minimal-change prompt. See <a href="#ai-fix">AI Fix pipeline</a> for details.</li>
-    <li><strong>Show Diff</strong> — opens a side-by-side Compare tab with the original on the left and the last fix's output on the right. Works for <em>any</em> action: Format, Minify, Fix+Format, AI Fix.</li>
+    <li><strong>Show Diff</strong> — opens a side-by-side Compare tab with the original on the left and the last fix's output on the right. Works for <em>any</em> action: Format, Minify, Fix + Format, AI Fix.</li>
     <li><strong>Copy Output</strong> — copies the current panel content to the clipboard.</li>
   </ul>
 
@@ -1204,10 +1204,14 @@ ssh-keygen -lf ~/.ssh/id_ed25519.pub   <span class="cm"># same fingerprint the p
   <p>Color-coded: teal for "added/fixed", amber for "shrunk/minified", gray for no-op. Capped at 50 entries, scrollable.</p>
 
   <h2 id="html-tools" class="anchor-target">HTML Tools (inbuilt)</h2>
-  <p>Same structure as JSON Tools but with HTML-specific buttons: <strong>Format (2 spaces)</strong>, <strong>Format (4 spaces)</strong>, <strong>Minify</strong>, <strong>Fix + Format</strong>, <strong>AI Fix</strong>, <strong>Show Diff</strong>, <strong>Copy Output</strong>. Fixer handles: self-closing <code>&lt;img&gt;</code>/<code>&lt;br&gt;</code>, mismatched tags, attribute quotes.</p>
+  <p>Same structure as JSON Tools but with HTML-specific buttons: <strong>Format (2 spaces)</strong>, <strong>Format (4 spaces)</strong>, <strong>Minify</strong>, <strong>Check + Format</strong>, <strong>AI Fix</strong>, <strong>Show Diff</strong>, <strong>Copy Output</strong>. Format and Minify change only whitespace a browser does not render (never inside <code>&lt;pre&gt;</code>, <code>&lt;textarea&gt;</code> or scripts, never the space between inline elements). When the formatter cannot be sure a document would still render the same (mis-nested or stray tags, server-side code, ...) it leaves the text unchanged and the status banner says what it found and where (line, column). <strong>Check + Format</strong> runs the same check and re-indents with 2 spaces; it never adds or rewrites tags, so a problem it reports is yours to fix (or try AI Fix).</p>
 
   <h2 id="bracket-tools" class="anchor-target">Bracket Tools (inbuilt)</h2>
-  <p>Generic bracket/quote balancer. Works on any language. Uses the Rust core's <code>bracket_fix</code> module which walks the input, tracks a bracket stack, and closes any unclosed opens at the end in reverse order.</p>
+  <p>Generic bracket balancer. Works on any language: the Rust core's <code>bracket_fix</code> module works out how to read the text (C-style, script, SQL/Lua or plain text) so brackets inside strings and comments are skipped.</p>
+  <ul>
+    <li><strong>Check</strong> — leaves the text unchanged and reports in the status banner: the number of issues and the first one (<code>Check: Found 1 issue(s) — line 1, column 4: '(' is never closed</code>); hover the banner for every issue with its line and column.</li>
+    <li><strong>Auto-Fix</strong> — inserts missing closers and removes stray ones, nothing else, and lists each change with its line and column in the banner and its tooltip. Balanced code is never touched.</li>
+  </ul>
 
   <h2 id="sql-formatter" class="anchor-target">SQL Formatter (inbuilt)</h2>
   <p>Open: <code>Tools → SQL Formatter (inbuilt)</code>.</p>
@@ -1672,7 +1676,7 @@ Content-Type: application/json
     <li><strong>Strip <code>&lt;think&gt;...&lt;/think&gt;</code> blocks</strong> — defensive regex strip for models that emit reasoning despite <code>think: false</code>.</li>
     <li><strong>Strip markdown <code>```</code> fences</strong> — if the response starts with <code>```</code>, find the first newline and the last fence and keep the middle.</li>
     <li><strong>Trim leading prose</strong> — find the first <code>{</code> or <code>[</code> in the response and discard everything before. Handles "Here is the fixed JSON: {...}".</li>
-    <li><strong>Format with Rust's <code>serde_json</code></strong> — if parseable, pretty-print with 4-space indent. Otherwise show raw cleaned text.</li>
+    <li><strong>Validate, then format</strong> — JSON Tools: a reply that is valid JSON is pretty-printed with 4-space indent; an invalid one is shown as is and the status banner says <code>the model's reply is not valid JSON: line L, column C: ...</code> (it is not recorded as a fix). HTML Tools: the reply is re-indented with the same DOM-preserving formatter as Format; when the formatter cannot follow it, the reply is shown as is and the banner says what and where.</li>
   </ol>
 
   <h3>Why the strict prompt matters</h3>
