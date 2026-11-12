@@ -79,6 +79,25 @@ else
 fi
 
 echo
+echo "── macOS bundle closure (v0.1.131 cocoa-plugin class: unbundled @rpath / Homebrew dylibs) ──"
+if bash scripts/test-macos-bundle-closure.sh >/tmp/macos-closure-check.log 2>&1; then
+    check "test-macos-bundle-closure.sh: brotli/sharpyuv/openssl-Cellar shapes caught + fixed, clean bundle passes, no-otool fails" "true"
+else
+    check "test-macos-bundle-closure.sh: brotli/sharpyuv/openssl-Cellar shapes caught + fixed, clean bundle passes, no-otool fails" "false"
+    grep -E 'FAIL|self-test:' /tmp/macos-closure-check.log | sed 's/^/    /' | tail -30
+fi
+# The script only protects a release if build.yml runs it on BOTH bundles:
+# report+fix after macdeployqt (2 per bundle), strict after signing, strict on
+# the DMG-staged .app, and a real cocoa launch of each bundle.
+check "build.yml: closure gate runs on both macOS bundles (pre-report, fix, post-sign strict, DMG-stage strict)" \
+    "[[ \$(grep -cF 'scripts/macos-bundle-closure.sh \"\$APP\" --check-only' .github/workflows/build.yml) -eq 4 &&
+       \$(grep -cF 'scripts/macos-bundle-closure.sh \"\$APP\" ||' .github/workflows/build.yml) -eq 2 &&
+       \$(grep -cF 'scripts/macos-bundle-closure.sh \"\$DMG_STAGE/Notepatra.app\" --check-only' .github/workflows/build.yml) -eq 2 ]]"
+check "build.yml: cocoa launch smoke test runs on both macOS bundles" \
+    "grep -qF 'scripts/macos-launch-smoke.sh build/Notepatra.app' .github/workflows/build.yml &&
+     grep -qF 'scripts/macos-launch-smoke.sh build-full/Notepatra.app' .github/workflows/build.yml"
+
+echo
 echo "── download-size byte cross-check (vs GitHub release artifacts) ──"
 if bash scripts/verify-download-sizes.sh >/tmp/dl-size-check.log 2>&1; then
     check "verify-download-sizes.sh: docs match actual artifact bytes (±0.15 MB)" "true"

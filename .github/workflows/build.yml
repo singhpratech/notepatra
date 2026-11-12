@@ -494,6 +494,9 @@ jobs:
             --target notepatra_all_tests
           QT_QPA_PLATFORM=offscreen ctest --output-on-failure
 
+      - name: Self-test bundle closure script (stubbed tools, real macOS bash/BSD userland)
+        run: bash scripts/test-macos-bundle-closure.sh
+
       - name: Create DMG
         run: |
           QT_PATH=/opt/homebrew/opt/qt@5
@@ -528,19 +531,23 @@ jobs:
             install_name_tool -id "@rpath/$lib" "$FW/$lib"
             echo "  ✓ bundled $lib"
           done
-          # libssl links libcrypto via Homebrew absolute path — rewrite to @rpath.
-          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
-            "@rpath/libcrypto.3.dylib" "$FW/libssl.3.dylib" 2>/dev/null || true
+          # libssl links libcrypto by its CELLAR path
+          # (/opt/homebrew/Cellar/openssl@3/<ver>/lib/libcrypto.3.dylib), which a
+          # `-change "$OPENSSL_PREFIX/lib/..."` never matched — a silent no-op
+          # that shipped for releases. scripts/macos-bundle-closure.sh (Step 7)
+          # rewrites whatever path is actually recorded and proves it changed.
           # Qt5Network.framework binary also references libssl/libcrypto via
           # Homebrew paths — rewrite those to @rpath so the bundle is portable.
           QTNET_BIN="$APP/Contents/Frameworks/QtNetwork.framework/Versions/5/QtNetwork"
           if [ -f "$QTNET_BIN" ]; then
             chmod u+w "$QTNET_BIN"
+            # A non-matching -change is a silent no-op; the closure gate below
+            # catches any OpenSSL path these two lines did not cover.
             install_name_tool -change "$OPENSSL_PREFIX/lib/libssl.3.dylib" \
-              "@rpath/libssl.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+              "@rpath/libssl.3.dylib" "$QTNET_BIN"
             install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
-              "@rpath/libcrypto.3.dylib" "$QTNET_BIN" 2>/dev/null || true
-            echo "  ✓ rewrote QtNetwork OpenSSL refs → @rpath"
+              "@rpath/libcrypto.3.dylib" "$QTNET_BIN"
+            echo "  ✓ QtNetwork OpenSSL opt-path refs → @rpath (closure gate verifies)"
           fi
 
           # ─── Step 2: Copy QScintilla dylib into the bundle. macdeployqt
@@ -624,17 +631,22 @@ jobs:
             codesign --force --sign - "$QTPS_BIN"
           fi
 
-          # ─── Step 7: Final verification — no binary inside the bundle
-          # should reference /opt/homebrew or /usr/local anymore.
-          echo "=== Final bundle link audit ==="
-          LEFTOVER=$(find "$APP" -type f \( -name "*.dylib" -o -name "*.framework" \) -o -perm +111 2>/dev/null | \
-                     xargs -I{} sh -c 'otool -L "{}" 2>/dev/null | grep -E "/opt/homebrew|/usr/local" && echo "  ^ in: {}"' | head -40)
-          if [ -n "$LEFTOVER" ]; then
-            echo "::warning::Some bundled binaries still reference Homebrew paths:"
-            echo "$LEFTOVER"
-          else
-            echo "✓ All bundled binaries use @rpath or system paths — no Homebrew absolutes"
-          fi
+          # ─── Step 7: Dependency-closure gate. Every load command of every
+          # Mach-O in the bundle must name a system lib or a file INSIDE the
+          # bundle. The old audit here only grepped for /opt/homebrew|/usr/local
+          # and only warned, so v0.1.131 shipped libbrotlidec ->
+          # @rpath/libbrotlicommon.1.dylib unbundled (Homebrew freetype grew a
+          # brotli dep; macdeployqt does not follow @rpath deps of non-Qt
+          # dylibs) and the cocoa plugin could not load on any user's Mac.
+          # Report first (so the log shows what macdeployqt left out), then
+          # fix; the fix run ends with a strict check and fails the job.
+          echo "=== Bundle closure: pre-fix report ==="
+          bash scripts/macos-bundle-closure.sh "$APP" --check-only \
+            || echo "::notice::pre-closure check found gaps (expected before the fix step)"
+          echo "=== Bundle closure: fix (copy from Homebrew, rewrite, ad-hoc re-sign) ==="
+          bash scripts/macos-bundle-closure.sh "$APP" || {
+            echo "::error::bundle dependency closure incomplete — see UNRESOLVED lines above"; exit 1
+          }
 
           # ─── Step 8: Ad-hoc re-sign the whole bundle with hardened
           # runtime + entitlements so macOS Tahoe (26.0) will actually
@@ -681,6 +693,10 @@ jobs:
             exit 1
           }
           echo "✓ Bundle signed with hardened runtime + entitlements"
+          echo "=== Bundle closure: strict check of the signed bundle ==="
+          bash scripts/macos-bundle-closure.sh "$APP" --check-only || {
+            echo "::error::signed bundle has unresolved dylib dependencies"; exit 1
+          }
 
           # ─── Step 9: Create the DMG
           #
@@ -695,6 +711,9 @@ jobs:
           ln -s /Applications "$DMG_STAGE/Applications"
           codesign -v "$DMG_STAGE/Notepatra.app" || {
             echo "::error::staged bundle lost its signature"; exit 1
+          }
+          bash scripts/macos-bundle-closure.sh "$DMG_STAGE/Notepatra.app" --check-only || {
+            echo "::error::the .app staged for the DMG has unresolved dylib dependencies"; exit 1
           }
           rm -f build/Notepatra.dmg
           for attempt in 1 2 3; do
@@ -738,16 +757,18 @@ jobs:
             install_name_tool -id "@rpath/$lib" "$FW/$lib"
             echo "  ✓ bundled $lib"
           done
-          install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
-            "@rpath/libcrypto.3.dylib" "$FW/libssl.3.dylib" 2>/dev/null || true
+          # libssl -> libcrypto is recorded as a Cellar path; the closure
+          # script (Step 6) rewrites it — see the standard DMG step.
           QTNET_BIN="$APP/Contents/Frameworks/QtNetwork.framework/Versions/5/QtNetwork"
           if [ -f "$QTNET_BIN" ]; then
             chmod u+w "$QTNET_BIN"
+            # A non-matching -change is a silent no-op; the closure gate below
+            # catches any OpenSSL path these two lines did not cover.
             install_name_tool -change "$OPENSSL_PREFIX/lib/libssl.3.dylib" \
-              "@rpath/libssl.3.dylib" "$QTNET_BIN" 2>/dev/null || true
+              "@rpath/libssl.3.dylib" "$QTNET_BIN"
             install_name_tool -change "$OPENSSL_PREFIX/lib/libcrypto.3.dylib" \
-              "@rpath/libcrypto.3.dylib" "$QTNET_BIN" 2>/dev/null || true
-            echo "  ✓ rewrote QtNetwork OpenSSL refs → @rpath"
+              "@rpath/libcrypto.3.dylib" "$QTNET_BIN"
+            echo "  ✓ QtNetwork OpenSSL opt-path refs → @rpath (closure gate verifies)"
           fi
 
           # ─── Step 2: Copy QScintilla dylib (same as Lite)
@@ -840,16 +861,16 @@ jobs:
           otool -L "$MACBIN" | grep -i duckdb
           test -f "$APP/Contents/MacOS/libduckdb.dylib" || { echo "::error::libduckdb.dylib not next to binary"; exit 1; }
 
-          # ─── Step 6: Final verification
-          echo "=== Final bundle link audit ==="
-          LEFTOVER=$(find "$APP" -type f \( -name "*.dylib" -o -name "*.framework" \) -o -perm +111 2>/dev/null | \
-                     xargs -I{} sh -c 'otool -L "{}" 2>/dev/null | grep -E "/opt/homebrew|/usr/local" && echo "  ^ in: {}"' | head -40)
-          if [ -n "$LEFTOVER" ]; then
-            echo "::warning::Some bundled binaries still reference Homebrew paths:"
-            echo "$LEFTOVER"
-          else
-            echo "✓ All bundled binaries use @rpath or system paths — no Homebrew absolutes"
-          fi
+          # ─── Step 6: Dependency-closure gate (same as the standard DMG,
+          # Step 7). Runs after libduckdb is in Contents/MacOS: the main
+          # binary's @executable_path rpath is what resolves @rpath/libduckdb.
+          echo "=== Bundle closure: pre-fix report ==="
+          bash scripts/macos-bundle-closure.sh "$APP" --check-only \
+            || echo "::notice::pre-closure check found gaps (expected before the fix step)"
+          echo "=== Bundle closure: fix (copy from Homebrew, rewrite, ad-hoc re-sign) ==="
+          bash scripts/macos-bundle-closure.sh "$APP" || {
+            echo "::error::bundle dependency closure incomplete — see UNRESOLVED lines above"; exit 1
+          }
 
           # ─── Step 7: Codesigning (same approach + pattern as Lite, including WebEngine helper)
           ENTITLEMENTS="$GITHUB_WORKSPACE/resources/entitlements.plist"
@@ -895,6 +916,10 @@ jobs:
             exit 1
           }
           echo "✓ Full bundle signed with hardened runtime + entitlements"
+          echo "=== Bundle closure: strict check of the signed Full bundle ==="
+          bash scripts/macos-bundle-closure.sh "$APP" --check-only || {
+            echo "::error::signed Full bundle has unresolved dylib dependencies"; exit 1
+          }
 
           # ─── Step 8: Create the DMG
           # .app + /Applications symlink = drag-to-install; ditto keeps the signature.
@@ -904,6 +929,9 @@ jobs:
           ln -s /Applications "$DMG_STAGE/Applications"
           codesign -v "$DMG_STAGE/Notepatra.app" || {
             echo "::error::staged bundle lost its signature"; exit 1
+          }
+          bash scripts/macos-bundle-closure.sh "$DMG_STAGE/Notepatra.app" --check-only || {
+            echo "::error::the .app staged for the DMG has unresolved dylib dependencies"; exit 1
           }
           rm -f build-full/Notepatra-full.dmg
           for attempt in 1 2 3; do
@@ -919,6 +947,18 @@ jobs:
               echo "::error::hdiutil create failed after 3 attempts"; exit 1
             fi
           done
+
+      # Real launch, cocoa platform (not offscreen): `--version` returns before
+      # QApplication exists, so it never loaded the platform plugin that killed
+      # v0.1.131. The script documents its pass/fail rules and the one
+      # tolerated case (no WindowServer on the runner, cocoa already loaded).
+      - name: Launch smoke test (standard bundle)
+        timeout-minutes: 5
+        run: bash scripts/macos-launch-smoke.sh build/Notepatra.app 8
+
+      - name: Launch smoke test (full bundle)
+        timeout-minutes: 5
+        run: bash scripts/macos-launch-smoke.sh build-full/Notepatra.app 8
 
       - name: Upload DMG
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

@@ -13,6 +13,25 @@ _Nothing yet._
 
 ---
 
+## [0.1.132] — 2026-11-12
+
+**macOS hotfix: the v0.1.131 DMGs did not start.** No application source changed; Linux and Windows builds are functionally identical to v0.1.131.
+
+### Fixed
+- **macOS: both DMGs (standard and Full) exited at startup.** The app bundle was missing `libbrotlicommon.1.dylib` (Qt cocoa plugin → `libfreetype` → `libbrotlidec` → `libbrotlicommon`). A Homebrew library on the build machine gained the dependency between the v0.1.130 and v0.1.131 builds, and the packaging step did not copy it. Reported by a tester on macOS 27 / Apple Silicon.
+- macOS: WebP and TIFF images did not load (their libraries' own dependencies, such as `libsharpyuv`, were not bundled).
+- macOS: the bundled `libssl` referenced a build-machine path for `libcrypto`.
+
+### Added
+- `scripts/macos-bundle-closure.sh`: every library the macOS app needs must be inside the bundle or the build fails; runs on both bundles after signing and on the DMG-staged copy.
+- `scripts/macos-launch-smoke.sh`: the macOS build starts the packaged app and fails if it cannot open.
+- `scripts/test-macos-bundle-closure.sh`: Linux-runnable self-test of the checker, run by `release-check.sh`.
+
+### Security
+- `rust-core`'s test-only `tempfile` dependency now resolves `rustix` 1.1.6 (RUSTSEC-2026-0486, unsound xattr functions in 1.1.4). It is not linked into any shipped binary.
+
+---
+
 ## [0.1.131] — 2026-11-06
 
 **Safer saves, a tighter AI SQL gate, a Preview pane that keeps its promises, and macOS that opens files from Finder.**
