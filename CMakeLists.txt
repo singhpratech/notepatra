@@ -3859,6 +3859,24 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
     message(STATUS "Regression test enabled — target: test_vega_chart")
 endif()
 
+# v0.1.133 — REST client: .http parser + variables + environments + history
+# redaction (test_http_file) and Import/Copy as cURL (test_curl_convert).
+if(NOTEPATRA_BUILD_TESTS)
+    add_executable(test_http_file test_http_file.cpp src/http_file.cpp src/rest_history.cpp)
+    target_include_directories(test_http_file PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_http_file PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_http_file)
+    set_tests_properties(test_http_file PROPERTIES LABELS "unit;rest" TIMEOUT 60)
+
+    add_executable(test_curl_convert test_curl_convert.cpp src/curl_convert.cpp)
+    target_include_directories(test_curl_convert PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_curl_convert PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_curl_convert)
+    set_tests_properties(test_curl_convert PROPERTIES LABELS "unit;rest" TIMEOUT 60)
+
+    message(STATUS "Regression tests enabled — targets: test_http_file, test_curl_convert")
+endif()
+
 # v0.1.57 hit a CI regression because test_edit_plan was registered with
 # CTest but missing from build.yml's hardcoded --target list — this
 # discovery loop prevents that class of failure forever.
