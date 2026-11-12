@@ -5405,6 +5405,11 @@ QString McpBridge::workspaceFolderRefusal(const QString &dir, QString *canon) {
             .arg(QDir::toNativeSeparators(c), why);
     };
     if (QDir(c).isRoot()) return refuse(QStringLiteral("it is the filesystem root"));
+    // A temp folder is a normal project place (an unpacked zip, a scratch
+    // clone). Windows keeps it at ~/AppData/Local/Temp, so the ~/AppData
+    // refusal below would otherwise turn away every temp project there.
+    const QString tmp = QFileInfo(QDir::tempPath()).canonicalFilePath();
+    const bool insideTmp = !tmp.isEmpty() && c.startsWith(tmp + QLatin1Char('/'));
     const QString home = QFileInfo(QDir::homePath()).canonicalFilePath();
     if (!home.isEmpty()) {
         if (c == home) return refuse(QStringLiteral("it is your home folder; pick a project folder"));
@@ -5417,6 +5422,11 @@ QString McpBridge::workspaceFolderRefusal(const QString &dir, QString *canon) {
             "AppData", ".npmrc", ".pki", ".cert"};
         for (const char *d : kHomeDeny) {
             const QString p = home + QLatin1Char('/') + QLatin1String(d);
+            // Only ~/AppData yields, and only to a folder strictly inside
+            // the temp folder: the temp folder itself, AppData's other
+            // folders and every other entry stay refused.
+            if (insideTmp && qstrcmp(d, "AppData") == 0 && tmp.startsWith(p + QLatin1Char('/')))
+                continue;
             if (c == p || c.startsWith(p + QLatin1Char('/')))
                 return refuse(QStringLiteral("~/%1 holds credentials or app settings")
                                   .arg(QLatin1String(d)));
@@ -5430,8 +5440,7 @@ QString McpBridge::workspaceFolderRefusal(const QString &dir, QString *canon) {
         if (c.compare(p, Qt::CaseInsensitive) == 0 ||
             c.startsWith(p + QLatin1Char('/'), Qt::CaseInsensitive)) {
             // A temp folder under /var or /private is a normal project place.
-            const QString tmp = QFileInfo(QDir::tempPath()).canonicalFilePath();
-            if (!tmp.isEmpty() && (c == tmp || c.startsWith(tmp + QLatin1Char('/')))) break;
+            if (!tmp.isEmpty() && (c == tmp || insideTmp)) break;
             return refuse(QStringLiteral("it is a system folder"));
         }
     }

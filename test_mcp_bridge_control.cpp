@@ -406,18 +406,55 @@ int main(int argc, char *argv[]) {
     EXPECT("set_preference card shows old -> new", ok(r) && g_cardDesc.contains("tab_width: 4 -> 2"));
     r = call("set_preference", {{"key", "tab_width"}, {"value", 4}});
     EXPECT("an unchanged preference needs no card", ok(r) && !res(r).value("changed").toBool(true));
-    r = call("set_workspace_folder", {{"path", home.path()}});
+    // The home the product refuses is QDir::homePath(). On Windows that is the
+    // account's profile folder whatever HOME/USERPROFILE say (Qt asks the
+    // process token first), so the temp `home` above is not it there.
+    r = call("set_workspace_folder", {{"path", QDir::homePath()}});
     EXPECT("set_workspace_folder refuses the home folder", !ok(r) && errOf(r).contains("home folder"));
     r = call("set_workspace_folder", {{"path", QDir::rootPath()}});
     EXPECT("set_workspace_folder refuses the filesystem root", !ok(r) && errOf(r).contains("root"));
     r = call("set_workspace_folder", {{"path", home.path() + "/.ssh"}});
-    EXPECT("set_workspace_folder refuses ~/.ssh", !ok(r) && errOf(r).contains(".ssh"));
-    r = call("set_workspace_folder", {{"path", QFileInfo(home.path()).absolutePath()}});
-    EXPECT("set_workspace_folder refuses a folder containing home", !ok(r));
+    EXPECT("set_workspace_folder refuses ~/.ssh",
+           !ok(r) && errOf(r).contains("refusing") && errOf(r).contains(".ssh"));
+    r = call("set_workspace_folder", {{"path", QFileInfo(QDir::homePath()).absolutePath()}});
+    EXPECT("set_workspace_folder refuses a folder containing home",
+           !ok(r) && errOf(r).contains("contains your home folder"));
+    // On Windows `work` lies in ~/AppData/Local/Temp, so this is also the
+    // live check that a temp project is not refused as ~/AppData.
     r = callCard("set_workspace_folder", {{"path", repo + "/../repo"}}, true);
     EXPECT("set_workspace_folder canonicalises and states the folder",
            ok(r) && g_cardDesc.contains(QDir::toNativeSeparators(QFileInfo(repo).canonicalFilePath())) &&
                g_lastArgs.value("path").toString() == QFileInfo(repo).canonicalFilePath());
+#ifndef Q_OS_WIN
+    // The Windows shape on this OS: the temp folder inside ~/AppData.
+    {
+        const QByteArray oldTmp = qgetenv("TMPDIR");
+        const QString appData = QDir::homePath() + "/AppData";
+        const QString winTmp = appData + "/Local/Temp";
+        QDir().mkpath(winTmp + "/proj/.ssh");
+        QDir().mkpath(appData + "/Roaming/app");
+        qputenv("TMPDIR", winTmp.toUtf8());
+        const bool tmpIsWinShape = QFileInfo(QDir::tempPath()).canonicalFilePath() ==
+                                   QFileInfo(winTmp).canonicalFilePath();
+        QString canon;
+        const QString projR = McpBridge::workspaceFolderRefusal(winTmp + "/proj", &canon);
+        const QString tmpR = McpBridge::workspaceFolderRefusal(winTmp);
+        const QString roamR = McpBridge::workspaceFolderRefusal(appData + "/Roaming/app");
+        const QString appR = McpBridge::workspaceFolderRefusal(appData);
+        const QString sshR = McpBridge::workspaceFolderRefusal(winTmp + "/proj/.ssh");
+        if (oldTmp.isEmpty()) qunsetenv("TMPDIR");
+        else qputenv("TMPDIR", oldTmp);
+        EXPECT("fixture: the temp folder is ~/AppData/Local/Temp", tmpIsWinShape);
+        EXPECT("a project in a temp folder under ~/AppData is accepted",
+               projR.isEmpty() && canon == QFileInfo(winTmp + "/proj").canonicalFilePath());
+        EXPECT("...the temp folder itself is still refused as ~/AppData",
+               tmpR.contains("~/AppData"));
+        EXPECT("...AppData's other folders and AppData itself are still refused",
+               roamR.contains("~/AppData") && appR.contains("~/AppData"));
+        EXPECT("...a credential folder inside the temp project is still refused",
+               sshR.contains("deny-list"));
+    }
+#endif
 
     // ── data ──
     r = call("execute_sql", {{"connection_name", "db"}, {"sql", "INSERT INTO t VALUES (1); DROP TABLE u"}});

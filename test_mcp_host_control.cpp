@@ -224,7 +224,9 @@ int main(int argc, char *argv[]) {
                !readFile(Config::appConfigDir() + "/config.json").contains("\"noterInUse\": 0"));
 
     // ── workspace folder ──
-    r = call("set_workspace_folder", {{"path", home.path()}});
+    // QDir::homePath(), not `home`: on Windows Qt takes the profile folder from
+    // the process token, so the env vars above do not move it.
+    r = call("set_workspace_folder", {{"path", QDir::homePath()}});
     EXPECT("set_workspace_folder refuses $HOME before a card", !ok(r) && errOf(r).contains("home folder"));
     r = callCard("set_workspace_folder", {{"path", g_repo}}, true);
     EXPECT("set_workspace_folder approved sets the Explorer workspace",
