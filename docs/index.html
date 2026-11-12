@@ -37,14 +37,14 @@
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:type" content="image/png">
-    <meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
+    <meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 119-tool MCP server.">
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Notepatra — Code Editor for the AI Era">
     <meta name="twitter:description" content="Tiny native C++/Rust binary (~13 MB bare). 238 file types · 82 language lexers. AI-powered formatters. Linux · Windows · macOS.">
     <meta name="twitter:image" content="https://notepatra.org/og-card.png">
-    <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
+    <meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 119-tool MCP server.">
 
 
     <!-- Security headers (via meta tag — GitHub Pages doesn't allow custom HTTP headers) -->
@@ -1757,13 +1757,13 @@
             </div>
             <div class="ai-code">
                 <span class="comment">// Broken JSON input</span><br>
-                {users: [{'id': 1, name: 'Alice',}<br>
+                {users: [{'id': 1, name: 'Alice',}]}<br>
                 <br>
-                <span class="comment">// Notepatra fixes it instantly:</span><br>
+                <span class="comment">// Fix + Format repairs what is unambiguous:</span><br>
                 <span class="comment">// ✓ single quotes → double quotes</span><br>
                 <span class="comment">// ✓ unquoted keys quoted</span><br>
                 <span class="comment">// ✓ trailing commas removed</span><br>
-                <span class="comment">// ✓ missing braces added</span><br>
+                <span class="comment">// ✓ every change listed with line and column</span><br>
                 <br>
                 {<br>
                 &nbsp;&nbsp;<span class="string">"users"</span>: [<br>
@@ -1803,7 +1803,7 @@
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
                 <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">119 TOOLS · v0.1.133</span></h3>
-                <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK</strong>, and any spec-compliant MCP client — to the running editor. <strong>119 tools in three tiers</strong>: read (tabs, selection, search, Noter notes, reminders, read-only Git and SQL, diagram source, saved-connection list/query/tables, formatting and pure text tools), act (open, compare, navigate, tab and view control, select range, open notes, create diagram, open Noter panel, open Data Analyst, render chart), and write (edit, line and case transforms, undo/redo, save and save all, close, rename, create/append notes, set reminders, replace diagram source, export diagrams, export query results, export chart, git stage/commit/push and friends, Noter management, preferences, SQL changes and REST requests) — where <em>every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve (auto-deny after 120 s, no headless bypass). Local socket + stdio only — nothing leaves your machine. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
+                <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex</strong>, and any MCP client — to the running editor. <strong>119 tools in three tiers</strong>: read (tabs, search, Noter, Git, SQL, saved connections, pure text tools), act (open, navigate, tab and view control, diagrams, charts), and write (editing, saving, Noter, git commit and push, SQL changes, REST requests). <em>Every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve. Local by default: the server opens no network connections of its own; tools that use a saved database connection talk to that database. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
                  border halo so it stays visually strong. -->
@@ -1923,14 +1923,14 @@
     <section id="plugins">
         <div class="section-label">Built-in Plugins</div>
         <div class="section-title">Batteries included</div>
-        <div class="section-desc">Each plugin opens in its own tab. Format, Fix + Format, or AI Fix. All with Ollama status indicator.</div>
+        <div class="section-desc">Each plugin opens in its own tab. Format, Fix + Format (JSON), Check + Format (HTML), or AI Fix. All with Ollama status indicator.</div>
 
         <div class="plugins-grid">
             <div class="plugin-card">
                 <div class="plugin-icon">{ }</div>
                 <div>
                     <h4>JSON Tools</h4>
-                    <p>Format, Minify, Fix + Format, AI Fix. Handles trailing commas, comments, unquoted keys, single quotes, and says where anything else is wrong.</p>
+                    <p>Format and Minify change only whitespace. Fix + Format repairs trailing commas, comments, unquoted keys and single quotes, lists every change, and says where anything else is wrong.</p>
                     <span class="plugin-badge">+ AI Fix</span>
                 </div>
             </div>
@@ -1938,7 +1938,7 @@
                 <div class="plugin-icon">&lt;/&gt;</div>
                 <div>
                     <h4>HTML Tools</h4>
-                    <p>Format with proper indentation. Check structure (mis-nested or stray tags, with line and column). Minify. AI repair for broken nesting.</p>
+                    <p>Format and Minify change only whitespace a browser does not render. Check + Format reports mis-nested or stray tags with line and column, never adding tags. AI repair for broken nesting.</p>
                     <span class="plugin-badge">+ AI Fix</span>
                 </div>
             </div>
@@ -1946,7 +1946,7 @@
                 <div class="plugin-icon">( )</div>
                 <div>
                     <h4>Bracket Tools</h4>
-                    <p>Check all brackets with line numbers. Auto-fix missing ), ], }. Detects begin/end mismatches.</p>
+                    <p>Check all brackets with line and column. Auto-Fix inserts missing ), ], } or removes stray ones and lists each change; balanced code is never touched. Detects begin/end mismatches.</p>
                     <span class="plugin-badge">+ AI Fix</span>
                 </div>
             </div>
@@ -2191,14 +2191,14 @@
                     <div class="version-section">
                         <h5>Added — MCP server: 49 to 119 tools</h5>
                         <ul>
-                            <li>Editing, tabs, view and settings, pure text tools, Git (stage, commit, branches, stash, hunks, conflicts, fetch, fast-forward pull, never-forced push), Noter management, data and REST. Every write still shows an Approve/Deny card, now with a countdown. <a href="/mcp.html#v133">What changed</a>.</li>
+                            <li>Editing, tabs, view and settings, pure text tools, Git (stage, commit, branches, stash, hunks, conflicts, fetch, fast-forward pull, never-forced push), Noter management, data and REST. Every write still shows an Approve/Deny card, now with a countdown. <a href="/mcp.html#v133" style="color: var(--c-accent);">What changed</a>.</li>
                             <li>Tools act on the tab you name, and a write waiting on its card follows its document. Shell commands, plugins, the updater and stored passwords are deliberately not exposed.</li>
                         </ul>
                     </div>
                     <div class="version-section">
                         <h5>Added — REST client runs <code>.http</code> files</h5>
                         <ul>
-                            <li>Several requests per file, a Send marker beside each, <code>Ctrl+Alt+R</code>; variables and environments; Import cURL and Copy as cURL; Cancel. History keeps the last 50 requests, with secret header values and password/token-style body fields saved as <code>&lt;redacted&gt;</code>. <a href="/docs.html#rest-client">Docs</a>.</li>
+                            <li>Several requests per file, a Send marker beside each, <code>Ctrl+Alt+R</code>; variables and environments; Import cURL and Copy as cURL; Cancel. History keeps the last 50 requests, with secret header values and password/token-style body fields saved as <code>&lt;redacted&gt;</code>. <a href="/docs.html#rest-client" style="color: var(--c-accent);">Docs</a>.</li>
                         </ul>
                     </div>
                     <div class="version-section">

@@ -25,17 +25,17 @@
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://notepatra.org/mcp.html">
 <meta property="og:title" content="Notepatra MCP — Your editor, readable by your AI">
-<meta property="og:description" content="119 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
+<meta property="og:description" content="119 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local by default: the server opens no network connections of its own.">
 <meta property="og:image" content="https://notepatra.org/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:type" content="image/png">
-<meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
+<meta property="og:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 119-tool MCP server.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Notepatra MCP — Your editor, readable by your AI">
-<meta name="twitter:description" content="119 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local socket + stdio; nothing leaves your machine.">
+<meta name="twitter:description" content="119 MCP tools that let Claude, Codex, and any spec-compliant client read your open tabs, search your workspace, run read-only SQL, and inspect Git — every write approved by you, in-window. Local by default: the server opens no network connections of its own.">
 <meta name="twitter:image" content="https://notepatra.org/og-card.png">
-<meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 49-tool MCP server.">
+<meta name="twitter:image:alt" content="Notepatra — the code editor built for the AI era. C++ and Rust, ~13 MB native, zero Electron, 119-tool MCP server.">
 
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://api.github.com; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
@@ -307,10 +307,10 @@
 <main class="content" id="main">
 
   <h1>Your editor, readable by your AI</h1>
-  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL (over data files in the Full edition), read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. Everything runs over stdio and a local socket. Nothing leaves your machine.</p>
+  <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL (over data files in the Full edition), read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. The server talks to your client over stdio and to the editor over a local socket, and opens no network connections of its own. Tools that use a saved database connection talk to that database, and the REST and git network tools run only after you approve them; see <a href="#faq">Is my data sent anywhere?</a></p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.133. The server provides <strong>119 tools</strong> (Git, read-only SQL, Noter write verbs, diagram export, and since v0.1.133 tab, line, case, comment, encoding and view control plus pure text tools) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.133.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.133. The server provides <strong>119 tools</strong> (46 read, 22 act, 51 write; v0.1.133 added 70 of them: tab, line, case, comment, encoding and view control, pure text tools, Git writes, Noter management, preferences, data and REST) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.133.
     <br><br>
     <strong>v0.1.125, v0.1.126 and v0.1.127 were all MCP-only releases</strong>, driven by testing this server against a real editor rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v127">what changed in v0.1.127</a> below.
   </div>
@@ -338,14 +338,14 @@
     <li><strong>Transport:</strong> a stdio JSON-RPC 2.0 MCP server. It speaks MCP protocol revision <code>2025-06-18</code> and also accepts <code>2025-03-26</code> and <code>2024-11-05</code> from older clients.</li>
     <li><strong>Editor connection:</strong> pass <code>--socket</code> and the server talks to the running editor over a dedicated per-user local socket (a Unix domain socket on Linux and macOS, a named pipe on Windows; the editor opens it on launch). Without <code>--socket</code>, the server runs against a built-in mock editor, so you can exercise the protocol without Notepatra running.</li>
     <li><strong>Capabilities:</strong> tools (119 of them), resources (your open tabs and Noter notes), and prompts (three ready-made ones).</li>
-    <li><strong>Safety:</strong> reads never need permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>.</li>
+    <li><strong>Safety:</strong> read and act tools need no permission; every write shows an approval card inside the editor window and does nothing until you click Approve. Details <a href="#approval">below</a>. The read tools <code>run_query</code>, <code>list_tables</code> and <code>describe_table</code>, and the act tool <code>test_connection</code>, connect to a database you saved, with its stored credentials, without a card.</li>
   </ul>
   <p>In practice: ask your assistant "what do I have open?", "find where the config is parsed", "diff these two tabs", "format this JSON and put it in a new tab" — and it drives the actual editor on your screen.</p>
 
   <h2 id="tools" class="anchor-target">The tool surface — 119 tools, three tiers</h2>
-  <p><code>notepatra-mcp</code> exposes 119 tools, grouped in three tiers by what they can touch. Read tools observe. Act tools drive visible, non-destructive editor actions. Write tools change buffer contents or disk — and every one of those is gated behind a human approval card.</p>
+  <p><code>notepatra-mcp</code> exposes 119 tools, grouped in three tiers by what they can touch. Read tools observe; the ones that use a saved database connection query that database. Act tools drive visible, non-destructive editor actions (view and theme changes are saved as preferences, as the View menu does). Write tools change documents, files, settings, your repository, a database or a remote server — and every one of those is gated behind a human approval card.</p>
 
-  <h3>Tier 1 — Read (47 tools, no approval needed)</h3>
+  <h3>Tier 1 — Read (46 tools, no approval needed)</h3>
   <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -390,7 +390,6 @@
       <tr><td><code>search_notes</code></td><td>Search the text of every Noter note the way the Noter sidebar does (every term must appear); returns file, title and a snippet.</td></tr>
       <tr><td><code>get_preferences</code></td><td>The editor and view preferences MCP may change, with each key's type and range. AI, cloud, network, plugin, update and history settings are never included.</td></tr>
       <tr><td><code>describe_table</code></td><td>Columns and types of one table on a saved connection, with the primary key where the catalog reports it (SQLite).</td></tr>
-      <tr><td><code>test_connection</code></td><td>Try a saved connection and report ok or the error, with passwords and key=value secrets scrubbed; 20 s timeout.</td></tr>
       <tr><td><code>parse_http_file</code></td><td>The requests in <code>.http</code> text or a tab: name, method, URL with <code>{{variables}}</code> unexpanded, line numbers, header names.</td></tr>
       <tr><td><code>curl_to_request</code></td><td>A curl command as method, URL, headers and body (the REST client's importer). Nothing is sent.</td></tr>
       <tr><td><code>request_to_curl</code></td><td>A request as a curl command line (Copy as cURL). Nothing is sent.</td></tr>
@@ -402,7 +401,7 @@
   <div class="callout success">
     <strong>How <code>run_sql</code> stays safe.</strong> Every query is checked by the SQL classifier and rejected unless it is a pure <code>SELECT</code> — no <code>INSERT</code>, <code>UPDATE</code>, <code>ATTACH</code>, <code>COPY</code>, or DDL ever runs. On the Full (DuckDB) edition there is a second wall: the target CSV / Parquet / JSON is first materialized into an in-memory table, then DuckDB's external filesystem access is turned off (<code>SET enable_external_access=false</code>) <em>before</em> the untrusted SQL executes — so the query cannot reach host files even through <code>read_text</code>, <code>read_csv_auto</code>, <code>glob</code>, or a replacement scan. The <code>csv_path</code> argument is confined to your open workspace. Results are row- and cell-capped so a single answer can't exfiltrate a whole file.</div>
 
-  <h3>Tier 2 — Act (21 tools, visible and non-destructive)</h3>
+  <h3>Tier 2 — Act (22 tools, visible and non-destructive)</h3>
   <div class="table-wrap"><table>
     <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
     <tbody>
@@ -427,6 +426,7 @@
       <tr><td><code>open_connections_dialog</code></td><td>Open Manage Connections (non-modal), where you type passwords; MCP never takes or returns one.</td></tr>
       <tr><td><code>open_schema_browser</code></td><td>Open the database schema browser (non-modal).</td></tr>
       <tr><td><code>compare_with_file</code></td><td>Compare a tab with a file on disk (Tools &gt; Compare with File); the path must pass the credential deny-list.</td></tr>
+      <tr><td><code>test_connection</code></td><td>Open a saved connection with its stored settings and credentials and report ok or the error (passwords and key=value secrets scrubbed); 20 s timeout. No card: it changes nothing, but it does connect to that database.</td></tr>
     </tbody>
   </table></div>
 
@@ -481,7 +481,8 @@
   <h2 id="v133" class="anchor-target">What changed in v0.1.133</h2>
   <p>The goal of this release: an MCP client can drive the editor itself, not only read it. Seventy tools are new, and nine contract defects found by an audit are fixed.</p>
   <ul>
-    <li><strong>Git, Noter, settings, data and REST.</strong> Forty more tools: stage, commit, branch, stash, discard, fetch, pull and push in the workspace repository; per-hunk staging and conflict resolution; Noter search, rename, trash and reminders; an allow-listed set of preferences and the workspace folder; <code>execute_sql</code> and connection management without passwords; <code>rest_request</code> through the REST client. Each write card says exactly what will happen, with a red warning line where data is lost. The AI assistant itself is not reachable over MCP.</li>
+    <li><strong>Editing, tabs, view and pure text.</strong> Thirty of the new tools: sort, dedupe, trim, join and reverse lines; case; comments; duplicate, delete and move lines; line endings and encoding; undo and redo; find and replace with regex, match case and whole word, in one tab or across all open tabs on one card; activate, close, reload and rename tabs, save all, read-only lock; theme, word wrap, zoom, folding, bookmarks, Preview pane, compare with a file; hash, Base64 and URL encoding, diff, bracket check and fix, explicit JSON repair, Markdown conversion, Mermaid import, symbol list, password generation.</li>
+    <li><strong>Git, Noter, settings, data and REST.</strong> The other forty: stage, commit, branch, stash, discard, fetch, pull and push in the workspace repository; per-hunk staging and conflict resolution; Noter search, rename, trash and reminders; an allow-listed set of preferences and the workspace folder; <code>describe_table</code>, <code>test_connection</code>, <code>execute_sql</code> and connection management without passwords; <code>.http</code> parsing, cURL conversion and <code>rest_request</code> through the REST client; <code>hex_dump</code>; clearing recent files. Each write card says exactly what will happen, with a red warning line where data is lost. The AI assistant itself is not reachable over MCP.</li>
     <li><strong>Writes that leave the editor need the highest remote scope.</strong> Over the opt-in remote gateway, <code>execute_sql</code>, <code>rest_request</code>, <code>git_fetch</code>, <code>git_pull</code> and <code>git_push</code> require the new <code>write_external</code> scope, which is never a default: both <code>serve --max-scope write_external</code> and <code>pair --scope write_external</code> must ask for it. Over stdio they are ordinary writes behind the same approval card.</li>
     <li><strong><code>run_sql</code> over a CSV works in Lite.</strong> A <code>csv_path</code> inside the workspace folder is loaded into an in-memory SQLite copy (table <code>data</code>) with the same read-only gate; Full keeps using DuckDB.</li>
     <li><strong>A held write follows the document, not a position.</strong> A write waiting on the approval card used to remember the tab <em>index</em>; close or move a tab during the two-minute wait and the edit landed in whichever document now held that index. The card now pins the tab's stable id, re-resolves it on Approve, and fails if the tab is gone. <code>apply_edit</code> also fails if the match the card described has moved.</li>
@@ -553,7 +554,7 @@
     <li><strong>One card at a time, in order.</strong> Multiple pending writes queue FIFO; you decide each one individually. No batch-approve.</li>
     <li><strong>No headless fallback — by design.</strong> If there is no visible editor window to host the card, the write is denied with <code>approval unavailable</code>. There is no auto-approve setting, no environment variable, and no config flag that bypasses the card.</li>
   </ul>
-  <p>The gate lives in the editor process itself (the C++ bridge), not in the MCP sidecar — so a modified or malicious MCP client still cannot write without a human clicking Approve inside Notepatra. Read and act tools don't prompt: they can't change buffer contents or touch disk.</p>
+  <p>The gate lives in the editor process itself (the C++ bridge), not in the MCP sidecar — so a modified or malicious MCP client still cannot write without a human clicking Approve inside Notepatra. Read and act tools don't prompt: they do not change document text or write your files (view and theme changes are saved as preferences). They are not all local, though: tools that use a saved database connection open a connection to that database.</p>
 
   <h2 id="setup" class="anchor-target">Setup — pick your client</h2>
   <p>The server binary is <code>notepatra-mcp</code>. All snippets below pass <code>--socket</code>, which connects it to the running editor; make sure <code>notepatra-mcp</code> is on your <code>PATH</code> (or use its absolute path), and have Notepatra running when the assistant calls a tool.</p>
@@ -665,7 +666,12 @@ async with MCPServerStdio(
 
   <h2 id="faq" class="anchor-target">FAQ</h2>
   <h3>Is my data sent anywhere?</h3>
-  <p>Not by Notepatra. The <code>notepatra-mcp</code> binary you install makes no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket. Nothing leaves the machine through this path — and the shipped binary is not merely configured that way, it is compiled without networking at all. Every CI job runs the released binary and fails the build unless it reports <code>built without remote support</code>. One honest caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
+  <p>Not by the MCP server itself, and nothing by default. The <code>notepatra-mcp</code> binary opens no network connections: it talks to your AI client over stdio (pipes between two processes on your machine) and to the editor over a local per-user socket, and the shipped binary is compiled without networking at all (every CI job runs it and fails unless it reports <code>built without remote support</code>). Some tools do reach beyond your machine, through the editor:</p>
+  <ul>
+    <li><strong>Saved database connections.</strong> <code>run_query</code>, <code>list_tables</code> and <code>describe_table</code> (read tier) and <code>test_connection</code> (act tier) connect to a database you saved, with its stored credentials, without an approval card. <code>export_query_results</code> and <code>execute_sql</code> do so only after you approve. If that database is on another machine, these calls cross the network to it.</li>
+    <li><strong>REST and git.</strong> <code>rest_request</code>, <code>git_fetch</code>, <code>git_pull</code> and <code>git_push</code> are write-tier tools: they reach the server or remote only after you click Approve.</li>
+  </ul>
+  <p>One caveat that applies to every MCP server: whatever your <em>assistant</em> reads through these tools becomes part of its conversation, and goes wherever that client sends its conversations — a local model stays local, a cloud model does not. Choose the client and model accordingly.</p>
   <h3>What is the remote gateway in v0.1.120, and does it weaken any of this?</h3>
   <p>v0.1.120 adds an <strong>opt-in</strong> remote gateway, and it is off unless you deliberately build it: the code sits behind a
   <code>remote</code> Cargo feature that is <em>not</em> in the default feature set, so <code>cargo install notepatra-mcp</code> and every
@@ -680,7 +686,7 @@ async with MCPServerStdio(
   connection, and there is no headless bypass. The editor itself never listens on the network — only the opt-in sidecar gateway binds
   a socket. Until LAN support and TLS land, use an SSH tunnel rather than exposing the port.</p>
   <h3>Can the AI edit my files without me noticing?</h3>
-  <p>No. The only tools that can change a buffer or touch disk are the eleven write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied.</p>
+  <p>No. The only tools that can change a document or write a file are the 51 write tools, and each call requires you to click Approve on a card inside the editor within 120 seconds. No response means denied. (<code>close_tab</code> and <code>reload_tab</code> skip the card only when nothing unsaved would be lost.)</p>
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
   <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
   <h3>Does it work with the Lite build?</h3>

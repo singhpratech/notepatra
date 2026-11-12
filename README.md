@@ -6,7 +6,7 @@
     <strong>C++ + Rust</strong> · <strong>~13 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>238 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong> · <strong>MCP server</strong>
   </p>
   <p align="center">
-    <strong>MCP:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> now ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes); every write human-approved in-window; nothing leaves your machine.
+    <strong>MCP:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> now ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 119 tools (editing, tabs, Git, SQL, Noter, REST); every write human-approved in-window; local by default: the server itself opens no network connections, and only tools that use a saved database connection, or REST and git network writes you approve, reach beyond your machine.
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -112,7 +112,7 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 |---|---|
 | **Check** | Line and column of every unmatched `()` `[]` `{}` (brackets in strings, comments, templates, regexes and heredocs are skipped); shell `if`/`fi`, `case`/`esac`, `do`/`done` mismatches. Reported in the status banner (hover for the full list); the text is not changed |
 | **Auto-Fix** | Inserts missing closers and removes stray ones — nothing else — and lists each change with its line and column. Balanced code is never touched |
-| **AI Fix (Ollama)** | AI understands your code structure and fixes all bracket issues |
+| **AI Fix (Ollama)** | Sends the code to your local AI with a prompt to fix only bracket, paren, brace and keyword-pair mismatches; check the result with Show Diff |
 
 #### SQL Formatter (inbuilt)
 - Format with **UPPERCASE** or **lowercase** keywords
@@ -150,16 +150,10 @@ Backend dropdown ships **6 entries** — **Ollama** (local default · `localhost
 #### AI Assistant — side-dock (`Ctrl+Shift+A`)
 The AI chat lives in a **persistent right-side dock**, not an editor tab. One conversation, preserved across tab switches. Tick **Coding Mode** to open the 3-column coding layout (file tree · editor · AI chat) 3-pane layout.
 
-**Workspace awareness.** Every prompt carries:
-- the selection (or full file if no selection is active)
-- the full text of the current file
-- excerpts of every other open editor tab
-- a flat listing of all files under the workspace root (`.git`, `node_modules`, `target`, `dist`, etc. filtered out)
-
-So the model can reason about files you haven't opened yet — "import from utils.py" works even when utils.py isn't in a tab. Budget-capped so small local models (3B, 4K–8K context) don't overflow.
+**What the model sees.** Text you have selected is added to every message you type. In Coding mode, **Auto-attach open file** (off by default) tells the model which file is open; the model then reads and searches workspace files itself with its tools, inside the workspace and the secrets deny-list. Files you attach or name with `@file` are sent too. Other open tabs and the workspace listing are not attached automatically.
 
 **One-click actions** (hidden by default, click "▸ Quick actions" to reveal):
-Explain · Find Bugs · Refactor · Write Tests · Add Comments · Generate Docs · Optimize · Translate. Or type a custom prompt. Responses stream in, each has a **Copy** link, and the last response can be inserted at the cursor or replace the selection with one click.
+Explain · Find Bugs · Refactor · Write Tests · Add Comments · Generate Docs · Optimize · Translate. They work on your selection; with nothing selected they use the whole file only in Coding mode with Auto-attach on, and otherwise ask you to select code first. Or type a custom prompt. Responses stream in, each has a **Copy** link, and the last response can be inserted at the cursor or replace the selection with one click.
 
 **Speech-to-text** — optional mic button, uses local `arecord` + `whisper` CLI when installed. No audio ever leaves the machine.
 
@@ -207,7 +201,7 @@ A first-class diagramming surface that **renders in the default binary on every 
 | Feature | Shortcut |
 |---|---|
 | **Built-in Terminal** | `Ctrl+`` — opens as a tab, runs real commands |
-| **REST Client** | `Ctrl+Shift+R` — send HTTP requests, see responses with pretty JSON |
+| **REST Client** | `Ctrl+Shift+R` — send HTTP requests, see responses with pretty JSON. Runs `.http` / `.rest` files (`Ctrl+Alt+R` on a request) with `{{variables}}` and environments, imports and copies cURL. History keeps the last 50 requests; secret header values and password/token-style body fields are saved as `<redacted>`, the rest of a body as sent |
 | **Preview pane** | `Ctrl+Shift+V` — Markdown/HTML live, `.ipynb` viewer, SQL cells with `-- %%` |
 | **Hex Editor** | View > Hex Editor — color-coded hex dump of any binary file |
 | **Markdown Converter** | Features > Markdown — convert selection to table, list, code block, bold, link, heading, or strip HTML to markdown |
@@ -253,15 +247,15 @@ A first-class diagramming surface that **renders in the default binary on every 
 
 ### AI assistants (MCP) — new in v0.1.118
 
-From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. The server itself opens no network connections: stdio to the client, local socket to the editor. Only the writes you approve that are network by nature (`rest_request`, `git_fetch` / `git_pull` / `git_push`, and `execute_sql` / `test_connection` on a server database) reach the network.
+From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. **Local by default.** The server opens no network connections of its own: stdio to the client, a local socket to the editor. Tools that use a saved database connection talk to that database with the credentials you stored: `run_query`, `list_tables`, `describe_table` (read) and `test_connection` (act) do so without a card, `export_query_results` and `execute_sql` only after you approve. The REST and git network tools (`rest_request`, `git_fetch`, `git_pull`, `git_push`) run only after you approve them.
 
 **119 tools in three tiers**:
 
 | Tier | Tools | Gate |
 |---|---|---|
-| **Read** (47) | tabs, selection, status, recent files, in-tab + project search, Noter notes, reminders, read-only Git (status / diff / log / show / branch), `.npd` validation, read-only SQL (`run_sql`), language list (`list_languages`), capability probe (`get_capabilities`), `.npd` source read (`get_diagram_source`), saved connections (`list_connections` / `run_query` / `list_tables`), JSON/SQL/HTML formatting, pure text tools (`check_brackets`, `fix_brackets`, `hash_text`, `encode_text`, `diff_text`, `repair_json`, `markdown_convert`, `mermaid_to_npd`, `list_symbols`, `generate_password`), git hunks and conflicts (`list_hunks`, `list_conflicts`), Noter search (`search_notes`), preferences (`get_preferences`), `describe_table`, `test_connection`, REST helpers (`parse_http_file`, `curl_to_request`, `request_to_curl`), `hex_dump` | None — observation only |
-| **Act** (21) | open file, new tab, go to line, select range, set language, compare tabs, compare with file, activate tab, read-only lock, bookmarks, fold, view settings, theme, preview pane, open note, create diagram, open Noter, open Data Analyst (`open_data_analyst`), render chart (`render_chart`), open Manage Connections / schema browser (non-modal) | None — visible, non-destructive |
-| **Write** (51) | insert text, replace selection, find-and-replace (one tab or all open tabs), save, save all, close / reload / rename, undo / redo, line transforms, case, comments, line edits, line endings, encoding, create note, append note, set reminder, export diagram, set diagram source, export query results (`export_query_results`), export chart (`export_chart`), git stage / unstage / commit / branch / checkout / stash / discard / fetch / pull / push, per-hunk stage or revert, conflict resolution, Noter rename / trash / restore / delete / reminders / export, allow-listed preferences, workspace folder, `execute_sql` (one data-changing statement; the SQL gate's hard refusals hold even with approval), connections without passwords, `rest_request`, clear recent files | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
+| **Read** (46) | tabs and editor: `list_open_tabs`, `read_tab`, `get_selection`, `get_status`, `app_info`, `list_recent_files`, `list_languages`, `get_capabilities`, `get_preferences`, `list_symbols`; search: `find_in_tab`, `search_project`; Noter: `list_notes`, `read_note`, `list_reminders`, `search_notes`; Git: `git_status`, `git_diff`, `git_log`, `git_show`, `git_branch`, `list_hunks`, `list_conflicts`; diagrams: `validate_npd`, `get_diagram_source`, `mermaid_to_npd`; SQL and saved connections: `run_sql`, `list_connections`, `run_query`, `list_tables`, `describe_table`; pure text tools: `format_json`, `format_sql`, `format_html`, `check_brackets`, `fix_brackets`, `repair_json`, `hash_text`, `encode_text`, `diff_text`, `markdown_convert`, `generate_password`, `hex_dump`; REST helpers: `parse_http_file`, `curl_to_request`, `request_to_curl` | No card. Observation only, but the tools that use a saved connection (`run_query`, `list_tables`, `describe_table`) query that database with its stored credentials |
+| **Act** (22) | tabs and navigation: `open_file`, `new_tab`, `activate_tab`, `goto_line`, `select_range`, `set_language`, `set_read_only`, `bookmarks`, `fold`; view: `set_view`, `set_theme`, `set_preview`, `compare_tabs`, `compare_with_file`; Noter and diagrams: `open_note`, `open_noter`, `create_diagram`; data: `open_data_analyst`, `render_chart`, `open_connections_dialog`, `open_schema_browser`, `test_connection` | No card. Visible, non-destructive editor actions; view and theme changes are saved as preferences; `test_connection` opens a saved connection to report whether it works |
+| **Write** (51) | editing: `insert_text`, `replace_selection`, `apply_edit`, `undo`, `redo`, `transform_lines`, `convert_case`, `comment_lines`, `line_edit`, `set_eol`, `set_encoding`; tabs and files: `save_tab`, `save_all`, `close_tab`, `reload_tab`, `rename_file`, `set_workspace_folder`, `set_preference`, `clear_recent_files`; Noter: `create_note`, `append_note`, `set_reminder`, `rename_note`, `trash_note`, `restore_note`, `delete_note_permanently`, `delete_reminder`, `snooze_reminder`, `dismiss_reminder`, `export_note`; diagrams and exports: `set_diagram_source`, `export_diagram`, `export_query_results`, `export_chart`; Git: `git_stage`, `git_unstage`, `git_commit`, `git_branch_create`, `git_checkout`, `git_stash`, `git_discard`, `git_hunk`, `resolve_conflict`, `git_fetch`, `git_pull`, `git_push`; data and REST: `execute_sql`, `add_connection`, `update_connection`, `delete_connection`, `rest_request` | **Approve/Deny card inside the editor**: 120 s auto-deny, FIFO one card at a time, no headless bypass (`close_tab` / `reload_tab` skip the card only when nothing unsaved would be lost) |
 
 `find_in_tab` and `search_project` also take an optional `regex` flag. `run_sql` is **SELECT-only** (rejected by the SQL classifier otherwise) and, on the Full/DuckDB edition, runs in an engine sandbox — the target file is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (`enable_external_access=false`) before the untrusted query runs, so it cannot read host files. Since v0.1.119 the sidecar also supports Windows over a named pipe.
 
