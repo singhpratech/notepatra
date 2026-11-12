@@ -654,6 +654,22 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_readonly_gate.c
     message(STATUS "Regression test enabled — target: test_db_readonly_gate")
 endif()
 
+# ── v0.1.133 data-analyst fixes: SQL gate keyword args + CSV loader typing ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_gate_keyword_args.cpp")
+    add_executable(test_db_gate_keyword_args
+        test_db_gate_keyword_args.cpp
+        src/dbconnections.cpp
+        src/atomic_write.cpp
+    )
+    target_include_directories(test_db_gate_keyword_args PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_db_gate_keyword_args PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+    notepatra_add_qt_test(test_db_gate_keyword_args)
+    set_tests_properties(test_db_gate_keyword_args PROPERTIES
+        LABELS "unit;ai;db;security" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_db_gate_keyword_args")
+endif()
+
 # ── .npd diagram parser (diagram subsystem; pure C++, no WebEngine) ──
 # The parser is the source-of-truth engine the diagram canvas projects from,
 # so it's covered here independently of the native QPainter renderer.

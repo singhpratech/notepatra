@@ -495,7 +495,40 @@ struct StructToken {
     bool callsFunction;  // the next significant char is '(' — a function call
     bool afterDot = false;  // qualified name part (t.drop) — never a statement verb
     bool afterAs = false;   // alias right after AS
+    bool callArg = false;   // first token inside a function call's parens: f(x
+    QChar next;             // next significant char after the word (null at end)
 };
+
+// Words that, right before '(', open a subquery/statement body, not a call.
+static const QSet<QString> &parenBodyKeywords() {
+    static const QSet<QString> k = {
+        "AS", "IN", "EXISTS", "ANY", "ALL", "SOME", "FROM", "JOIN", "LATERAL",
+        "ARRAY", "UNION", "INTERSECT", "EXCEPT", "MINUS", "SELECT", "WHERE", "ON",
+        "AND", "OR", "NOT", "MATERIALIZED", "EXPLAIN", "ANALYZE", "VALUES", "WITH",
+        "RECURSIVE", "USING", "HAVING", "QUALIFY", "THEN", "ELSE", "WHEN", "CASE",
+        "BY", "IS", "LIKE", "ILIKE", "BETWEEN", "RETURN", "RETURNS", "RETURNING",
+        "TABLE", "INTO", "DISTINCT", "APPLY", "ONLY", "TO", "SET", "DO", "BEGIN",
+        "PIVOT", "UNPIVOT", "LIMIT", "OFFSET", "TOP", "ESCAPE", "ROW", "DEFAULT"
+    };
+    return k;
+}
+
+// Keyword-named scalar functions (REPLACE/INSERT/TRUNCATE) that can be called as f(REPLACE(...)).
+static bool keywordUsedAsArgument(const QVector<StructToken> &stoks, int idx) {
+    const StructToken &tk = stoks[idx];
+    if (!tk.callArg || tk.next.isNull()) return false;
+    if (tk.next == QLatin1Char('('))
+        return tk.text == QStringLiteral("REPLACE") || tk.text == QStringLiteral("INSERT")
+            || tk.text == QStringLiteral("TRUNCATE");
+    // An operand is followed by an operator or an expression keyword (CAST(start AS ..));
+    // a statement verb is followed by a name, a string or a non-expression keyword.
+    if (isWordChar(tk.next)) {
+        static const QSet<QString> exprWords = {
+            "AS", "IS", "NOT", "IN", "BETWEEN", "LIKE", "ILIKE", "COLLATE", "ORDER"};
+        return idx + 1 < stoks.size() && exprWords.contains(stoks[idx + 1].text);
+    }
+    return tk.next != QLatin1Char('\'');
+}
 
 // Tokenize an already-noise-stripped statement, tracking structural context.
 static QVector<StructToken> structTokens(const QString &stmt) {
@@ -504,6 +537,7 @@ static QVector<StructToken> structTokens(const QString &stmt) {
     int i = 0;
     bool atStart = true;         // no word emitted yet
     bool afterOpenParen = false; // last significant char was '('
+    bool afterCallParen = false; // ... and that '(' followed a called function name
     QString prevWord;            // immediately preceding word (cleared when any
                                  // non-word significant char intervenes)
     // ── Paren-depth + CTE tracking (F5b) ──────────────────────────────────
@@ -539,7 +573,8 @@ static QVector<StructToken> structTokens(const QString &stmt) {
             int b = i - 1;
             while (b >= 0 && stmt[b].isSpace()) --b;
             out.append({up, verb, call, b >= 0 && stmt[b] == QLatin1Char('.'),
-                        prevWord == QStringLiteral("AS")});
+                        prevWord == QStringLiteral("AS"), afterOpenParen && afterCallParen,
+                        k < n ? stmt[k] : QChar()});
             if (atStart && up == QStringLiteral("WITH")) inWith = true;
             pendingOuterStart = false;  // consumed by the outer-query token
             prevWord = up;
@@ -562,6 +597,7 @@ static QVector<StructToken> structTokens(const QString &stmt) {
             }
             ++parenDepth;
             afterOpenParen = true;
+            afterCallParen = !prevWord.isEmpty() && !parenBodyKeywords().contains(prevWord);
             pendingOuterStart = false;  // a parenthesized outer query gets its
                                         // verb slot from afterOpenParen instead
             prevWord.clear();
@@ -667,7 +703,8 @@ static const QSet<QString> &forbiddenKeywords() {
 static const QSet<QString> &readBaseKeywords() {
     static const QSet<QString> k = {
         "SELECT", "WITH", "EXPLAIN", "SHOW", "DESCRIBE", "DESC",
-        "PRAGMA", "TABLE", "VALUES", "FROM", "SUMMARIZE"
+        "PRAGMA", "TABLE", "VALUES", "FROM", "SUMMARIZE",
+        "PIVOT", "UNPIVOT", "PIVOT_WIDER", "PIVOT_LONGER"  // DuckDB statement forms
     };
     return k;
 }
@@ -742,7 +779,11 @@ static bool stringUsedAsTable(const QString &stmt) {
                 "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "QUALIFY", "WINDOW",
                 "UNION", "EXCEPT", "INTERSECT", "SELECT", "ON", "USING", "OFFSET",
                 "FETCH", "RETURNING", "SET", "VALUES"};
-            if (w == QLatin1String("FROM") || w == QLatin1String("JOIN")) inFrom.last() = true;
+            // DuckDB statements that take a table ref first (PIVOT 'x.csv' ON ...).
+            static const QSet<QString> tableFirst = {
+                "PIVOT", "UNPIVOT", "PIVOT_WIDER", "PIVOT_LONGER", "SUMMARIZE", "DESCRIBE"};
+            if (w == QLatin1String("FROM") || w == QLatin1String("JOIN") || tableFirst.contains(w))
+                inFrom.last() = true;
             else if (enders.contains(w)) inFrom.last() = false;
             prev2 = prev; prev = w; i = j;
             continue;
@@ -750,7 +791,9 @@ static bool stringUsedAsTable(const QString &stmt) {
         if (c == QLatin1Char('(')) inFrom.append(false);
         else if (c == QLatin1Char(')') && inFrom.size() > 1) inFrom.removeLast();
         else if (c == QLatin1Char('\'') && inFrom.last()) {
-            static const QSet<QString> lead = {"FROM", "JOIN", ","};
+            static const QSet<QString> lead = {"FROM", "JOIN", ",", "PIVOT", "UNPIVOT",
+                                               "PIVOT_WIDER", "PIVOT_LONGER", "SUMMARIZE",
+                                               "DESCRIBE"};
             static const QSet<QString> prefix = {"E", "N", "X", "B", "U"};
             if (lead.contains(prev) || (prefix.contains(prev) && lead.contains(prev2)))
                 return true;
@@ -774,7 +817,14 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
 
     const QString base = toks.first();
     const bool hasReturning = toks.contains(QStringLiteral("RETURNING"));
-    const bool hasInto = toks.contains(QStringLiteral("INTO"));
+    bool hasInto = toks.contains(QStringLiteral("INTO"));
+    if (hasInto && (base == QStringLiteral("UNPIVOT") || base == QStringLiteral("PIVOT_LONGER"))) {
+        // DuckDB UNPIVOT ... INTO NAME k VALUE v names output columns, not a table.
+        hasInto = false;
+        for (int t = 0; t < toks.size(); ++t)
+            if (toks[t] == QStringLiteral("INTO") && toks.value(t + 1) != QStringLiteral("NAME"))
+                hasInto = true;
+    }
     // SELECT ... INTO creates a table; distinguish from INSERT/IMPORT INTO.
     const bool selectInto = hasInto && base != QStringLiteral("INSERT")
                           && base != QStringLiteral("IMPORT")
@@ -900,8 +950,10 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
     // immediately after EXPLAIN/ANALYZE. As a select-list item, alias, or a
     // name after FROM/JOIN/WHERE it is an innocent identifier that happens to
     // collide with a keyword (SELECT comment FROM posts). Scan verb slots only.
-    for (const StructToken &tk : stoks) {
-        if (tk.verbSlot && forbiddenKeywords().contains(tk.text)) {
+    for (int idx = 0; idx < stoks.size(); ++idx) {
+        const StructToken &tk = stoks[idx];
+        if (tk.verbSlot && forbiddenKeywords().contains(tk.text)
+            && !keywordUsedAsArgument(stoks, idx)) {
             // A mutation verb in a verb slot — notably the OUTER verb of a
             // leading-CTE statement (WITH c AS (SELECT 1) DELETE FROM t) — is a
             // genuine write. Surface it to the human-approval gate (isMutation),
