@@ -576,7 +576,22 @@ struct StructToken {
     bool afterAs = false;   // alias right after AS
     bool callArg = false;   // first token inside a function call's parens: f(x
     QChar next;             // next significant char after the word (null at end)
+    bool exprParen = false; // first token after a '(' in EXPRESSION position:
+                            // after SELECT / WHERE / AND / OR / ON / HAVING /
+                            // CASE / WHEN / THEN / ELSE / NOT / DISTINCT, an
+                            // operator, or a select-list ','
 };
+
+// A token after an expression-position '(' that is directly followed by one of
+// these is an operand, never a statement verb: no verb is followed by ')', ','
+// or an operator (Access-style DELETE * is why '*' is not here).
+static bool exprOperandFollows(QChar c) {
+    return c == QLatin1Char(')') || c == QLatin1Char(',') || c == QLatin1Char('=')
+        || c == QLatin1Char('<') || c == QLatin1Char('>') || c == QLatin1Char('+')
+        || c == QLatin1Char('-') || c == QLatin1Char('/') || c == QLatin1Char('%')
+        || c == QLatin1Char('|') || c == QLatin1Char('&') || c == QLatin1Char('^')
+        || c == QLatin1Char('!');
+}
 
 // Words that, right before '(', open a subquery/statement body, not a call.
 static const QSet<QString> &parenBodyKeywords() {
@@ -635,6 +650,18 @@ static QVector<StructToken> structTokens(const QString &stmt) {
                                     // the CTE NAME, not AS)
     bool pendingOuterStart = false; // a CTE body just closed; the next non-','
                                     // word is the outer query's leading token
+    // Expression-position '(' tracking (SELECT (comment) FROM t).
+    static const QSet<QString> exprBefore = {"SELECT", "WHERE", "AND", "OR", "NOT",
+                                             "ON", "HAVING", "CASE", "WHEN", "THEN",
+                                             "ELSE", "DISTINCT"};
+    static const QSet<QString> clauseWords = {"SELECT", "FROM", "JOIN", "WHERE", "GROUP",
+                                              "ORDER", "BY", "HAVING", "VALUES", "SET",
+                                              "RETURNING", "ON", "USING", "LIMIT", "WINDOW",
+                                              "QUALIFY", "INTO", "WITH", "UNION", "EXCEPT",
+                                              "INTERSECT", "OFFSET"};
+    QVector<QString> clause{QString()};  // last clause keyword per paren depth
+    QChar prevSym;                       // last significant non-word char (null after a word)
+    bool afterExprParen = false;         // the last '(' was in expression position
     while (i < n) {
         const QChar c = stmt[i];
         if (c.isSpace()) { ++i; continue; }
@@ -653,7 +680,9 @@ static QVector<StructToken> structTokens(const QString &stmt) {
             while (b >= 0 && stmt[b].isSpace()) --b;
             out.append({up, verb, call, b >= 0 && stmt[b] == QLatin1Char('.'),
                         prevWord == QStringLiteral("AS"), afterOpenParen && afterCallParen,
-                        k < n ? stmt[k] : QChar()});
+                        k < n ? stmt[k] : QChar(), afterOpenParen && afterExprParen});
+            if (clauseWords.contains(up)) clause.last() = up;
+            prevSym = QChar();
             if (atStart && up == QStringLiteral("WITH")) inWith = true;
             pendingOuterStart = false;  // consumed by the outer-query token
             prevWord = up;
@@ -677,6 +706,15 @@ static QVector<StructToken> structTokens(const QString &stmt) {
             ++parenDepth;
             afterOpenParen = true;
             afterCallParen = !prevWord.isEmpty() && !parenBodyKeywords().contains(prevWord);
+            afterExprParen = prevWord.isEmpty()
+                ? (prevSym == QLatin1Char(',')
+                       ? (clause.last() == QLatin1String("SELECT")
+                          || clause.last() == QLatin1String("BY"))
+                       : (!prevSym.isNull()
+                          && QStringLiteral("=<>+-*/%|&^!").contains(prevSym)))
+                : exprBefore.contains(prevWord);
+            clause.append(QString());
+            prevSym = c;
             pendingOuterStart = false;  // a parenthesized outer query gets its
                                         // verb slot from afterOpenParen instead
             prevWord.clear();
@@ -689,11 +727,14 @@ static QVector<StructToken> structTokens(const QString &stmt) {
                 pendingOuterStart = true;   // outer query begins after this ')'
                 topLevelBodyIsCte = false;
             }
+            if (clause.size() > 1) clause.removeLast();
+            prevSym = c;
             afterOpenParen = false;
             prevWord.clear();
             ++i;
             continue;
         }
+        prevSym = c;
         if (c == QLatin1Char(',') && parenDepth == 0) {
             pendingOuterStart = false;      // a depth-0 ',' begins another CTE
             afterOpenParen = false;
@@ -1125,25 +1166,30 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
 
     *mutation = mutationBaseKeywords().contains(base) || hasReturning || selectInto;
 
+    // Every hard-fail check below scans the WHOLE statement and nothing in this
+    // block returns: a soft finding (a lock clause, NEXT VALUE FOR) once returned
+    // early and hid a later EXEC xp_cmdshell / dblink_exec / pg_read_file from the
+    // approval path. The first hard reason wins the message; any hard reason wins
+    // over any soft one, whatever the token order.
+    QString hardWhy, softWhy;
+    auto noteHard = [&hardWhy](const QString &r) { if (hardWhy.isEmpty()) hardWhy = r; };
+    auto noteSoft = [&softWhy](const QString &r) { if (softWhy.isEmpty()) softWhy = r; };
     if (restrictFilesystem) {
         switch (fileUsedAsTable(stmt)) {
         case FileTableRef::String:
-            if (why) *why = QStringLiteral(
-                "a quoted string used as a table name is read as a file or URL and is not allowed");
-            hardStop();
-            return;
+            noteHard(QStringLiteral(
+                "a quoted string used as a table name is read as a file or URL and is not allowed"));
+            break;
         case FileTableRef::QuotedPath:
-            if (why) *why = QStringLiteral(
+            noteHard(QStringLiteral(
                 "a quoted table name that looks like a file path, URL or glob is read as a "
-                "file and is not allowed");
-            hardStop();
-            return;
+                "file and is not allowed"));
+            break;
         case FileTableRef::DottedFile:
-            if (why) *why = QStringLiteral(
+            noteHard(QStringLiteral(
                 "a table name ending in a data-file extension (like data.csv) is read as a "
-                "file and is not allowed");
-            hardStop();
-            return;
+                "file and is not allowed"));
+            break;
         case FileTableRef::None:
             break;
         }
@@ -1161,11 +1207,10 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         const QString fn = tk.text.startsWith(QLatin1String("QID_")) ? tk.text.mid(4) : tk.text;
         if (tk.callsFunction && isSideEffectFunction(fn)) {
             *mutation = true;
-            if (why) *why = QStringLiteral(
+            noteHard(QStringLiteral(
                 "call to the side-effecting function '%1' requires approval")
-                .arg(fn);
-            hardStop();
-            return;
+                .arg(fn));
+            continue;
         }
         // MCP run_sql path only: DuckDB filesystem-reading functions are a
         // read-only SQL construct the classifier would otherwise pass, but
@@ -1173,18 +1218,17 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         // literal of the same name (callsFunction==false) stays safe.
         if (restrictFilesystem && tk.callsFunction
             && fileReadingFunctions().contains(fn)) {
-            if (why) *why = QStringLiteral(
-                "filesystem-reading function '%1' is not allowed").arg(fn);
-            hardStop();
-            return;
+            noteHard(QStringLiteral(
+                "filesystem-reading function '%1' is not allowed").arg(fn));
+            continue;
         }
         if (tk.text == QStringLiteral("NEXT") && idx + 2 < stoks.size()
             && stoks[idx + 1].text == QStringLiteral("VALUE")
             && stoks[idx + 2].text == QStringLiteral("FOR")) {
             *mutation = true;
-            if (why) *why = QStringLiteral(
-                "NEXT VALUE FOR advances a sequence (a state change)");
-            return;
+            noteSoft(QStringLiteral(
+                "NEXT VALUE FOR advances a sequence (a state change)"));
+            continue;
         }
         // Locking reads hold row / table locks: FOR UPDATE, FOR SHARE,
         // FOR NO KEY UPDATE, FOR KEY SHARE, LOCK IN SHARE MODE, and the T-SQL
@@ -1214,9 +1258,8 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
         }
         if (!lockClause.isEmpty()) {
             *mutation = true;
-            if (why) *why = QStringLiteral(
-                "row-locking clause '%1' takes locks and requires approval").arg(lockClause);
-            return;
+            noteSoft(QStringLiteral(
+                "row-locking clause '%1' takes locks and requires approval").arg(lockClause));
         }
     }
 
@@ -1230,18 +1273,16 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
                                                                            : tk.text;
             if (tsqlDangerousProcedures().contains(proc)) {
                 *mutation = true;
-                if (why) *why = QStringLiteral(
-                    "T-SQL procedure '%1' runs commands or dynamic SQL").arg(proc);
-                hardStop();
-                return;
+                noteHard(QStringLiteral(
+                    "T-SQL procedure '%1' runs commands or dynamic SQL").arg(proc));
+                continue;
             }
             if (!tk.afterDot && !tk.afterAs && tsqlConditionalBatchKeyword(tk.text, next)) {
                 *mutation = true;
-                if (why) *why = QStringLiteral(
+                noteHard(QStringLiteral(
                     "T-SQL statement keyword '%1 %2' starts another statement "
-                    "(this driver runs batches without ';')").arg(tk.text, next);
-                hardStop();
-                return;
+                    "(this driver runs batches without ';')").arg(tk.text, next));
+                continue;
             }
             if (tk.afterDot || tk.afterAs || !tsqlBatchKeywords().contains(tk.text)) continue;
             if (tk.text == QStringLiteral("MERGE")
@@ -1254,12 +1295,20 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
                 && next != QStringLiteral("TRIGGER"))
                 continue;
             *mutation = true;
-            if (why) *why = QStringLiteral(
+            noteHard(QStringLiteral(
                 "T-SQL statement keyword '%1' starts another statement "
-                "(this driver runs batches without ';')").arg(tk.text);
-            hardStop();
-            return;
+                "(this driver runs batches without ';')").arg(tk.text));
         }
+    }
+
+    if (!hardWhy.isEmpty()) {
+        if (why) *why = hardWhy;
+        hardStop();
+        return;
+    }
+    if (!softWhy.isEmpty()) {
+        if (why) *why = softWhy;
+        return;
     }
 
     if (!readBaseKeywords().contains(base)) {
@@ -1340,7 +1389,8 @@ static void classifyOneStatement(const QString &stmt, bool *mutation,
     for (int idx = 0; idx < stoks.size(); ++idx) {
         const StructToken &tk = stoks[idx];
         if (tk.verbSlot && forbiddenKeywords().contains(tk.text)
-            && !keywordUsedAsArgument(stoks, idx)) {
+            && !keywordUsedAsArgument(stoks, idx)
+            && !(tk.exprParen && exprOperandFollows(tk.next))) {
             // A mutation verb in a verb slot — notably the OUTER verb of a
             // leading-CTE statement (WITH c AS (SELECT 1) DELETE FROM t) — is a
             // genuine write. Surface it to the human-approval gate (isMutation),
@@ -1427,8 +1477,8 @@ static SqlVerdict classifyLexed(const QString &sql, const LexMode &mode,
     return v;
 }
 
-SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictBatch) {
-    // Std, [brackets], Postgres, legacy PG, MySQL x3: read-only only if all agree.
+// Std, [brackets], Postgres, legacy PG, MySQL x3: every engine family's lexing.
+static const QVector<LexMode> &allLexModes() {
     static const QVector<LexMode> modes = [] {
         LexMode std_, brk, pg, pgOld, my, myAnsi, myNoBs;
         std_.nestedComments = brk.nestedComments = pg.nestedComments = pgOld.nestedComments = true;
@@ -1440,11 +1490,15 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictB
         myNoBs.mysqlComments = true;
         return QVector<LexMode>{std_, brk, pg, pgOld, my, myAnsi, myNoBs};
     }();
+    return modes;
+}
 
+SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictBatch) {
+    // Read-only only if every lexing mode agrees.
     SqlVerdict out;
     out.singleStatement = true;
     out.readOnly = true;
-    for (const LexMode &m : modes) {
+    for (const LexMode &m : allLexModes()) {
         // The batch-keyword scan models SQL Server's own (bracket-aware) lexing.
         const SqlVerdict v = classifyLexed(sql, m, restrictFilesystem, strictBatch && m.brackets);
         out.mutation = out.mutation || v.mutation;
@@ -1459,6 +1513,9 @@ SqlVerdict classifySql(const QString &sql, bool restrictFilesystem, bool strictB
             out.reason = v.reason;  // first (standard-first) rejection wins
         }
     }
+    // A hard refusal is the decisive one: report it, not a softer reason another
+    // lexing mode found first (a lock hint before an EXEC in a T-SQL batch).
+    if (out.hardFail) out.reason = out.hardReason;
     // A file-reader rejection returns early; keep the full mutation verdict.
     if (restrictFilesystem && !out.mutation)
         out.mutation = classifySql(sql, false, strictBatch).mutation;
@@ -1483,32 +1540,50 @@ SqlVerdict classifyApprovedWrite(const QString &sql, const QString &driver) {
         "FUNCTION", "PROCEDURE", "EXTENSION", "SECRET", "SERVER", "FOREIGN", "LANGUAGE",
         "TRIGGER", "EVENT", "RULE", "MACRO", "AGGREGATE", "OPERATOR", "CAST",
         "TRANSFORM", "SUBSCRIPTION", "PUBLICATION", "USER", "ROLE", "LOGIN"};
-    LexMode m;
-    m.nestedComments = true;
-    const QStringList toks = wordTokens(stripSqlNoise(sql, m));
     auto refuse = [&v](const QString &why) {
         v.hardFail = true;
         v.hardReason = why;
         return v;
     };
-    for (int i = 0; i < toks.size(); ++i) {
-        const QString &t = toks[i];
-        if ((i == 0 && escapeBases.contains(t)) || t == QLatin1String("OUTFILE") ||
-            t == QLatin1String("DUMPFILE") || t == QLatin1String("INFILE"))
-            return refuse(QStringLiteral("'%1' reads or writes files, reaches the network, runs "
-                                         "code or changes session state").arg(t));
-        if (t == QLatin1String("ALTER") && toks.value(i + 1) == QLatin1String("SYSTEM"))
-            return refuse(QStringLiteral("'ALTER SYSTEM' changes the server configuration"));
-        if (t == QLatin1String("CREATE") || t == QLatin1String("ALTER") ||
-            t == QLatin1String("DROP")) {
-            static const QSet<QString> modifiers = {
-                "OR", "REPLACE", "TEMP", "TEMPORARY", "TRUSTED", "PROCEDURAL",
-                "CONSTRAINT", "PERSISTENT", "GLOBAL", "LOCAL", "DEFINER"};
-            int k = i + 1;
-            while (k < toks.size() && modifiers.contains(toks[k])) ++k;
-            if (k < toks.size() && createdCode.contains(toks[k]))
-                return refuse(QStringLiteral("'%1 %2' manages code, accounts or external "
-                                             "access").arg(t, toks[k]));
+    auto escapes = [](const QString &t) {
+        return QStringLiteral("'%1' reads or writes files, reaches the network, runs "
+                              "code or changes session state").arg(t);
+    };
+    // Scan the text as every engine family lexes it: MySQL runs /*! ... */ as
+    // code, so a standard-only reading missed /*!LOAD DATA LOCAL INFILE ...*/.
+    for (const LexMode &m : allLexModes()) {
+        const QString stripped = stripSqlNoise(sql, m);
+        const QStringList toks = wordTokens(stripped);
+        // The statement's verb, and the verb an EXPLAIN / DESCRIBE wraps (EXPLAIN
+        // ANALYZE runs it, so EXPLAIN ANALYZE EXECUTE escapes like EXECUTE).
+        QString body = stripped;
+        for (int depth = 0; depth < 8; ++depth) {
+            const QStringList bt = wordTokens(body);
+            if (bt.isEmpty()) break;
+            if (escapeBases.contains(bt.first())) return refuse(escapes(bt.first()));
+            if (bt.first() != QLatin1String("EXPLAIN") && bt.first() != QLatin1String("DESCRIBE")
+                && bt.first() != QLatin1String("DESC"))
+                break;
+            body = body.mid(explainBodyStart(body));
+        }
+        for (int i = 0; i < toks.size(); ++i) {
+            const QString &t = toks[i];
+            if (t == QLatin1String("OUTFILE") || t == QLatin1String("DUMPFILE")
+                || t == QLatin1String("INFILE"))
+                return refuse(escapes(t));
+            if (t == QLatin1String("ALTER") && toks.value(i + 1) == QLatin1String("SYSTEM"))
+                return refuse(QStringLiteral("'ALTER SYSTEM' changes the server configuration"));
+            if (t == QLatin1String("CREATE") || t == QLatin1String("ALTER") ||
+                t == QLatin1String("DROP")) {
+                static const QSet<QString> modifiers = {
+                    "OR", "REPLACE", "TEMP", "TEMPORARY", "TRUSTED", "PROCEDURAL",
+                    "CONSTRAINT", "PERSISTENT", "GLOBAL", "LOCAL", "DEFINER"};
+                int k = i + 1;
+                while (k < toks.size() && modifiers.contains(toks[k])) ++k;
+                if (k < toks.size() && createdCode.contains(toks[k]))
+                    return refuse(QStringLiteral("'%1 %2' manages code, accounts or external "
+                                                 "access").arg(t, toks[k]));
+            }
         }
     }
     return v;

@@ -20,6 +20,7 @@
 
 using DbConnections::SqlVerdict;
 using DbConnections::classifySql;
+using DbConnections::classifyApprovedWrite;
 
 static int g_pass = 0, g_fail = 0;
 
@@ -323,6 +324,80 @@ static const Reject kReject[] = {
     {"6", RF, "EXPLAIN SHOW data.csv", kFileDot, false},
     {"6", RF, "SELECT * FROM data/**/.csv", kFileDot, false},
     {"6", RF, "SELECT * FROM main.\"data.csv\"", kFilePath, false},
+
+    // ── 7. a soft finding (lock clause, NEXT VALUE FOR) no longer ends the
+    // scan: the hard-stop token after it decides the reason ─────────────
+    {"7", Strict,   "SELECT * FROM t WITH (HOLDLOCK) EXEC xp_cmdshell 'calc'", kTsql, true},
+    {"7", StrictRF, "SELECT * FROM t WITH (HOLDLOCK) EXEC xp_cmdshell 'calc'", kTsql, true},
+    {"7", Strict,   "SELECT * FROM t WITH (UPDLOCK) DROP TABLE users", kTsql, true},
+    {"7", Strict,   "SELECT NEXT VALUE FOR s EXEC sp_executesql N'DROP TABLE t'", kTsql, true},
+    {"7", Strict,   "SELECT * FROM t WITH (XLOCK) WHERE a = 1 SHUTDOWN", kTsql, true},
+    {"7", Std,      "SELECT * FROM t WHERE id IN (SELECT id FROM u FOR UPDATE) "
+                    "AND dblink_exec('c', 'DROP TABLE x') IS NULL", "side-effecting function", true},
+    {"7", Std,      "SELECT * FROM t FOR SHARE OF t NOWAIT, pg_sleep(10)", "side-effecting function", true},
+    {"7", Std,      "SELECT NEXT VALUE FOR s, lo_import('/etc/passwd')", "side-effecting function", true},
+    {"7", RF,       "SELECT * FROM t WHERE id IN (SELECT id FROM u FOR UPDATE) "
+                    "AND pg_ls_dir('/') IS NULL", "filesystem-reading function", true},
+    {"7", RF,       "SELECT * FROM t LOCK IN SHARE MODE UNION SELECT load_file('/etc/passwd')",
+                    "filesystem-reading function", true},
+
+    // ── 8. a keyword after an expression '(' followed by more words is still
+    // a statement body (only (word) / (word op ...) is an operand) ───────
+    {"8", Std, "SELECT (DELETE FROM t RETURNING 1)", "in verb position", true},
+    {"8", Std, "SELECT * FROM t WHERE (UPDATE t SET a = 1 RETURNING 1) IS NULL", "in verb position", true},
+    {"8", Std, "SELECT * FROM t WHERE a = 1 AND (DELETE * FROM t) IS NULL", "in verb position", true},
+    {"8", Std, "SELECT * FROM (DELETE FROM t RETURNING *) d", "in verb position", true},
+    {"8", Std, "SELECT * FROM t WHERE EXISTS (DELETE FROM t RETURNING 1)", "in verb position", true},
+    {"8", Std, "SELECT a, (INSERT INTO t VALUES (1) RETURNING 1) FROM u", "in verb position", true},
+    {"8", Std, "SELECT * FROM t WHERE x = (COPY t TO '/tmp/x')", "in verb position", true},
+};
+
+// Hard-fail rows: the verdict an approval card can never override. Before the
+// fix, a lock clause or NEXT VALUE FOR returned before these were examined, so
+// the approval path offered a card for the first 9 (v0.1.133 review).
+struct Hard {
+    const char *driver;  // classifyApprovedWrite's driver
+    const char *sql;
+    const char *reason;  // substring of hardReason
+};
+static const Hard kHard[] = {
+    {"QODBC", "SELECT * FROM t WITH (HOLDLOCK) EXEC xp_cmdshell 'calc'", kTsql},
+    {"QODBC", "UPDATE t WITH (TABLOCK) SET a=1 DROP TABLE users", kTsql},
+    {"QODBC", "UPDATE t WITH (UPDLOCK) SET a=1 EXEC xp_cmdshell 'calc'", kTsql},
+    {"QODBC", "UPDATE t SET a = NEXT VALUE FOR s EXEC xp_cmdshell 'x'", kTsql},
+    {"QODBC", "SELECT * FROM t WITH (TABLOCKX) EXEC master..xp_cmdshell 'x'", kTsql},
+    {"QPSQL", "UPDATE t SET a=1 WHERE id IN (SELECT id FROM u FOR UPDATE) "
+              "AND dblink_exec('c','DROP TABLE x') IS NULL", "DBLINK_EXEC"},
+    {"QPSQL", "UPDATE t SET a=1 WHERE id IN (SELECT id FROM u FOR UPDATE) "
+              "RETURNING pg_read_file('/etc/passwd')", "PG_READ_FILE"},
+    {"QPSQL", "UPDATE t SET a = (SELECT b FROM u FOR NO KEY UPDATE), c = pg_ls_dir('/')",
+              "PG_LS_DIR"},
+    {"QMYSQL", "UPDATE t SET a=1 WHERE id IN (SELECT id FROM u LOCK IN SHARE MODE) "
+               "AND SLEEP(5) = 0", "SLEEP"},
+    // lock clause + each remaining hard family (these were already hard; pinned)
+    {"QPSQL", "UPDATE t SET a=1 WHERE id IN (SELECT id FROM u FOR UPDATE) /* /* */ */",
+              "nested"},
+    {"QPSQL", "UPDATE t SET a=1 WHERE id IN (SELECT id FROM u FOR UPDATE) "
+              "AND U&\"\\0070g_read_file\"('/x') IS NULL", "Unicode-escaped"},
+    {"DUCKDB", "INSERT INTO t SELECT * FROM 'x.csv' FOR UPDATE", kFileStr},
+    {"QPSQL", "UPDATE t SET a = dblink_exec('c','x') WHERE id IN (SELECT id FROM u FOR UPDATE)",
+              "DBLINK_EXEC"},
+    // forms the approval scan read only under standard lexing / only as the
+    // statement's first word
+    {"QMYSQL", "/*!LOAD DATA LOCAL INFILE '/etc/passwd' INTO TABLE t*/", "LOAD"},
+    {"QMYSQL", "SELECT * FROM t /*!INTO OUTFILE '/tmp/x'*/", "OUTFILE"},
+    {"QMYSQL", "UPDATE t SET a = 1 /*!50000 , b = (SELECT 1 INTO DUMPFILE '/tmp/x')*/", "DUMPFILE"},
+    {"QPSQL", "EXPLAIN ANALYZE EXECUTE p", "EXECUTE"},
+    {"DUCKDB", "EXPLAIN ANALYZE ATTACH 'x.db' AS x", "ATTACH"},
+};
+
+// Writes the approval path must still offer a card for.
+static const Hard kApprovable[] = {
+    {"QPSQL", "UPDATE t SET a = 1 WHERE id IN (SELECT id FROM u FOR UPDATE)", ""},
+    {"QPSQL", "DELETE FROM t WHERE id = 1", ""},
+    {"QMYSQL", "UPDATE t SET a = 1 WHERE b = 'x' -- note", ""},
+    {"QPSQL", "EXPLAIN ANALYZE UPDATE t SET a = 1", ""},
+    {"QSQLITE", "INSERT INTO t (a) VALUES (1)", ""},
 };
 
 static const Accept kAccept[] = {
@@ -433,6 +508,18 @@ static const Accept kAccept[] = {
     {"6", StrictRF, "SELECT * FROM [order details]"},
     {"6", Std,      "SELECT * FROM \"data.csv\""},  // desktop gate unchanged
     {"6", Std,      "SELECT * FROM data.csv"},
+
+    // 8 — a keyword-named column in a parenthesised expression is an operand
+    {"8", Std,    "SELECT (comment) FROM posts"},
+    {"8", RF,     "SELECT (comment) FROM posts"},
+    {"8", Std,    "SELECT * FROM posts WHERE (start > 1)"},
+    {"8", Std,    "SELECT a, (comment) FROM posts"},
+    {"8", Std,    "SELECT * FROM t WHERE a = 1 AND (update = 2 OR (lock <> 3))"},
+    {"8", Std,    "SELECT CASE WHEN (start > 1) THEN (comment) ELSE (set) END FROM t"},
+    {"8", Std,    "SELECT 2 * (start) - (reset) FROM t"},
+    {"8", Std,    "SELECT (comment || 'x') FROM posts"},
+    {"8", Std,    "SELECT a FROM t ORDER BY a, (start)"},
+    {"8", Strict, "SELECT (comment) FROM posts WHERE (start > 1)"},
 };
 
 int main(int argc, char **argv) {
@@ -444,7 +531,7 @@ int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
 
     std::printf("== REJECT: confirmed bypasses and their variants ==\n");
-    int perItem[7] = {0};
+    int perItem[9] = {0};
     for (const Reject &r : kReject) {
         const SqlVerdict v = verdict(r.mode, r.sql);
         const bool rejected = !(v.singleStatement && v.readOnly);
@@ -480,6 +567,36 @@ int main(int argc, char **argv) {
         }
     }
 
+    std::printf("== HARD: approval path refuses, whatever precedes the hard-stop token ==\n");
+    for (const Hard &h : kHard) {
+        const SqlVerdict v = classifyApprovedWrite(QString::fromUtf8(h.sql),
+                                                   QString::fromUtf8(h.driver));
+        const bool ok = v.hardFail && v.hardReason.contains(QString::fromUtf8(h.reason));
+        ok ? ++g_pass : ++g_fail;
+        std::printf("  [%s] %-7s %s  (hardFail=%d single=%d hardReason=\"%s\")\n",
+                    ok ? "PASS" : "FAIL", h.driver, shown(h.sql).toUtf8().constData(), v.hardFail,
+                    v.singleStatement, v.hardReason.toUtf8().constData());
+    }
+    // The strict read path reports the same hard verdict (execute_sql's card text
+    // comes from it): a lock hint must not downgrade an EXEC to a soft refusal.
+    for (const char *sql : {"SELECT * FROM t WITH (HOLDLOCK) EXEC xp_cmdshell 'calc'",
+                            "UPDATE t SET a = NEXT VALUE FOR s EXEC xp_cmdshell 'x'"}) {
+        const SqlVerdict v = classifySql(QString::fromUtf8(sql), true, true);
+        const bool ok = v.hardFail && !v.readOnly;
+        ok ? ++g_pass : ++g_fail;
+        std::printf("  [%s] classifySql strict+rf hardFail: %s\n", ok ? "PASS" : "FAIL", sql);
+    }
+    std::printf("== APPROVABLE: ordinary writes still get a card ==\n");
+    for (const Hard &h : kApprovable) {
+        const SqlVerdict v = classifyApprovedWrite(QString::fromUtf8(h.sql),
+                                                   QString::fromUtf8(h.driver));
+        const bool ok = !v.hardFail && v.singleStatement && v.mutation;
+        ok ? ++g_pass : ++g_fail;
+        std::printf("  [%s] %-7s %s  (hardFail=%d mutation=%d reason=\"%s\")\n",
+                    ok ? "PASS" : "FAIL", h.driver, shown(h.sql).toUtf8().constData(), v.hardFail,
+                    v.mutation, (v.hardFail ? v.hardReason : v.reason).toUtf8().constData());
+    }
+
     // EXPLAIN bodies are classified recursively: a long EXPLAIN EXPLAIN ... chain
     // must stay bounded (no stack blow-up) and be refused.
     {
@@ -495,7 +612,7 @@ int main(int argc, char **argv) {
     }
 
     // Every item keeps a real reject table (guards against a truncated array).
-    for (int item = 1; item <= 6; ++item) {
+    for (int item = 1; item <= 8; ++item) {
         if (perItem[item] < 5) {
             ++g_fail;
             std::printf("  [FAIL] item %d has only %d reject rows\n", item, perItem[item]);
