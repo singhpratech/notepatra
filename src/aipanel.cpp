@@ -7177,24 +7177,13 @@ void AIPanel::saveChatHistory() {
 
     // Atomic write: a uniquely named temp beside the history file, fsynced
     // and renamed over it, so a kill mid-save never leaves a half-written
-    // history. QSaveFile creates the temp exclusively: a symlink planted at
-    // the old fixed `<history>.tmp` name is never followed. On any failure
-    // the previous history file is left intact.
-    QSaveFile f(m_chatHistoryPath);
-    if (!f.open(QIODevice::WriteOnly)) {
-        qWarning("[ai] chat history not saved: %s", qPrintable(f.errorString()));
-        return;
-    }
-    if (f.write(bytes) != bytes.size()) {
-        f.cancelWriting();
-        qWarning("[ai] chat history not saved: short write");
-        return;
-    }
-    if (!f.commit()) {
-        qWarning("[ai] chat history not saved: %s", qPrintable(f.errorString()));
-        return;
-    }
-    NpAtomic::syncDirectoryOf(m_chatHistoryPath);
+    // history. The temp is created exclusively (a symlink planted at the old
+    // fixed `<history>.tmp` name is never followed) and the rename replaces a
+    // symlink at the history's own name rather than writing through it. On
+    // any failure the previous history file is left intact.
+    QString writeErr;
+    if (!NpAtomic::writeFileNoFollow(m_chatHistoryPath, bytes, &writeErr))
+        qWarning("[ai] chat history not saved: %s", qPrintable(writeErr));
 }
 
 void AIPanel::loadChatHistory() {

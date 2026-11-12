@@ -535,6 +535,17 @@ static void testPlantedTmpSymlinkNotFollowed() {
     h.open(QIODevice::ReadOnly);
     EXPECT_TRUE("the history was still saved", h.readAll().contains("link-q1"));
     EXPECT_TRUE("the history is a regular file", !QFileInfo(histPath).isSymLink());
+
+    // A link AT the history's own name is replaced, never written through.
+    QFile::remove(histPath);
+    EXPECT_TRUE("symlink planted at the history name itself", QFile::link(victim, histPath));
+    AIPanelTestAccess::chat(&panel).append(userMsg("link-q2"));
+    AIPanelTestAccess::saveNow(&panel);
+    QFile v2(victim);
+    v2.open(QIODevice::ReadOnly);
+    EXPECT_TRUE("the link's target is still untouched",
+                v2.readAll() == QByteArray("VICTIM_ORIGINAL\n"));
+    EXPECT_TRUE("the history is a regular file again", !QFileInfo(histPath).isSymLink());
 #endif
 }
 

@@ -316,6 +316,18 @@ int main(int argc, char *argv[]) {
         EXPECT("(9) session.json saved again",
                readFile(sessionPath).contains("D8_DANGLING_TOKEN"));
         QFile::remove(planted);
+
+        // A link AT session.json is replaced by the save, never written through.
+        QFile::remove(sessionPath);
+        EXPECT("(9) symlink planted at session.json itself",
+               QFile::link(victim, sessionPath) && QFileInfo(sessionPath).isSymLink());
+        ed->insertAt(QStringLiteral("D8_OWN_NAME_TOKEN\n"), 0, 0);
+        mw->saveSession();
+        EXPECT("(9) the link's target is still untouched",
+               readFile(victim) == QByteArray("VICTIM_ORIGINAL\n"));
+        EXPECT("(9) session.json is a regular file again", !QFileInfo(sessionPath).isSymLink());
+        EXPECT("(9) session.json holds the session",
+               readFile(sessionPath).contains("D8_OWN_NAME_TOKEN"));
     }
 #endif
 

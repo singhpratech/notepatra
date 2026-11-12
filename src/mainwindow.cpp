@@ -7061,19 +7061,13 @@ void MainWindow::saveSession() {
     // Atomic write — a uniquely named temp beside session.json, renamed over
     // it on commit, so a crash mid-write can never leave a truncated
     // session.json and a failed write leaves the previous one in place.
-    // QSaveFile creates the temp exclusively: the old fixed
-    // `session.json.tmp` was opened with Truncate, so a symlink planted there
-    // was followed and its target overwritten with the session (which holds
-    // unsaved buffer text).
-    const QString target = sessionFilePath();
-    QSaveFile f(target);
-    if (!f.open(QIODevice::WriteOnly)) return;
-    const QByteArray payload = QJsonDocument(session).toJson();
-    if (f.write(payload) != payload.size()) {
-        f.cancelWriting();
+    // The temp is created exclusively: the old fixed `session.json.tmp` was
+    // opened with Truncate, so a symlink planted there was followed and its
+    // target overwritten with the session (which holds unsaved buffer text).
+    // The rename replaces a symlink at session.json itself rather than
+    // writing through it (QSaveFile would follow one).
+    if (!NpAtomic::writeFileNoFollow(sessionFilePath(), QJsonDocument(session).toJson()))
         return;
-    }
-    if (!f.commit()) return;
 
     // Only after a successful rename — a failed write leaves the flags set
     // so the next tick retries.
