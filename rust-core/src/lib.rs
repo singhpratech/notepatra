@@ -10,9 +10,12 @@ mod bracket_fix;
 mod diff;
 mod encoding;
 mod file_io;
+#[cfg(test)]
+mod fuzz;
 mod hash;
 mod html_fmt;
 mod json_fmt;
+mod json_repair;
 mod keygen;
 mod search;
 mod sql_fmt;
@@ -431,7 +434,7 @@ pub unsafe extern "C" fn npc_format_json(
     indent: c_int,
 ) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
-    text_to_result(json_fmt::format_json(input, indent as usize))
+    text_to_result(json_fmt::format_json(input, indent.clamp(0, 16) as usize))
 }
 
 /// Strict JSON validation. Returns an empty string when the input is valid
@@ -487,6 +490,17 @@ pub unsafe extern "C" fn npc_format_html(
 pub unsafe extern "C" fn npc_fix_brackets(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(bracket_fix::fix_brackets(input))
+}
+
+/// What npc_fix_brackets changes (each insertion/removal with line and
+/// column), or why it changes nothing. Pair of npc_fix_json_report.
+#[no_mangle]
+pub unsafe extern "C" fn npc_fix_brackets_report(
+    text: *const c_char,
+    text_len: size_t,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    text_to_result(bracket_fix::fix_brackets_report(input))
 }
 
 #[no_mangle]

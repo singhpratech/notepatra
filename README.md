@@ -94,9 +94,9 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 #### JSON Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Format** | Pretty-print with preserved key order |
-| **Minify** | Compact to one line |
-| **Fix + Format** | Rust-powered auto-repair: fixes missing braces, trailing commas, single quotes, unquoted keys, missing `{` after `[` — shows detailed report of every fix |
+| **Format** | Pretty-print changing whitespace only: key order, duplicate keys, number text (`1.0`, `-0`, 30-digit integers) and escapes are kept byte for byte. Invalid JSON is left untouched and the error says where (`line 3, column 7: expected ',' or ']' ...`) |
+| **Minify** | Compact to one line (whitespace between tokens only; never inside strings) |
+| **Fix + Format** | Rust-powered repair of unambiguous faults — trailing commas, `//` / `/* */` comments, single or curly quotes, unquoted keys, Python `True`/`False`/`None`, raw line breaks in strings, a missing `:` or a missing `,` at a line end — listing every change with its line and column. When the right repair would be a guess (unclosed brackets at the end: missing closer or truncated file?, `NaN`, a stray `]`) it changes nothing and says exactly where |
 | **AI Fix (Ollama)** | Sends truly broken JSON to your local AI — fixes what regex can't |
 
 #### HTML Tools (inbuilt)
@@ -110,8 +110,8 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 #### Bracket Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Check** | Detailed report: line numbers of every mismatched `()` `[]` `{}`, keyword mismatches (`begin`/`end`, `if`/`fi`) |
-| **Auto-Fix** | Adds missing closers in correct nesting order |
+| **Check** | Line and column of every unmatched `()` `[]` `{}` (brackets in strings, comments, templates, regexes and heredocs are skipped); shell `if`/`fi`, `case`/`esac`, `do`/`done` mismatches |
+| **Auto-Fix** | Inserts missing closers and removes stray ones — nothing else — and lists each change with its line and column. Balanced code is never touched |
 | **AI Fix (Ollama)** | AI understands your code structure and fixes all bracket issues |
 
 #### SQL Formatter (inbuilt)
