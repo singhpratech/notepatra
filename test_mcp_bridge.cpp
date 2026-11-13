@@ -3114,6 +3114,37 @@ private slots:
         QVERIFY(!e0.value(QLatin1String("message")).toString().isEmpty());
     }
 
+    // Reported from v0.1.134: `(a) -> [b` came back valid:true. The error must
+    // carry the line AND the column of the unclosed '[' (the tool description
+    // promises both), and older line-only errors keep column 0.
+    void validate_npd_unclosed_bracket_has_line_and_column() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("source")] = QStringLiteral("diagram flow\n(a) -> [b");
+        QJsonObject r = call(s, 126, QStringLiteral("validate_npd"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), false);
+        QJsonArray errs = res.value(QLatin1String("errors")).toArray();
+        QCOMPARE(errs.size(), 1);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("line")).toInt(), 2);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("column")).toInt(), 8);
+        QVERIFY(errs.at(0).toObject().value(QLatin1String("message")).toString()
+                    .startsWith(QLatin1String("unclosed '['")));
+        // A line-level error has no column to point at: 0, never a guess.
+        a[QStringLiteral("source")] = QStringLiteral("diagram blob\n");
+        r = call(s, 127, QStringLiteral("validate_npd"), a);
+        errs = r.value(QLatin1String("result")).toObject()
+                   .value(QLatin1String("errors")).toArray();
+        QCOMPARE(errs.size(), 1);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("line")).toInt(), 1);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("column")).toInt(), 0);
+        QVERIFY(errs.at(0).toObject().value(QLatin1String("message")).toString()
+                    .startsWith(QLatin1String("unknown diagram type")));
+    }
+
     void validate_npd_by_tab_and_bad_args() {
         m_fakeTabs.append({QStringLiteral("chart.npd"), QString(),
                            QStringLiteral("node a (Start)\n"), false,

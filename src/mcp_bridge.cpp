@@ -46,7 +46,8 @@
 //   git_log    {limit?(=20,cap 100)}        → {output}            (v0.1.119)
 //   git_show   {ref}                        → {output}            (v0.1.119)
 //   git_branch {}                           → {output}            (v0.1.119)
-//   validate_npd {tab_index|source}         → {valid,errors:[{line,message}]}
+//   validate_npd {tab_index|source}         → {valid,errors:[{line,column,
+//                                              message}]} (column 0 = n/a)
 //                                                                  (v0.1.119)
 //   run_sql    {sql,csv_path?}              → {columns:[...],rows:[[...]],
 //                                              truncated,engine}   (v0.1.119)
@@ -2654,18 +2655,23 @@ void McpBridge::verbGit(QLocalSocket *client, int id, const QJsonObject &args,
 // set_diagram_source.
 static QJsonObject npdValidationJson(const QString &source) {
     const Npd::Diagram d = Npd::parse(source);
-    static const QRegularExpression rx(QStringLiteral("^line (\\d+): (.*)$"));
+    // "line N: msg", or "line N, column M: msg" when the parser can point at
+    // the character (unclosed brackets / quotes). column 0 = not pinpointed.
+    static const QRegularExpression rx(
+        QStringLiteral("^line (\\d+)(?:, column (\\d+))?: (.*)$"));
     QJsonArray errors;
     for (const QString &e : d.errors) {
-        int line = 0;
+        int line = 0, column = 0;
         QString message = e;
         const QRegularExpressionMatch m = rx.match(e);
         if (m.hasMatch()) {
             line = m.captured(1).toInt();
-            message = m.captured(2);
+            column = m.captured(2).toInt();   // "" → 0
+            message = m.captured(3);
         }
         QJsonObject o;
         o[QStringLiteral("line")] = line;
+        o[QStringLiteral("column")] = column;
         o[QStringLiteral("message")] = message;
         errors.append(o);
     }

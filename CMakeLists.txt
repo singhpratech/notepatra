@@ -718,6 +718,49 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mermaid_import.cpp
     set_tests_properties(test_mermaid_import PROPERTIES LABELS "unit;diagram")
 endif()
 
+# ── .npd validation table: unclosed brackets / quotes (pure; reads the shipped
+#    sample and the built-in templates) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_npd_validation.cpp")
+    add_executable(test_npd_validation test_npd_validation.cpp
+        src/diagram/npd_parser.cpp src/diagram/mermaid_import.cpp)
+    target_include_directories(test_npd_validation PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_compile_definitions(test_npd_validation PRIVATE
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(test_npd_validation PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_npd_validation)
+    set_tests_properties(test_npd_validation PROPERTIES LABELS "unit;diagram" TIMEOUT 60)
+endif()
+
+# ── Diagram tab "Import Mermaid" dialog, driven offscreen: an unsupported
+#    Mermaid type shows its reason and leaves the diagram alone ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mermaid_import_dialog.cpp")
+    add_executable(test_mermaid_import_dialog
+        test_mermaid_import_dialog.cpp
+        src/diagram/diagram_editor.cpp
+        src/diagram/diagram_ai_dialog.cpp
+        src/diagram/diagram_view.cpp
+        src/diagram/diagram_render.cpp
+        src/diagram/npd_parser.cpp
+        src/diagram/mermaid_import.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+        src/network_policy.cpp
+    )
+    target_include_directories(test_mermaid_import_dialog PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_link_libraries(test_mermaid_import_dialog PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Sql Qt5::PrintSupport)
+    if(Qt5Svg_FOUND)
+        target_link_libraries(test_mermaid_import_dialog PRIVATE Qt5::Svg)
+        target_compile_definitions(test_mermaid_import_dialog PRIVATE NOTEPATRA_WITH_SVG)
+    endif()
+    notepatra_add_qt_test(test_mermaid_import_dialog)
+    set_tests_properties(test_mermaid_import_dialog PROPERTIES
+        LABELS "integration;diagram" TIMEOUT 60)
+endif()
+
 # v0.1.78 — wire rust-core's cargo unit tests into ctest so the encoding /
 # binary-detection regression tests run as part of release-check.sh.
 # Includes the file_io UTF-16/32 BOM coverage added to fix the "UTF-16 LE

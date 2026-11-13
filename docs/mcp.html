@@ -365,7 +365,7 @@
       <tr><td><code>git_log</code></td><td>Read-only <code>git log</code> (recent commits; default 20, capped at 100).</td></tr>
       <tr><td><code>git_show</code></td><td>Read-only <code>git show</code> for a commit or ref.</td></tr>
       <tr><td><code>git_branch</code></td><td>Read-only list of branches in the workspace repository.</td></tr>
-      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers.</td></tr>
+      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers, and the column of an unclosed bracket or quote.</td></tr>
       <tr><td><code>run_sql</code></td><td>Run a read-only <code>SELECT</code> and return columns + rows — over a file in your open workspace folder (<code>csv_path</code>, as table <code>data</code>: CSV / Parquet / JSON in Full, CSV in Lite), or, with no <code>csv_path</code>, an empty in-memory SQLite scratch database. SELECT-only and sandboxed — see the note below.</td></tr>
       <tr><td><code>list_languages</code></td><td>List the canonical language names <code>set_language</code> accepts (as shown in the Language menu).</td></tr>
       <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter, charts — with the reason when charts are unavailable, since macOS Full has none).</td></tr>
