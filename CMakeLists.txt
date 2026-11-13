@@ -3286,6 +3286,32 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
     message(STATUS "Regression test enabled — target: test_mcp_bridge")
 endif()
 
+# The real mcp_bridge.cpp compiled as a Full flavor WITHOUT WebEngine (the
+# macOS Full configuration) on every OS: the chart gate must not tell a Full
+# build to get the Full edition. Only the bridge sees NOTEPATRA_HAVE_DUCKDB
+# here; nothing that needs libduckdb is linked.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_chart_gate.cpp")
+    add_executable(test_mcp_chart_gate
+        test_mcp_chart_gate.cpp
+        src/mcp_bridge.cpp
+        src/path_denylist.cpp
+        src/singleinstance.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/diagram/npd_parser.cpp
+    )
+    target_include_directories(test_mcp_chart_gate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_chart_gate PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_HAVE_DUCKDB=1)
+    target_link_libraries(test_mcp_chart_gate PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent Qt5::Test)
+    notepatra_add_qt_test(test_mcp_chart_gate)
+    set_tests_properties(test_mcp_chart_gate PROPERTIES LABELS "unit;mcp" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_mcp_chart_gate")
+endif()
+
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds
 # only the two new sources plus rustbridge (the Rust diff path) so it stays
 # cheap and never accidentally links aipanel.cpp (which would drag in the
