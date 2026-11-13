@@ -2661,6 +2661,57 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_control.c
     message(STATUS "Regression test enabled — target: test_mcp_host_control")
 endif()
 
+# Diagram tabs survive every quit path (session save/restore, session-less
+# close prompt) and the Welcome tab keeps its MCP tab_id across set_theme.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_diagram_session.cpp")
+    set(DIAGRAM_SESSION_SOURCES ${SOURCES})
+    list(FILTER DIAGRAM_SESSION_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_diagram_session
+        test_diagram_session.cpp
+        ${DIAGRAM_SESSION_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_diagram_session rust_core)
+    target_compile_definitions(test_diagram_session PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_diagram_session PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_diagram_session PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_diagram_session PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_diagram_session PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_diagram_session PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_diagram_session PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_diagram_session PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_diagram_session PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_diagram_session PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_diagram_session PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_diagram_session PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_diagram_session COMMAND $<TARGET_FILE:test_diagram_session>)
+    set_tests_properties(test_diagram_session PROPERTIES
+        LABELS "integration;mainwindow;session;mcp"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_diagram_session")
+endif()
+
 # D8 (win-open-ghost) — double-click occurrence highlight: doc-size
 # gate + match cap so a popular word can't hang the GUI thread.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_occurrence_highlight_cap.cpp")
