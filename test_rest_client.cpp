@@ -309,6 +309,8 @@ int main(int argc, char *argv[]) {
     QSignalSpy finished(rest, &RestClient::requestFinished);
 
     // ── S1 ──
+    EXPECT("S1: Open in tab has no platform file icon (blank on macOS when disabled)",
+           TA::openTabBtn(rest)->icon().isNull());
     std::printf("-- S1: undefined variable blocks the send --\n");
     EXPECT("S1: before any response the Body pane shows the how-to hint",
            TA::respBody(rest).isEmpty() && TA::respBodyHint(rest).startsWith("Set a method and URL"));

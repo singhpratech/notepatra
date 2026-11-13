@@ -210,9 +210,10 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_saveBtn->setToolTip(tr("Save the raw response bytes to a file"));
     m_copyBtn = new QPushButton(tr("Copy"));
     m_copyBtn->setToolTip(tr("Copy the text shown below"));
-    const QStyle *st = style();
-    m_openTabBtn->setIcon(st->standardIcon(QStyle::SP_FileIcon));
-    m_saveBtn->setIcon(st->standardIcon(QStyle::SP_DialogSaveButton));
+    // Open in tab stays text-only, like Copy: SP_FileIcon is the platform's
+    // generic-document picture (a white page on macOS), which vanished on
+    // the light bar when the button was disabled.
+    m_saveBtn->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
     for (QPushButton *b : {m_openTabBtn, m_saveBtn, m_copyBtn}) {
         b->setEnabled(false);
         respBar->addWidget(b);
