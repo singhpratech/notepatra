@@ -65,7 +65,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "TextEditor",
       "description": "Native Qt5 + QScintilla code editor with an original C++17/Rust core, built for the AI era. Bare executable is ~14 MB across platforms (14.9 MB on Linux x64); Lite downloads are 5.3 MB (Linux x64 tar.gz), 28.7 MB (macOS DMG with bundled Qt), 45.2 MB (Windows MSI with bundled Qt DLLs). 238 file types. 82 language lexers. JSON / HTML / SQL fixers. AI dock dropdown ships six backends: Ollama, llama.cpp (GGUF), OpenRouter, Ollama Cloud, OpenAI, Azure OpenAI; the llama.cpp entry also accepts a user-configured URL so it can reach any OpenAI-compatible server. Free forever. Linux, Windows, macOS.",
-      "softwareVersion": "0.1.133",
+      "softwareVersion": "0.1.134",
       "fileSize": "14.9 MB",
       "downloadUrl": "https://github.com/singhpratech/notepatra/releases/latest",
       "installUrl": "https://notepatra.org/#install",
@@ -153,7 +153,7 @@
           "name": "How big is the Notepatra binary?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "The bare Notepatra executable is ~14 MB across every platform (14.9 MB on Linux x64). Latest v0.1.133 download sizes: 5.3 MB Linux x64 tar.gz, 5.0 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 45.2 MB Windows MSI / 33.3 MB NSIS / 38.2 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~14.9 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~14.9–85 MB depending on platform."
+            "text": "The bare Notepatra executable is ~14 MB across every platform (14.9 MB on Linux x64). Latest v0.1.134 download sizes: 5.3 MB Linux x64 tar.gz, 5.0 MB Linux ARM64 tar.gz, 28.7 MB macOS DMG (with bundled Qt), 45.2 MB Windows MSI / 33.3 MB NSIS / 38.2 MB portable zip (with bundled Qt + QScintilla DLLs). After Windows install the on-disk footprint is ~75-85 MB because the MSI extracts the bundled Qt5 DLLs and QScintilla DLL out of the compressed payload — that's normal for any Qt app installer. Linux installs stay tiny (~14.9 MB on disk / bare) because Qt5 comes from your distro repo. Notepatra installs at ~14.9–85 MB depending on platform."
           }
         },
         {
@@ -169,7 +169,7 @@
           "name": "What languages and file types does Notepatra support?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.133: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
+            "text": "Notepatra supports 238 file types with 82 language lexers as of v0.1.134: Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, and many more."
           }
         },
         {
@@ -1400,8 +1400,8 @@
     <div id="scroll-progress" aria-hidden="true"></div>
 
     <!-- Sticky download CTA — appears after the hero scrolls away. -->
-    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.133">
-        Download v0.1.133 ↓
+    <a id="sticky-cta" href="#download" aria-label="Download Notepatra v0.1.134">
+        Download v0.1.134 ↓
     </a>
 
     <div class="bg-glow"></div>
@@ -1431,7 +1431,7 @@
     <main id="main">
     <!-- Hero -->
     <div class="hero">
-        <div class="hero-badge">v0.1.133 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
+        <div class="hero-badge">v0.1.134 · Now Available · MCP server for AI assistants · Linux · Windows · macOS</div>
         <h1>The code editor built for the AI era</h1>
         <p>Tiny native binary (~14 MB bare, ~5.3 MB compressed on Linux). C++ and Rust. 238 file types · 82 language lexers. JSON / HTML / SQL formatters; JSON and bracket repairs only where the fix is unambiguous, local AI as fallback. <strong>Local AI by default; cloud LLMs opt-in.</strong> Or pick the <a href="#download" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">Local AI build</a> for a binary that physically refuses to talk to public AI endpoints. <strong>New in v0.1.133:</strong> JSON, HTML and bracket tools that never change what your text means, an AI assistant that stops losing work, six SQL-check bypasses closed, and <a href="/docs.html#rest-client" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">REST client</a> support for <code>.http</code> files. <strong>MCP:</strong> the 119 tools of the <a href="/mcp.html" style="color:#a87bc4; text-decoration:underline; text-underline-offset:3px;">MCP server</a> (editing, tabs, Git, SQL, Noter, REST; every write approved by you) connect Claude, Codex, or any MCP client straight to your editor.</p>
 
@@ -1521,7 +1521,7 @@
 
     <!-- Download -->
     <section id="download">
-        <div class="section-label">Download v0.1.133</div>
+        <div class="section-label">Download v0.1.134</div>
         <div class="section-title">One-command install or direct download</div>
         <div class="section-desc">Auto-detecting installer scripts, or pick your platform from GitHub Releases. No telemetry. No tracking. Just a binary.</div>
 
@@ -1589,7 +1589,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: var(--green); color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra v0.1.133 →
+                Get Notepatra v0.1.134 →
               </a>
             </div>
 
@@ -1632,7 +1632,7 @@
                         margin-top: 18px; padding: 9px 16px; border-radius: 8px;
                         background: #a87bc4; color: white; text-decoration: none;
                         font-weight: 600; font-size: 13.5px;">
-                Get Notepatra Local AI v0.1.133 →
+                Get Notepatra Local AI v0.1.134 →
               </a>
             </div>
           </div>
@@ -1802,7 +1802,7 @@
                  star features. -->
             <div class="feature-card" style="border-color: rgba(204,120,92,0.45); box-shadow: 0 12px 36px rgba(204,120,92,0.14);">
                 <div class="feature-icon fi-orange">🔌</div>
-                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">119 TOOLS · v0.1.133</span></h3>
+                <h3>MCP — your editor, readable by your AI <span style="font-size: 10px; background: var(--c-accent); color: #fff; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; letter-spacing: 0.04em;">119 TOOLS · v0.1.134</span></h3>
                 <p>A built-in <strong>Model Context Protocol server</strong> (<code>notepatra-mcp</code>) connects the assistants you already use — <strong>Claude Desktop, Claude Code, OpenAI Codex</strong>, and any MCP client — to the running editor. <strong>119 tools in three tiers</strong>: read (tabs, search, Noter, Git, SQL, saved connections, pure text tools), act (open, navigate, tab and view control, diagrams, charts), and write (editing, saving, Noter, git commit and push, SQL changes, REST requests). <em>Every</em> write shows an <strong>Approve / Deny card inside the editor</strong> and does nothing until you click Approve. Local by default: the server opens no network connections of its own; tools that use a saved database connection talk to that database. <a href="/mcp.html" style="color: var(--c-accent);">Read the MCP docs →</a></p>
             </div>
             <!-- AI Assistant at slot 2 — highlighted with a Clay-orange
@@ -2156,86 +2156,65 @@
         <div class="version-list">
             <div class="version-card latest">
                 <div class="version-header">
-                    <div class="version-tag">v0.1.133 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-tag">v0.1.134 <span class="latest-pill">LATEST</span></div>
+                    <div class="version-meta">
+                        <span>2026-11-13</span>
+                        <span>· <strong>macOS fixes for the REST Client and the menu bar, and a status bar that describes the tab you are on.</strong></span>
+                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
+                    </div>
+                </div>
+                <div class="version-changes">
+                    <div class="version-section">
+                        <h5>Fixed — REST Client</h5>
+                        <ul>
+                            <li><strong>The Headers and Body tab labels were clipped on both sides on macOS</strong> ("eader", "ody"). The tabs were sized with the app's 10 px font and the labels painted at 12 px; both now use the same 12 px font.</li>
+                            <li>Send Request hints show the keys you actually press: <code>⌥⌘R</code> on macOS, <code>Ctrl+Alt+R</code> on Linux and Windows. This covers the Body pane hint, the Feature Guide, the Keyboard Shortcuts list and "How REST Client Works".</li>
+                            <li>After a binary or empty response the Body pane no longer shows the "Set a method and URL" hint; it says the response is binary (use Save…) or has no body.</li>
+                            <li><strong>Open in tab</strong> is text-only. Its icon was the system's blank-page picture, which disappeared on macOS when the button was disabled.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Changed — macOS menu bar</h5>
+                        <ul>
+                            <li>macOS truncated the titles of 14 top-level menus. On macOS the bar is now File, Edit, Search, View, Tools, Format, Settings, Window, Help: Encoding and Language are under <strong>Format</strong>, and Utilities, Plugins, Macro and Run are at the end of <strong>Tools</strong>. Every item and shortcut is unchanged.</li>
+                            <li>Linux and Windows keep the 14 menus in the same order.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Fixed — status bar</h5>
+                        <ul>
+                            <li>On a tab that is not an editor (Welcome, REST Client, Noter, Terminal, a diagram, Compare, the formatter panels) the status bar showed the last editor's length, position, line endings and encoding. It now shows only the tab's name, and the bar does not shift when you switch tabs.</li>
+                            <li>Clicking the encoding in the status bar now opens the Encoding menu; it did nothing before.</li>
+                        </ul>
+                    </div>
+                    <div class="version-section">
+                        <h5>Not verified</h5>
+                        <ul>
+                            <li>The macOS fixes are covered by tests that reproduce the Mac conditions on Linux and by Linux screenshots. They had not been run on a real Mac when these notes were written.</li>
+                            <li>Visible on Linux and Windows too: the REST Client tabs are a few pixels narrower, Open in tab has no icon, and tool tabs show only their name in the status bar.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="version-actions">
+                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.134">Release page</a>
+                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
+                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.134">Commits</a>
+                </div>
+            </div>
+
+            <div class="version-card">
+                <div class="version-header">
+                    <div class="version-tag">v0.1.133</div>
                     <div class="version-meta">
                         <span>2026-11-12</span>
                         <span>· <strong>The tools that change your text can no longer change what it means, the AI assistant stops losing work, MCP goes from 49 to 119 tools, and the REST client runs <code>.http</code> files.</strong></span>
                         <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
                     </div>
                 </div>
-                <div class="version-changes">
-                    <div class="version-section">
-                        <h5>Fixed — JSON, HTML and bracket tools never change meaning</h5>
-                        <ul>
-                            <li><strong>JSON Format and Minify change only whitespace.</strong> They used to rewrite numbers (<code>-0</code> became <code>-0.0</code>, 30-digit integers were rounded), drop duplicate keys and re-encode escapes. Invalid JSON is left untouched with a line and column, for example <code>the array opened at line 1, column 1 is never closed with ']'</code>.</li>
-                            <li><strong>Fix + Format repairs only what is unambiguous</strong> (trailing commas, comments, single or curly quotes, unquoted keys, Python <code>True</code>/<code>False</code>/<code>None</code>, a missing colon or line-end comma) and lists every change in the banner. A file cut off mid-way, <code>NaN</code> or an extra closing bracket is declined with the reason.</li>
-                            <li><strong>HTML Format and Minify change only whitespace a browser does not render</strong>; tags, attributes, text, scripts and comments are copied byte for byte. HTML "Fix + Format" is now <strong>Check + Format</strong> and never adds closing tags.</li>
-                            <li><strong>Bracket Auto-Fix never touches balanced code</strong>, skips brackets inside strings, comments and regexes, and lists what it changed. Each tool was compared with an independent parser over millions of generated documents.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Fixed — AI assistant</h5>
-                        <ul>
-                            <li>A quick action with no model selected no longer wipes the conversation; sending while a reply streams keeps the partial reply. Quick actions honour <strong>Auto-attach</strong>: with it off they send only your selection.</li>
-                            <li><strong>Agent writes never reload over unsaved edits</strong> and keep the file's encoding, byte-order mark and line endings; a file that cannot be written back safely is refused. Two Compose edits to one file both land.</li>
-                            <li>Data analyst: CSV loading follows RFC 4180, money and percentages load as numbers, unambiguous dates become sortable ISO dates.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Security</h5>
-                        <ul>
-                            <li><strong>Six bypasses of the read-only SQL check closed</strong> after an adversarial review of about a thousand inputs; ordinary queries it used to block now run.</li>
-                            <li><code>git_show</code> and <code>git_diff</code> cannot print deny-listed files; the agent's <code>search</code> applies the deny-list and stays in the workspace. <code>config.json</code> and <code>db-connections.json</code> are owner-only on Linux and macOS.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Added — MCP server: 49 to 119 tools</h5>
-                        <ul>
-                            <li>Editing, tabs, view and settings, pure text tools, Git (stage, commit, branches, stash, hunks, conflicts, fetch, fast-forward pull, never-forced push), Noter management, data and REST. Every write still shows an Approve/Deny card, now with a countdown. <a href="/mcp.html#v133" style="color: var(--c-accent);">What changed</a>.</li>
-                            <li>Tools act on the tab you name, and a write waiting on its card follows its document. Shell commands, plugins, the updater and stored passwords are deliberately not exposed.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Added — REST client runs <code>.http</code> files</h5>
-                        <ul>
-                            <li>Several requests per file, a Send marker beside each, <code>Ctrl+Alt+R</code>; variables and environments; Import cURL and Copy as cURL; Cancel. History keeps the last 50 requests, with secret header values and password/token-style body fields saved as <code>&lt;redacted&gt;</code>. <a href="/docs.html#rest-client" style="color: var(--c-accent);">Docs</a>.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Fixed — Noter and packaging</h5>
-                        <ul>
-                            <li>Noter no longer touches your Documents folder at startup unless you use it, which removes a macOS permission prompt.</li>
-                            <li>Every Linux package (tarballs, <code>.deb</code>, <code>.rpm</code>, AppImage) and the Windows portable zips are now started for real in CI; the <code>.deb</code> and <code>.rpm</code> declare the Qt SVG library they need.</li>
-                        </ul>
-                    </div>
-                    <div class="version-section">
-                        <h5>Behaviour changes</h5>
-                        <ul>
-                            <li>JSON Format no longer repairs: use Fix + Format. HTML Check + Format never adds closing tags. AI quick actions outside Coding mode need a selection.</li>
-                            <li>Not verified in this release: the PostgreSQL, MySQL and SQL Server SQL rules against live servers, and launch tests for the Windows MSI and setup program.</li>
-                        </ul>
-                    </div>
-                </div>
                 <div class="version-actions">
                     <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.133">Release page</a>
                     <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
                     <a href="https://github.com/singhpratech/notepatra/commits/v0.1.133">Commits</a>
-                </div>
-            </div>
-
-            <div class="version-card">
-                <div class="version-header">
-                    <div class="version-tag">v0.1.132</div>
-                    <div class="version-meta">
-                        <span>2026-11-12</span>
-                        <span>· <strong>macOS hotfix: the v0.1.131 DMGs did not start.</strong> It also carried everything from v0.1.131: safer saves, a tighter AI SQL gate, Preview pane fixes and files opening from Finder.</span>
-                        <span>· Lite (default, bare) + Full · Linux · macOS (incl. Apple Silicon) · Windows</span>
-                    </div>
-                </div>
-                <div class="version-actions">
-                    <a href="https://github.com/singhpratech/notepatra/releases/tag/v0.1.132">Release page</a>
-                    <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Full changelog</a>
-                    <a href="https://github.com/singhpratech/notepatra/commits/v0.1.132">Commits</a>
                 </div>
             </div>
 
@@ -2279,7 +2258,7 @@
         <div class="features-grid">
             <div class="feature-card">
                 <h3>What is Notepatra?</h3>
-                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~14 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.133: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
+                <p>Notepatra is a native Qt5 + QScintilla code editor with an original C++17/Rust core for hot paths (memory-mapped I/O, Aho-Corasick search, Myers diff, formatters). Runs on Linux x64 / ARM64, macOS Apple Silicon, and Windows x64 from a single codebase. ~14 MB bare executable, no Electron runtime, no telemetry, no mandatory account. Local-first AI is built in: pick from Ollama, llama.cpp, OpenRouter, OpenAI, Azure OpenAI, or Ollama Cloud. As of v0.1.134: 238 file types · 82 language lexers, a Data Analyst mode that works out of the box on CSV files and an in-memory SQLite engine (the Full download bundles the DuckDB v1.1.3 engine on every platform), agentic Coding Mode with read / list / search / write / apply_diff tools, Cursor-style Composer + Ctrl+I inline edit, multi-cursor, AI-driven git tools (read-only: status / diff / log / branch / show).</p>
             </div>
             <div class="feature-card">
                 <h3>Is it really free? What's the catch?</h3>
@@ -2291,7 +2270,7 @@
             </div>
             <div class="feature-card">
                 <h3>How big is the binary?</h3>
-                <p>The bare executable is <strong>~14 MB</strong> (14.9 MB on Linux x64) across every platform. v0.1.133 download sizes: <strong>5.3 MB</strong> Linux x64 tar.gz · <strong>5.0 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>45.2 MB</strong> Windows MSI / <strong>33.3 MB</strong> NSIS / <strong>38.2 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~14 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
+                <p>The bare executable is <strong>~14 MB</strong> (14.9 MB on Linux x64) across every platform. v0.1.134 download sizes: <strong>5.3 MB</strong> Linux x64 tar.gz · <strong>5.0 MB</strong> Linux ARM64 tar.gz · <strong>28.7 MB</strong> macOS DMG · <strong>45.2 MB</strong> Windows MSI / <strong>33.3 MB</strong> NSIS / <strong>38.2 MB</strong> portable zip. <strong>Installed on Windows</strong> the on-disk footprint grows to ~75-85 MB because the MSI extracts bundled Qt5 + QScintilla DLLs out of the compressed payload — normal for every Qt-based installer. Linux stays tiny (~14 MB on disk) because Qt is a system package; macOS and Windows bundle Qt + QScintilla DLLs for portability.</p>
             </div>
             <div class="feature-card">
                 <h3>Does my code go to the cloud?</h3>
@@ -2299,7 +2278,7 @@
             </div>
             <div class="feature-card">
                 <h3>What languages does Notepatra highlight?</h3>
-                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.133 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing.</p>
+                <p>238 file types via <strong>82 language lexers</strong> as of v0.1.134 — Python, JavaScript, TypeScript, C, C++, C#, Java, Kotlin, Rust, Go, Dart, Solidity, Zig, Vala, Hack, Julia, R, Protobuf, F#, HCL/Terraform, Thrift, GraphQL, GDScript, Nim, Cython, Mojo, Crystal, Elixir, Scala, Groovy, Apex, HTML, CSS, SQL (6 dialect presets), JSON, JSON5, YAML, TOML, Markdown, Bash, Fish, Nushell, Ruby, Perl, Lua, Fortran, Verilog, VHDL, MATLAB, LaTeX, BibTeX, Jinja, Liquid, Twig, Dockerfile, DotEnv, Gitignore, Pascal, CMake, Makefile, and more. Each lexer ships with comment / uncomment / block-comment syntax (Ctrl+/ for line, Ctrl+Shift+Q for block) and proper file-extension routing.</p>
             </div>
             <div class="feature-card">
                 <h3>What file encodings are supported?</h3>

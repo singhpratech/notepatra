@@ -962,7 +962,7 @@ ul { margin-top: 4px; }
 <li><b>Save and restore work:</b> Session restore and crash recovery are built in. Modified files are autosaved to recovery storage.</li>
 <li><b>Workspace navigation:</b> Open a folder as a workspace and browse files from the sidebar with <code>Ctrl+Shift+E</code>.</li>
 <li><b>Status bar:</b> The bottom bar shows line, column, language, encoding, EOL mode, line count, length, and word count.</li>
-<li><b>Where features live:</b> use the icon row for the main built-in tools, the <b>Features</b> menu for editing helpers, the <b>Tools</b> menu for utilities, and the <b>Plugins</b> menu for formatter-style panels.</li>
+<li><b>Where features live:</b> use the icon row for the main built-in tools, the <b>Tools</b> menu for the built-in tools and formatter panels, the <b>Utilities</b> menu for smaller helpers, and the <b>Plugins</b> menu for plugins you install. On macOS, Utilities and Plugins are at the end of the Tools menu.</li>
 </ul>
 
 <h2>Core Editing</h2>
@@ -1073,7 +1073,7 @@ ul { margin-top: 4px; }
 <li><b>Measurement tools:</b> <b>Tools &gt; Measurement</b> lets you turn document rulers and a crosshair pixel measure on or off when you need them.</li>
 <li><b>Encoding tools:</b> UTF-8, BOM, UTF-16, legacy encodings, and EOL conversion are built into the menu bar workflow.</li>
 <li><b>Macros:</b> record and replay editor actions from the <b>Macro</b> menu.</li>
-<li><b>Plugins:</b> the Plugins menu also hosts the built-in formatter panels and any compatible user plugins you install.</li>
+<li><b>Plugins:</b> the built-in formatter panels are in the Tools menu; the Plugins menu lists any compatible plugins you install.</li>
 </ul>
 
 <h2>Language and Lexer Behavior</h2>
@@ -1093,7 +1093,7 @@ ul { margin-top: 4px; }
 </ul>
 
 <h2>Practical Tip</h2>
-<p>If you are unsure where a feature lives, first check the top <b>?</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Features</b>, <b>Tools</b>, and <b>Plugins</b> menus for the deeper editing and utility commands.</p>
+<p>If you are unsure where a feature lives, first check the <b>Help</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Tools</b> and <b>Utilities</b> menus for the deeper editing and utility commands.</p>
 </body>
 </html>
 )HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily(),
