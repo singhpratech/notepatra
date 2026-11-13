@@ -2909,9 +2909,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = m_tabs->editorAt(i);
             if (op == QLatin1String("close_tab") && m_tabs->widget(i)) {
                 // Any tab type: the card carried the consent (unsaved edits,
-                // or a tab that cannot report them). A Diagram tab closes
-                // without a prompt; a Noter panel writes its note on close.
+                // or a tab that cannot report them), so closeTab must not
+                // prompt again; a Noter panel writes its note on close.
                 if (ed) ed->setModified(false);
+                else if (auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i)))
+                    de->setModified(false);
                 closeTab(i);
                 return r;
             }
@@ -3993,6 +3995,26 @@ void MainWindow::closeTab(int index) {
         }
     }
 
+    // A modified Diagram tab gets the same Save / Discard / Cancel; it used
+    // to close silently. Its own saveFile() asks for a path when untitled
+    // and reports a write failure itself.
+    auto *diagram = qobject_cast<DiagramEditor *>(widget);
+    if (diagram && diagram->isModified()) {
+        const bool prevGate = m_anyFileChangePromptOpen;
+        m_anyFileChangePromptOpen = true;
+        const auto watcherGate = qScopeGuard([this, prevGate]() {
+            m_anyFileChangePromptOpen = prevGate;
+            if (!prevGate) drainDeferredFileChanges();
+        });
+        QPointer<DiagramEditor> alive(diagram);
+        const QString name = m_tabs->tabText(index).remove(QStringLiteral(" •"));
+        const auto result = QMessageBox::question(this, "Save",
+            QString("Save changes to %1?").arg(name),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        if (result == QMessageBox::Cancel || !alive) return;
+        if (result == QMessageBox::Save && !diagram->saveFile()) return;
+    }
+
     // The prompt's nested event loop can add or reorder tabs (deferred
     // remote opens) — re-resolve before removing by index.
     index = m_tabs->indexOf(widget);
@@ -5045,9 +5067,11 @@ void MainWindow::buildMenus() {
             }
         }
         if (diag && existingIdx == m_tabs->currentIndex()) {
-            m_tabs->removeTab(existingIdx);
-            delete diag;
-            diagAct->setChecked(false);
+            // Through closeTab, so unsaved .npd edits get Save / Discard /
+            // Cancel instead of being deleted silently.
+            QPointer<DiagramEditor> alive(diag);
+            closeTab(existingIdx);
+            diagAct->setChecked(!alive.isNull());
             return;
         }
         if (!diag) existingIdx = newDiagramTab(QString(), QString());
@@ -7040,7 +7064,30 @@ void MainWindow::saveSession() {
 
     for (int i = 0; i < m_tabs->count(); i++) {
         auto *e = m_tabs->editorAt(i);
-        if (!e) continue;
+        if (!e) {
+            // A Diagram tab holds unsaved .npd work exactly like an editor
+            // does; it used to be skipped here, so it vanished on every quit.
+            // "kind" tells restoreSession; a build without it restores the
+            // entry as a plain editor tab holding the same text, so nothing is
+            // lost either way. The source goes into the metadata itself (it
+            // is small), so the fingerprint below sees every edit.
+            auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i));
+            if (!de) continue;
+            const QString dpath = de->filePath();
+            const bool dmod = de->isModified();
+            if (dpath.isEmpty() && !dmod) continue;   // untouched starter template
+            QJsonObject tab;
+            tab["kind"] = QStringLiteral("diagram");
+            tab["path"] = dpath;
+            tab["tabName"] = m_tabs->tabText(i);
+            tab["line"] = 0;
+            tab["col"] = 0;
+            tab["active"] = (i == m_tabs->currentIndex());
+            tab["modified"] = dmod;
+            if (dmod) tab["unsavedContent"] = de->npdText();
+            tabs.append(tab);
+            continue;
+        }
 
         const QString path = e->filePath();
         const bool modified = e->isModified();
@@ -7244,6 +7291,33 @@ void MainWindow::restoreSession() {
         const QString unsavedContent = tab["unsavedContent"].toString();
         const bool wasModified = tab["modified"].toBool();
         const QString tabName = tab["tabName"].toString();
+
+        if (tab["kind"].toString() == QLatin1String("diagram")) {
+            // Same rules as an editor tab: unsaved text comes back as it was
+            // (a vanished file leaves it untitled); a pristine file-backed
+            // diagram is re-read from disk; a pristine one whose file is gone
+            // is reported, not silently dropped.
+            QString text = unsavedContent;
+            const bool fileExists = !path.isEmpty() && QFileInfo(path).isFile();
+            if (!hasUnsaved) {
+                QFile df(path);
+                if (!fileExists || !df.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    if (!path.isEmpty())
+                        queueStartupNotice(tr("Session tab dropped — file no longer "
+                                              "exists: %1")
+                                               .arg(QDir::toNativeSeparators(path)));
+                    continue;
+                }
+                text = QString::fromUtf8(df.readAll());
+            }
+            const int di = newDiagramTab(QString(), QString());
+            auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(di));
+            if (!de) continue;
+            de->restoreDocument(text, fileExists ? path : QString(), hasUnsaved);
+            if (!tabName.isEmpty()) m_tabs->setTabText(di, tabName);
+            if (tab["active"].toBool()) activeIdx = di;
+            continue;
+        }
 
         Editor *e = nullptr;
         // v0.1.104 — openFile() does NOT always append a tab: it early-returns
@@ -7644,10 +7718,12 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     const bool sessionless = m_standaloneNoSession || m_restoreSkippedLiveOwner;
     if (sessionless) {
         for (int i = m_tabs->count() - 1; i >= 0; i--) {
+            QWidget *w = m_tabs->widget(i);
             auto *e = m_tabs->editorAt(i);
-            if (!e || !e->isModified()) continue;
+            auto *de = qobject_cast<DiagramEditor *>(w);
+            if (!(e && e->isModified()) && !(de && de->isModified())) continue;
             m_tabs->setCurrentIndex(i);
-            QPointer<Editor> alive(e);
+            QPointer<QWidget> alive(w);
             closeTab(i);
             if (alive) {   // Cancel (or a failed save) kept the tab open
                 event->ignore();

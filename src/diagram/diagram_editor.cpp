@@ -250,6 +250,19 @@ void DiagramEditor::setNpdText(const QString &text) {
 
 QString DiagramEditor::npdText() const { return m_edit->toPlainText(); }
 
+void DiagramEditor::restoreDocument(const QString &text, const QString &path, bool modified) {
+    setNpdText(text);
+    m_path = path;
+    m_dirty = modified;
+    emitTitle();
+}
+
+void DiagramEditor::setModified(bool modified) {
+    if (m_dirty == modified) return;
+    m_dirty = modified;
+    emitTitle();
+}
+
 void DiagramEditor::scheduleRender() { m_debounce->start(); }
 
 void DiagramEditor::renderNow() {
