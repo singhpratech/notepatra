@@ -75,6 +75,16 @@ const QStringList &standardMethods() {
     return m;
 }
 
+// QTabBar sizes each tab with its widget font, while a font-size in a
+// QTabBar::tab rule reaches only the painter. The label size therefore goes
+// on the bar itself, so one font both measures and paints. (macOS: the 10pt
+// app font is 10px at 72 dpi, and 12px labels were clipped on both sides.)
+void setTabLabelFont(QTabBar *bar) {
+    QFont f = bar->font();
+    f.setPixelSize(12);
+    bar->setFont(f);
+}
+
 }  // namespace
 
 RestClient::RestClient(QWidget *parent) : QWidget(parent) {
@@ -139,6 +149,7 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     // ─── Headers / Body tabs with the cURL buttons in the corner ──────
     m_reqTabs = new QTabWidget;
     m_reqTabs->setFixedHeight(170);
+    setTabLabelFont(m_reqTabs->tabBar());
 
     m_headersInput = new QPlainTextEdit;
     m_headersInput->setFont(mono);
@@ -189,6 +200,7 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_respTabs->addTab(tr("Headers"));
     m_respTabs->setDrawBase(false);
     m_respTabs->setExpanding(false);
+    setTabLabelFont(m_respTabs);
     respBar->addWidget(m_respTabs);
     respBar->addStretch();
     m_openTabBtn = new QPushButton(tr("Open in tab"));
@@ -342,8 +354,9 @@ void RestClient::applyPalette() {
         .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg, pal.border) + menuQss;
     const QString tabBarQss = QString(
         "QTabBar { background: %1; }"
+        // No font-size here: setTabLabelFont() sizes the label on the bar.
         "QTabBar::tab { background: transparent; color: %2; padding: 6px 16px; border: none; "
-        "font-size: 12px; margin-right: 2px; }"
+        "margin-right: 2px; }"
         "QTabBar::tab:selected { color: %3; border-bottom: 2px solid %3; }"
         "QTabBar::tab:hover:!selected { color: %4; }")
         .arg(pal.chromeBg, pal.textMuted, pal.accent, pal.text);
@@ -388,7 +401,7 @@ void RestClient::applyPalette() {
         "QTabWidget::tab-bar { left: 4px; }"
         "QTabBar { background: %1; }"
         "QTabBar::tab { background: transparent; color: %3; padding: 6px 16px; border: none; "
-        "font-size: 12px; margin-right: 2px; }"
+        "margin-right: 2px; }"
         "QTabBar::tab:selected { color: %4; border-bottom: 2px solid %4; }"
         "QTabBar::tab:hover:!selected { color: %5; }")
         .arg(pal.bg, pal.border, pal.textMuted, pal.accent, pal.text));
