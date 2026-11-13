@@ -1862,6 +1862,7 @@ void Editor::contextMenuEvent(QContextMenuEvent *event) {
         [this]() { uncommentBlock(); });
     uncmtBlockAct->setEnabled(!cs.blockOpen.isEmpty() && !cs.blockClose.isEmpty());
 
+    emit contextMenuAboutToShow(&menu, event->pos());
     menu.exec(event->globalPos());
 }
 

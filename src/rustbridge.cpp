@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "rustbridge.h"
+#include "transform_note.h"
+
+#include <QStringList>
 
 namespace RustCore {
 
@@ -225,7 +228,29 @@ QString formatSqlCompact(const QString &text, int indentWidth, bool uppercase,
 }
 
 // ── JSON ──
+// Report text from Rust is multi-line: the banner gets a one-line summary
+// (TransformNote::summarize), the tooltip the whole report. Positions in a
+// fix report are in the text BEFORE the fix, which the output pane no longer
+// shows, so say so.
+static QString fixDetails(const QString &report) {
+    return report.trimmed() +
+           QStringLiteral("\n\nLine and column numbers refer to the text before the fix; "
+                          "Show Diff shows both sides.");
+}
+
+QString jsonFormatRefusal(const QString &text, int indent, bool minify) {
+    QByteArray b = text.toUtf8();
+    return textFromResult(
+        npc_json_format_refusal(b.constData(), b.size(), indent, minify ? 1 : 0));
+}
 QString formatJson(const QString &text, int indent) {
+    // A parse error or a size limit: say which (a valid document is never
+    // called invalid, and a refusal is never a silent "Done").
+    const QString why = jsonFormatRefusal(text, indent, false);
+    if (!why.isEmpty()) {
+        TransformNote::post(TransformNote::Kind::Error, why);
+        return text;
+    }
     QByteArray b = text.toUtf8();
     return textFromResult(npc_format_json(b.constData(), b.size(), indent));
 }
@@ -234,12 +259,28 @@ QString jsonParseError(const QString &text) {
     return textFromResult(npc_json_parse_error(b.constData(), b.size()));
 }
 QString minifyJson(const QString &text) {
+    const QString why = jsonFormatRefusal(text, 0, true);
+    if (!why.isEmpty()) {
+        TransformNote::post(TransformNote::Kind::Error, why);
+        return text;
+    }
     QByteArray b = text.toUtf8();
     return textFromResult(npc_minify_json(b.constData(), b.size()));
 }
 QString fixJson(const QString &text) {
     QByteArray b = text.toUtf8();
-    return textFromResult(npc_fix_json(b.constData(), b.size()));
+    const QString out = textFromResult(npc_fix_json(b.constData(), b.size()));
+    const QString report = textFromResult(npc_fix_json_report(b.constData(), b.size()));
+    if (report.startsWith(QLatin1String("Repaired")))
+        TransformNote::post(TransformNote::Kind::Info, TransformNote::summarize(report),
+                            fixDetails(report));
+    else if (report.startsWith(QLatin1String("JSON is already valid")))
+        TransformNote::post(TransformNote::Kind::Info, report.trimmed());
+    else if (out == text)
+        // "No changes made: ...", "input too large ... No changes made."
+        TransformNote::post(TransformNote::Kind::Error, TransformNote::summarize(report),
+                            report.trimmed());
+    return out;
 }
 QString fixJsonReport(const QString &text) {
     QByteArray b = text.toUtf8();
@@ -251,11 +292,41 @@ QString formatHtml(const QString &text, int indent) {
     QByteArray b = text.toUtf8();
     return textFromResult(npc_format_html(b.constData(), b.size(), indent));
 }
+QString formatHtml(const QString &text, int indent, QString *message) {
+    QByteArray b = text.toUtf8();
+    TextResult msg{nullptr, 0};
+    QString out = textFromResult(npc_format_html_ex(b.constData(), b.size(), indent, &msg));
+    QString m = textFromResult(msg);
+    if (message) *message = m;
+    return out;
+}
+QString minifyHtml(const QString &text, QString *message) {
+    QByteArray b = text.toUtf8();
+    TextResult msg{nullptr, 0};
+    QString out = textFromResult(npc_minify_html_ex(b.constData(), b.size(), &msg));
+    QString m = textFromResult(msg);
+    if (message) *message = m;
+    return out;
+}
 
 // ── Brackets ──
 QString fixBrackets(const QString &text) {
     QByteArray b = text.toUtf8();
-    return textFromResult(npc_fix_brackets(b.constData(), b.size()));
+    const QString out = textFromResult(npc_fix_brackets(b.constData(), b.size()));
+    const QString report = textFromResult(npc_fix_brackets_report(b.constData(), b.size()));
+    if (report.startsWith(QLatin1String("Fixed")))
+        TransformNote::post(TransformNote::Kind::Info, TransformNote::summarize(report),
+                            fixDetails(report));
+    else if (report.startsWith(QLatin1String("All brackets matched")))
+        TransformNote::post(TransformNote::Kind::Info, report.trimmed());
+    else
+        TransformNote::post(TransformNote::Kind::Error, TransformNote::summarize(report),
+                            report.trimmed());
+    return out;
+}
+QString fixBracketsReport(const QString &text) {
+    QByteArray b = text.toUtf8();
+    return textFromResult(npc_fix_brackets_report(b.constData(), b.size()));
 }
 QString checkBrackets(const QString &text) {
     QByteArray b = text.toUtf8();

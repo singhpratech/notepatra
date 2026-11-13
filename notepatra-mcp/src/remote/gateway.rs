@@ -340,6 +340,7 @@ fn tier_name(t: super::scope::Tier) -> &'static str {
         Tier::Read => "read",
         Tier::Act => "read_act",
         Tier::Write => "write_request",
+        Tier::WriteExternal => "write_external",
     }
 }
 

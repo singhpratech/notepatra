@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QDirIterator>
+#include <QSaveFile>
 
 /**
  * Persistent config — saves ALL settings to ~/.config/notepatra/config.json
@@ -264,12 +265,16 @@ public:
     bool previewPaneVisible = false;
     QList<int> previewPaneSizes;
 
+    // v0.1.133 — Noter in use: 1 yes, 0 no, -1 unknown (profile older than the flag).
+    int noterInUse = 0;
+
     // Window
     int windowX = -1, windowY = -1, windowW = 1280, windowH = 800;
     bool maximized = false;
 
     void load() {
         QString path = configPath();
+        restrictToOwner(path);  // tighten a config written by an older build
         QFile f(path);
         if (!f.open(QIODevice::ReadOnly)) return;
         QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
@@ -364,6 +369,8 @@ public:
         const QJsonArray paneSizes = o.value("previewPaneSizes").toArray();
         if (paneSizes.size() == 2)
             previewPaneSizes = {paneSizes.at(0).toInt(), paneSizes.at(1).toInt()};
+        // Missing key on an existing profile = upgrade: startup probes once.
+        noterInUse = o.value("noterInUse").toInt(-1);
     }
 
     void save() {
@@ -440,10 +447,45 @@ public:
         QJsonArray paneSizes;
         for (int v : previewPaneSizes) paneSizes.append(v);
         o["previewPaneSizes"] = paneSizes;
+        o["noterInUse"] = noterInUse;
 
-        QFile f(configPath());
-        if (f.open(QIODevice::WriteOnly))
-            f.write(QJsonDocument(o).toJson());
+        // A failed save leaves the old file as it was. There is no direct-write
+        // fallback: it would truncate config.json first, and a failure after
+        // that loses every setting and key. A read-only directory, or a
+        // config.json symlinked into one, is reported, not silently ignored.
+        const QString path = configPath();
+        QSaveFile f(path);
+        if (!f.open(QIODevice::WriteOnly)) {
+            qWarning("Notepatra: settings not saved: cannot write %s: %s",
+                     qPrintable(QDir::toNativeSeparators(path)), qPrintable(f.errorString()));
+            return;
+        }
+#ifndef Q_OS_WIN
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);  // holds API keys
+#endif
+        const QByteArray bytes = QJsonDocument(o).toJson();
+        if (f.write(bytes) != bytes.size()) {
+            f.cancelWriting();
+            qWarning("Notepatra: settings not saved: short write to %s",
+                     qPrintable(QDir::toNativeSeparators(path)));
+            return;
+        }
+        if (!f.commit())
+            qWarning("Notepatra: settings not saved: cannot replace %s: %s",
+                     qPrintable(QDir::toNativeSeparators(path)), qPrintable(f.errorString()));
+    }
+
+    // Owner-only (0600) on Unix; Windows ACLs are left alone.
+    static void restrictToOwner(const QString &path) {
+#ifndef Q_OS_WIN
+        const QFileDevice::Permissions loose =
+            QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup |
+            QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+        if (QFileInfo::exists(path) && (QFile::permissions(path) & loose))
+            QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+#else
+        Q_UNUSED(path);
+#endif
     }
 
     void addRecent(const QString &path) {
@@ -504,6 +546,16 @@ public:
     // the legacy data so the user can roll back if something goes
     // wrong — that cleanup is a v0.1.97 follow-up.
     static QString appConfigDir() {
+        const QString dir = appConfigDirPath();
+        QDir().mkpath(dir);
+        migrateLegacyConfigDirOnce(dir);
+        return dir;
+    }
+
+    // The same location with no side effects (no mkpath, no migration): safe
+    // from any thread, used by PathDenylist to keep the AI / MCP tools out of
+    // the app's own settings (API keys, saved connections).
+    static QString appConfigDirPath() {
 #ifdef Q_OS_WIN
         // %APPDATA%\Notepatra  — e.g. C:\Users\<u>\AppData\Roaming\Notepatra
         QString dir = qEnvironmentVariable("APPDATA");
@@ -524,8 +576,6 @@ public:
                           ? QDir::homePath() + QStringLiteral("/.config/notepatra")
                           : xdg + QStringLiteral("/notepatra");
 #endif
-        QDir().mkpath(dir);
-        migrateLegacyConfigDirOnce(dir);
         return dir;
     }
 

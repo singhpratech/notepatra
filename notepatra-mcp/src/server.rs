@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
+use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
@@ -27,6 +28,12 @@ const RESOURCE_NOT_FOUND: i64 = -32002;
 
 const TAB_URI_PREFIX: &str = "notepatra://tab/";
 const NOTE_URI_PREFIX: &str = "notepatra://note/";
+/// Listed in place of the notes when the editor cannot list them (D8b).
+const NOTES_UNAVAILABLE_URI: &str = "notepatra://notes/unavailable";
+
+/// Writes one server-to-client notification line (progress). `None` (the
+/// remote gateway, tests that do not care) means notifications are dropped.
+pub type Notifier = Arc<dyn Fn(&Value) + Send + Sync>;
 
 pub struct Server<T: EditorTransport> {
     transport: T,
@@ -38,13 +45,26 @@ pub struct Server<T: EditorTransport> {
     /// configuration this is CARGO_PKG_VERSION. The override is kept as an
     /// escape hatch for a packager who ships a differently-versioned binary.
     version: String,
+    /// Out-of-band channel for notifications/progress (v0.1.133, D16).
+    notifier: Option<Notifier>,
 }
 
 impl<T: EditorTransport> Server<T> {
     pub fn new(transport: T) -> Self {
         let version = std::env::var("NOTEPATRA_MCP_VERSION")
             .unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string());
-        Self { transport, version }
+        Self {
+            transport,
+            version,
+            notifier: None,
+        }
+    }
+
+    /// Let a tool call that carries `_meta.progressToken` report a long
+    /// approval wait as `notifications/progress` through `notifier`.
+    pub fn with_notifier(mut self, notifier: Notifier) -> Self {
+        self.notifier = Some(notifier);
+        self
     }
 
     /// Newline-delimited JSON-RPC 2.0 over any reader/writer (the MCP stdio
@@ -137,7 +157,26 @@ impl<T: EditorTransport> Server<T> {
                 "mimeType": "text/plain",
             }));
         }
-        if let Ok(listing) = self.transport.list_notes() {
+        // D8b: a failed listing is said out loud, never an empty Noter. The
+        // spec has no partial-error field on a list result, so the reason
+        // rides as one explanatory resource (and on stderr, the log channel).
+        let listing = match self.transport.list_notes() {
+            Ok(l) => Some(l),
+            Err(e) => {
+                eprintln!(
+                    "notepatra-mcp: resources/list: Noter notes unavailable: {}",
+                    e.0
+                );
+                resources.push(json!({
+                    "uri": NOTES_UNAVAILABLE_URI,
+                    "name": "Noter notes unavailable",
+                    "description": e.0,
+                    "mimeType": "text/plain",
+                }));
+                None
+            }
+        };
+        if let Some(listing) = listing {
             if let Some(notes) = listing.get("notes").and_then(Value::as_array) {
                 // Root-relative note IDs: the URI carries the note's basename
                 // (list_notes reports absolute paths). Duplicate basenames
@@ -207,7 +246,12 @@ impl<T: EditorTransport> Server<T> {
         else {
             return error_response(id, INVALID_PARAMS, "Invalid params: missing uri");
         };
-        let text = if let Some(index) = uri.strip_prefix(TAB_URI_PREFIX) {
+        let text = if uri == NOTES_UNAVAILABLE_URI {
+            match self.transport.list_notes() {
+                Err(e) => format!("Noter notes cannot be listed: {}", e.0),
+                Ok(_) => "Noter notes are available again; list resources again.".into(),
+            }
+        } else if let Some(index) = uri.strip_prefix(TAB_URI_PREFIX) {
             let Ok(index) = index.parse::<usize>() else {
                 return resource_not_found(id, &uri);
             };
@@ -282,7 +326,37 @@ impl<T: EditorTransport> Server<T> {
             }
         };
         let mock = self.transport.is_mock();
-        match tools::call(&mut self.transport, name, args) {
+        // D16: a write blocks on a human for up to two minutes; with a
+        // progressToken the client hears about it instead of silence.
+        let token = p
+            .get("_meta")
+            .and_then(|m| m.get("progressToken"))
+            .filter(|t| t.is_string() || t.is_i64() || t.is_u64())
+            .cloned();
+        let hooked = match (&token, &self.notifier) {
+            (Some(tok), Some(n)) => {
+                let (tok, n) = (tok.clone(), n.clone());
+                self.transport.set_progress(Some(Arc::new(move |done, total| {
+                    n(&json!({
+                        "jsonrpc": "2.0",
+                        "method": "notifications/progress",
+                        "params": {
+                            "progressToken": tok,
+                            "progress": (done * 1000.0).round() / 1000.0,
+                            "total": total,
+                            "message": "Waiting for the user to approve or deny the request in Notepatra",
+                        }
+                    }));
+                })));
+                true
+            }
+            _ => false,
+        };
+        let outcome = tools::call(&mut self.transport, name, args);
+        if hooked {
+            self.transport.set_progress(None);
+        }
+        match outcome {
             CallOutcome::Ok(text) => result_response(id, tool_result(mock, text, false)),
             CallOutcome::ToolError(text) => result_response(id, tool_result(mock, text, true)),
             CallOutcome::InvalidParams(msg) => {

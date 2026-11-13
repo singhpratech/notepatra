@@ -220,6 +220,93 @@ static QString httpErrorMessage(int status, const QByteArray &body,
     return head;
 }
 
+// ─── Rejected-parameter retry (OpenAI-compat) ──────────────────────────
+// Some OpenAI-compatible models refuse `max_tokens` (they want
+// `max_completion_tokens`) or any non-default `temperature`, answering HTTP
+// 400 with an error that names the parameter. We read that error rather
+// than guessing from model names, re-send once per named parameter, and
+// remember the fix per backend + URL + model for the rest of the session.
+enum OpenAiParamFix : int { kUseMaxCompletionTokens = 1, kOmitTemperature = 2 };
+
+static QHash<QString, int> &openAiParamFixes() {
+    static QHash<QString, int> fixes;
+    return fixes;
+}
+
+static QString openAiParamFixKey(int backend, const QString &baseUrl, const QString &model) {
+    return QString::number(backend) + QLatin1Char('|') + baseUrl + QLatin1Char('|') + model;
+}
+
+// Which fix bits a 400 body asks for (0 = not an unsupported-parameter error).
+static int rejectedParamFixes(const QByteArray &body) {
+    QString param, code, msg;
+    QJsonParseError perr{};
+    const QJsonDocument doc = QJsonDocument::fromJson(body.trimmed(), &perr);
+    if (perr.error == QJsonParseError::NoError && doc.isObject()) {
+        const QJsonValue ev = doc.object().value(QStringLiteral("error"));
+        if (ev.isObject()) {
+            const QJsonObject eo = ev.toObject();
+            param = eo.value(QStringLiteral("param")).toString();
+            code  = eo.value(QStringLiteral("code")).toString();
+            msg   = eo.value(QStringLiteral("message")).toString();
+        } else if (ev.isString()) {
+            msg = ev.toString();
+        }
+        if (msg.isEmpty()) msg = doc.object().value(QStringLiteral("message")).toString();
+    } else {
+        msg = QString::fromUtf8(body);
+    }
+    const QString lower = msg.toLower();
+    const bool unsupported = code.contains(QLatin1String("unsupported"), Qt::CaseInsensitive)
+        || lower.contains(QLatin1String("unsupported"))
+        || lower.contains(QLatin1String("not supported"))
+        || lower.contains(QLatin1String("does not support"));
+    if (!unsupported) return 0;
+    auto names = [&](const QString &p) {
+        return param.isEmpty() ? lower.contains(p) : param == p;
+    };
+    int fixes = 0;
+    if (names(QStringLiteral("max_tokens")))  fixes |= kUseMaxCompletionTokens;
+    if (names(QStringLiteral("temperature"))) fixes |= kOmitTemperature;
+    return fixes;
+}
+
+void OllamaClient::applyOpenAiParamFixes(QJsonObject &body) const {
+    const int fixes = openAiParamFixes().value(
+        openAiParamFixKey(int(m_backend), m_baseUrl, m_model), 0);
+    if ((fixes & kUseMaxCompletionTokens) && body.contains(QStringLiteral("max_tokens"))) {
+        body.insert(QStringLiteral("max_completion_tokens"), body.value(QStringLiteral("max_tokens")));
+        body.remove(QStringLiteral("max_tokens"));
+    }
+    if (fixes & kOmitTemperature) body.remove(QStringLiteral("temperature"));
+}
+
+// Called from onFinishedOpenAI on HTTP 400. Returns true when it took over
+// the outcome (re-sent the request, or emitted the error itself).
+bool OllamaClient::retryWithoutRejectedParam() {
+    if (!m_reply || !m_nam || m_openAiBody.isEmpty()) return false;
+    int fixes = rejectedParamFixes(m_sseBuffer) & ~m_openAiParamRetries;
+    if (!m_openAiBody.contains(QStringLiteral("max_tokens")))  fixes &= ~kUseMaxCompletionTokens;
+    if (!m_openAiBody.contains(QStringLiteral("temperature"))) fixes &= ~kOmitTemperature;
+    if (!fixes) return false;
+
+    openAiParamFixes()[openAiParamFixKey(int(m_backend), m_baseUrl, m_model)] |= fixes;
+    m_openAiParamRetries |= fixes;
+    applyOpenAiParamFixes(m_openAiBody);
+
+    m_sseBuffer.clear();
+    m_reply->deleteLater();
+    m_reply = m_nam->post(m_openAiRequest, QJsonDocument(m_openAiBody).toJson());
+    if (!m_reply) {
+        m_done = true;
+        emit error(QStringLiteral("Failed to re-send OpenAI-compat request"));
+        return true;
+    }
+    connect(m_reply, &QNetworkReply::readyRead, this, &OllamaClient::onReadyReadOpenAI);
+    connect(m_reply, &QNetworkReply::finished,  this, &OllamaClient::onFinishedOpenAI);
+    return true;
+}
+
 // ─── isAvailable ───────────────────────────────────────────────────────
 // Synchronous probe, 3 s timeout. Endpoint varies by backend.
 bool OllamaClient::isAvailable() {
@@ -663,6 +750,7 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
         body["stream"] = true;
         body["temperature"] = hasTools ? 0.1 : 0.3;
         body["max_tokens"]  = 2048;
+        applyOpenAiParamFixes(body);
         if (hasTools) {
             body["tools"] = tools;
             body["tool_choice"] = "auto";
@@ -700,6 +788,9 @@ void OllamaClient::generate(const QString &prompt, const QString &systemPrompt,
         // llama-server ignores Authorization; LM Studio / OpenAI expect
         // Bearer; Azure expects api-key header. setOpenAiAuth normalises.
         setOpenAiAuth(req, Config::instance().aiKeyForBackend(Config::instance().aiBackend));
+        m_openAiRequest = req;
+        m_openAiBody = body;
+        m_openAiParamRetries = 0;
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
         if (!m_reply) {  // hardening: guard against null reply
             emit error(QStringLiteral("Failed to start OpenAI-compat request"));
@@ -842,6 +933,7 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
         body["stream"] = true;
         body["temperature"] = 0.1;
         body["max_tokens"]  = 2048;
+        applyOpenAiParamFixes(body);
         body["tools"] = m_lastTools;
         body["tool_choice"] = "auto";
 
@@ -857,6 +949,9 @@ void OllamaClient::continueWithToolResults(const QJsonArray &toolResults,
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         req.setTransferTimeout(120000);  // hardening: 120 s ceiling on OpenAI-compat continuation
         setOpenAiAuth(req, Config::instance().aiKeyForBackend(Config::instance().aiBackend));
+        m_openAiRequest = req;
+        m_openAiBody = body;
+        m_openAiParamRetries = 0;
         m_reply = m_nam->post(req, QJsonDocument(body).toJson());
         if (!m_reply) {  // hardening: guard against null reply
             emit error(QStringLiteral("Failed to start OpenAI-compat continuation"));
@@ -994,6 +1089,8 @@ void OllamaClient::onReadyReadOllama() {
 void OllamaClient::onReadyReadOpenAI() {
     if (!m_reply) return;
     m_sseBuffer += m_reply->readAll();
+    // An HTTP error body is plain JSON, not SSE: leave it whole for onFinishedOpenAI.
+    if (m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() >= 400) return;
 
     while (true) {
         int nn = m_sseBuffer.indexOf("\n\n");
@@ -1302,6 +1399,7 @@ void OllamaClient::onFinishedOpenAI() {
     // mid-stream drop still flushes whatever partial text already arrived.
     if (!m_done && m_fullResponse.isEmpty() &&
         (m_reply->error() != QNetworkReply::NoError || httpStatus >= 400)) {
+        if (httpStatus == 400 && retryWithoutRejectedParam()) return;
         const int sc = (httpStatus >= 400) ? httpStatus : 0;
         // Route the transport-error fallback (sc == 0 — refused / unreachable
         // / timeout, no HTTP status) through the friendly per-backend wording

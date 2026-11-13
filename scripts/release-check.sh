@@ -98,6 +98,27 @@ check "build.yml: cocoa launch smoke test runs on both macOS bundles" \
      grep -qF 'scripts/macos-launch-smoke.sh build-full/Notepatra.app' .github/workflows/build.yml"
 
 echo
+echo "── Linux/Windows packaged-artifact launch smoke (same class: CI never started a shipped package) ──"
+if bash scripts/test-linux-launch-smoke.sh >/tmp/linux-launch-check.log 2>&1; then
+    check "test-linux-launch-smoke.sh: missing/foreign lib, plugin error, early exit, crash caught; clean app passes; no Xvfb exits 2" "true"
+else
+    check "test-linux-launch-smoke.sh: missing/foreign lib, plugin error, early exit, crash caught; clean app passes; no Xvfb exits 2" "false"
+    grep -E 'FAIL|self-test:' /tmp/linux-launch-check.log | sed 's/^/    /' | tail -30
+fi
+# Every packaged Linux artifact on both arches (no ARM AppImage), plus the
+# Windows portable zips, must be launched by build.yml.
+check "build.yml: launch smoke on Lite+Full tarballs, both .debs (clean container), .rpm (x64+arm64), AppImage, Windows zips" \
+    "[[ \$(grep -cF 'bash scripts/linux-launch-smoke.sh \"\$T/x/notepatra\" 8' .github/workflows/build.yml) -eq 4 &&
+       \$(grep -cF -- '-C build-full notepatra libduckdb.so' .github/workflows/build.yml) -eq 2 &&
+       \$(grep -cF 'bash /w/scripts/linux-launch-smoke.sh /usr/bin/notepatra 8' .github/workflows/build.yml) -eq 2 &&
+       \$(grep -cF 'bash scripts/linux-launch-smoke.sh \"\$R/opt/notepatra/notepatra\" 8' .github/workflows/build.yml) -eq 2 &&
+       \$(grep -cF 'bash scripts/linux-launch-smoke.sh \"\$APPIMAGE\" 8' .github/workflows/build.yml) -eq 1 &&
+       \$(grep -cF 'bash scripts/test-linux-launch-smoke.sh' .github/workflows/build.yml) -eq 1 &&
+       \$(grep -cF 'scripts/windows-launch-smoke.ps1 -Exe' .github/workflows/build.yml) -eq 1 ]] &&
+     grep -qF 'for DEB in notepatra_*_amd64.deb notepatra-local-ai_*_amd64.deb' .github/workflows/build.yml &&
+     grep -qF 'for DEB in notepatra_*_arm64.deb notepatra-local-ai_*_arm64.deb' .github/workflows/build.yml"
+
+echo
 echo "── download-size byte cross-check (vs GitHub release artifacts) ──"
 if bash scripts/verify-download-sizes.sh >/tmp/dl-size-check.log 2>&1; then
     check "verify-download-sizes.sh: docs match actual artifact bytes (±0.15 MB)" "true"

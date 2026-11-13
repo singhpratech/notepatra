@@ -269,6 +269,13 @@ void DiagramEditor::renderNow() {
     }
 }
 
+QString DiagramEditor::templateSource(const QString &kind) {
+    if (kind == QLatin1String("flow")) return QString::fromUtf8(kFlowTemplate);
+    if (kind == QLatin1String("er")) return QString::fromUtf8(kErTemplate);
+    if (kind == QLatin1String("system")) return QString::fromUtf8(kSystemTemplate);
+    return QString();
+}
+
 void DiagramEditor::newFromTemplate() { setNpdText(QString::fromUtf8(kFlowTemplate)); }
 
 void DiagramEditor::openFile() {

@@ -12,6 +12,7 @@
 #include <QMap>
 #include <QSet>
 #include <QVector>
+#include <functional>
 #include "tabmanager.h"
 #include "statusbar.h"
 #include "fileexplorer.h"
@@ -40,6 +41,7 @@ class QMenu;
 class NotesPanel;
 class NotesReminderEngine;
 class PreviewPane;
+struct McpEditorHost;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -113,6 +115,10 @@ public:
     enum class RenameResult { Renamed, Unchanged, NoFile, InvalidName, TargetExists,
                               SaveFailed, RenameFailed };
     RenameResult renameTabFile(int idx, const QString &newName, QString *errorOut = nullptr);
+
+    // Tools > Markdown Converter transform (op: table, list, code_block, bold,
+    // italic, link, heading, html_to_markdown); null = nothing to replace.
+    static QString markdownConvert(const QString &op, const QString &input);
 
     // Post-show non-modal notice queue (D5) — also used by main() for the
     // crash-recovery / standalone-fallback startup notices.
@@ -346,6 +352,11 @@ private:
     NotesPanel *findNoterPanel(int *indexOut = nullptr) const;
     NotesPanel *ensureNoterTab();
     int newDiagramTab(const QString &source, const QString &title); // Features->Diagram + MCP create_diagram
+    // v0.1.133 MCP Phase 3 host (git writes, Noter, settings, data, REST): mcp_host_control.cpp.
+    void installMcpControlHost(McpEditorHost &host);
+    std::function<RestClient *()> m_newRestTab; // Features > REST Client's tab factory
+    // run_sql csv_path in Lite: CsvAnalyst::loadIntoSqlite, then the query (already gated).
+    static QJsonObject mcpQueryCsvSqlite(const QString &csv, const QString &sql, QString *err);
     QAction *m_passwordAct = nullptr;  // truthful checked-state
     // Preview pane beside the editor tabs (Markdown / HTML / .ipynb / SQL cells).
     QPointer<PreviewPane> m_previewPane;

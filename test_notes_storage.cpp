@@ -36,6 +36,7 @@ private slots:
 
     // ── atomic write ──
     void atomicWrite_corruptedTmpLeftBehind_doesntBreakRead();
+    void atomicWrite_plantedTmpSymlinkNotFollowed();
     void atomicWrite_signalEmittedOnSuccess();
 
     // ── backup ring ──
@@ -78,6 +79,7 @@ private slots:
     // ── draft sidecar ──
     void draft_writeAndClear();
     void draft_clearedOnSuccessfulSave();
+    void draft_plantedSymlinkNotFollowed();
 
     // ── plainTextForSearch (v0.1.112 body-content search) ──
     void plainText_stripsTags();
@@ -173,6 +175,55 @@ void TestNotesStorage::atomicWrite_corruptedTmpLeftBehind_doesntBreakRead() {
     const QString back = s.readNote(path);
     QVERIFY(back.contains("<p>canonical</p>"));
     QVERIFY(!back.contains("PARTIAL"));
+}
+
+// The save used to open the fixed `<note>.html.tmp` with Truncate, so a
+// symlink planted at that name was followed and its target overwritten with
+// the note. The temp is now unique and created exclusively.
+void TestNotesStorage::atomicWrite_plantedTmpSymlinkNotFollowed() {
+#ifdef Q_OS_WIN
+    QSKIP("symlinks need privileges on Windows");
+#else
+    QTemporaryDir td;
+    QTemporaryDir outside;
+    NotesStorage s(td.path());
+    const QString path = td.path() + "/note.html";
+    QVERIFY(s.saveNote(path, "<html><body><p>first</p></body></html>"));
+
+    const QString victim = outside.path() + "/victim.txt";
+    {
+        QFile v(victim);
+        QVERIFY(v.open(QIODevice::WriteOnly));
+        v.write("VICTIM_ORIGINAL\n");
+    }
+    // Planted at the old fixed temp name, and a dangling one too (a dangling
+    // link is created through by O_CREAT without O_EXCL).
+    QVERIFY(QFile::link(victim, path + ".tmp"));
+    QVERIFY(QFileInfo(path + ".tmp").isSymLink());
+    const QString dangling = outside.path() + "/created-through-link.txt";
+    const QString path2 = td.path() + "/second.html";
+    QVERIFY(QFile::link(dangling, path2 + ".tmp"));
+
+    QVERIFY(s.saveNote(path, "<html><body><p>second</p></body></html>"));
+    QVERIFY(s.saveNote(path2, "<html><body><p>other</p></body></html>"));
+
+    QFile v(victim);
+    QVERIFY(v.open(QIODevice::ReadOnly));
+    QCOMPARE(v.readAll(), QByteArray("VICTIM_ORIGINAL\n"));
+    QVERIFY(!QFileInfo::exists(dangling));
+    QVERIFY(QFileInfo(path + ".tmp").isSymLink());     // left alone, not written through
+    QVERIFY(s.readNote(path).contains("<p>second</p>"));
+    QVERIFY(s.readNote(path2).contains("<p>other</p>"));
+    QVERIFY(!QFileInfo(path).isSymLink());
+
+    // No temp of the new kind is left behind after the saves.
+    const QStringList left = QDir(td.path()).entryList(
+        QStringList() << QStringLiteral("note.html.*") << QStringLiteral("second.html.*"),
+        QDir::Files | QDir::System | QDir::Hidden);
+    for (const QString &name : left)
+        QVERIFY2(name.endsWith(QStringLiteral(".tmp")) || name.contains(QStringLiteral(".bak")),
+                 qPrintable("unexpected leftover: " + name));
+#endif
 }
 
 void TestNotesStorage::atomicWrite_signalEmittedOnSuccess() {
@@ -674,6 +725,64 @@ void TestNotesStorage::draft_writeAndClear() {
 
     s.clearDraft(path);
     QVERIFY(!QFile::exists(path + ".draft"));
+}
+
+// The draft timer opened the fixed `<note>.html.draft` with Truncate, so a
+// symlink planted there got the note's text written into its target. The
+// draft is now renamed into place: a link at the name is replaced, not
+// followed, and the file keeps the name NotesPanel's recovery reads.
+void TestNotesStorage::draft_plantedSymlinkNotFollowed() {
+#ifdef Q_OS_WIN
+    QSKIP("symlinks need privileges on Windows");
+#else
+    QTemporaryDir td, outside;
+    NotesStorage s(td.path());
+    const QString path = td.path() + "/n.html";
+    QVERIFY(s.saveNote(path, "<html><body><p>saved</p></body></html>"));
+
+    const QString victim = outside.path() + "/victim.txt";
+    {
+        QFile v(victim);
+        QVERIFY(v.open(QIODevice::WriteOnly));
+        v.write("VICTIM_ORIGINAL\n");
+    }
+    QVERIFY(QFile::link(victim, path + ".draft"));
+    QVERIFY(QFileInfo(path + ".draft").isSymLink());
+
+    const QString draftHtml = "<html><body><p>typed after save</p></body></html>";
+    QVERIFY(s.writeDraft(path, draftHtml));
+    QFile v(victim);
+    QVERIFY(v.open(QIODevice::ReadOnly));
+    QCOMPARE(v.readAll(), QByteArray("VICTIM_ORIGINAL\n"));
+    QVERIFY(!QFileInfo(path + ".draft").isSymLink());
+
+    // Recovery contract: the draft sits at <note>.html.draft, holds the
+    // text, and is newer than (or as new as) the note.
+    QFile d(path + ".draft");
+    QVERIFY(d.open(QIODevice::ReadOnly));
+    QCOMPARE(QString::fromUtf8(d.readAll()), draftHtml);
+    QVERIFY(QFileInfo(path + ".draft").lastModified() >= QFileInfo(path).lastModified());
+
+    // A dangling link at the draft name: nothing is created at its target.
+    const QString path2 = td.path() + "/m.html";
+    const QString dangling = outside.path() + "/created-through-link.txt";
+    QVERIFY(QFile::link(dangling, path2 + ".draft"));
+    QVERIFY(s.writeDraft(path2, draftHtml));
+    QVERIFY(!QFileInfo::exists(dangling));
+
+    // And a link at the note's own name is replaced on save, not written through.
+    const QString path3 = td.path() + "/linked.html";
+    QVERIFY(QFile::link(victim, path3));
+    QVERIFY(s.saveNote(path3, "<html><body><p>own</p></body></html>"));
+    QFile v2(victim);
+    QVERIFY(v2.open(QIODevice::ReadOnly));
+    QCOMPARE(v2.readAll(), QByteArray("VICTIM_ORIGINAL\n"));
+    QVERIFY(!QFileInfo(path3).isSymLink());
+    QVERIFY(s.readNote(path3).contains("<p>own</p>"));
+
+    s.clearDraft(path);
+    QVERIFY(!QFileInfo::exists(path + ".draft"));
+#endif
 }
 
 void TestNotesStorage::draft_clearedOnSuccessfulSave() {

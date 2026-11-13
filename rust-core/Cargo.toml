@@ -27,14 +27,18 @@ libc = "0.2"
 similar = "2.6"
 sqlformat = "0.5"
 sqlparser = { version = "0.55", default-features = false, features = ["std"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
 ssh-key = { version = "0.6.7", default-features = false, features = ["std", "ed25519", "rsa", "p256", "p384", "encryption", "getrandom"] }
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 zeroize = "1"
 
 [dev-dependencies]
+html5ever = "0.40"
 tempfile = "3"
+# Test-only since v0.1.133: the JSON formatter is a token scanner that never
+# builds a value tree; serde_json is kept as a differential oracle in the
+# fuzz harness and to pin the pretty-print layout.
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
 
 # Crypto deps (rsa, p256/p384) are unusably slow unoptimised, which would
 # make `cargo test` in the dev profile take minutes on RSA keygen.

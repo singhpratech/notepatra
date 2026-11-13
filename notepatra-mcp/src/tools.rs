@@ -3,6 +3,9 @@ use serde_json::{json, Map, Value};
 
 use crate::transport::{EditorTransport, TabRef, TabSelector};
 
+mod control;
+mod editing;
+
 const DEFAULT_MAX_RESULTS: usize = 50;
 /// Server-side cap mirrored from the C++ bridge: search_project never
 /// returns more than this many matches, so larger requests are clamped
@@ -34,10 +37,35 @@ pub const READ_TOOLS: &[&str] = &[
     "list_languages",
     "get_capabilities",
     "get_diagram_source",
+    // v0.1.133 (D14): pure text-in/text-out, no editor state touched.
+    "format_json",
+    "format_sql",
+    "format_html",
     // phase 2
     "list_connections",
     "run_query",
     "list_tables",
+    // v0.1.133: pure text tools (nothing in the editor changes)
+    "check_brackets",
+    "fix_brackets",
+    "hash_text",
+    "encode_text",
+    "diff_text",
+    "repair_json",
+    "markdown_convert",
+    "mermaid_to_npd",
+    "list_symbols",
+    "generate_password",
+    // v0.1.133 phase 3
+    "list_hunks",
+    "list_conflicts",
+    "search_notes",
+    "get_preferences",
+    "describe_table",
+    "parse_http_file",
+    "curl_to_request",
+    "request_to_curl",
+    "hex_dump",
 ];
 pub const ACT_TOOLS: &[&str] = &[
     "open_file",
@@ -46,15 +74,26 @@ pub const ACT_TOOLS: &[&str] = &[
     "select_range",
     "set_language",
     "compare_tabs",
-    "format_json",
-    "format_sql",
-    "format_html",
     "open_note",
     "create_diagram",
     "open_noter",
     // phase 2
     "open_data_analyst",
     "render_chart",
+    // v0.1.133: view / navigation only
+    "activate_tab",
+    "set_read_only",
+    "bookmarks",
+    "fold",
+    "set_view",
+    "set_theme",
+    "set_preview",
+    "compare_with_file",
+    // v0.1.133 phase 3: non-modal windows
+    "open_connections_dialog",
+    "open_schema_browser",
+    // Opens an outbound, authenticated connection: an action, not a read.
+    "test_connection",
 ];
 pub const WRITE_TOOLS: &[&str] = &[
     "insert_text",
@@ -69,6 +108,59 @@ pub const WRITE_TOOLS: &[&str] = &[
     // phase 2
     "export_query_results",
     "export_chart",
+    // v0.1.133. close_tab and reload_tab need no card when nothing unsaved
+    // is lost, but they CAN discard edits, so they are tiered as writes.
+    "close_tab",
+    "reload_tab",
+    "rename_file",
+    "save_all",
+    "undo",
+    "redo",
+    "transform_lines",
+    "convert_case",
+    "comment_lines",
+    "line_edit",
+    "set_eol",
+    "set_encoding",
+    // v0.1.133 phase 3
+    "git_stage",
+    "git_unstage",
+    "git_commit",
+    "git_branch_create",
+    "git_checkout",
+    "git_stash",
+    "git_discard",
+    "git_fetch",
+    "git_pull",
+    "git_push",
+    "git_hunk",
+    "resolve_conflict",
+    "rename_note",
+    "trash_note",
+    "restore_note",
+    "delete_note_permanently",
+    "delete_reminder",
+    "snooze_reminder",
+    "dismiss_reminder",
+    "export_note",
+    "set_preference",
+    "set_workspace_folder",
+    "execute_sql",
+    "add_connection",
+    "update_connection",
+    "delete_connection",
+    "rest_request",
+    "clear_recent_files",
+];
+
+/// Writes that leave the editor (a database, the network, a git remote).
+/// The remote gateway requires its highest scope, `write_external`, for these.
+pub const EXTERNAL_WRITE_TOOLS: &[&str] = &[
+    "execute_sql",
+    "rest_request",
+    "git_fetch",
+    "git_pull",
+    "git_push",
 ];
 
 /// Mandatory sentence on every write tool's description: these tools are
@@ -98,18 +190,36 @@ fn no_args_schema() -> Value {
 }
 
 fn format_tool(name: &str, kind_label: &str, extra: &str) -> Value {
+    let mut props = Map::new();
+    props.insert(
+        "text".into(),
+        json!({ "type": "string", "description": format!("The raw {kind_label} text to format") }),
+    );
+    // v0.1.133: only the options the underlying formatter really has.
+    match kind_label {
+        "JSON" => {
+            props.insert("indent".into(), json!({ "type": "integer", "minimum": 0, "maximum": 8, "description": "Spaces per indent level (default 4)" }));
+            props.insert("minify".into(), json!({ "type": "boolean", "description": "Return compact one-line JSON instead (default false); indent is then ignored" }));
+        }
+        "SQL" => {
+            props.insert("indent".into(), json!({ "type": "integer", "minimum": 1, "maximum": 8, "description": "Spaces per indent level (default 4)" }));
+            props.insert("keyword_case".into(), json!({ "type": "string", "enum": ["upper", "lower"], "description": "Keyword case (default upper)" }));
+        }
+        _ => {
+            props.insert("indent".into(), json!({ "type": "integer", "minimum": 0, "maximum": 8, "description": "Spaces per indent level (default 2)" }));
+            props.insert("minify".into(), json!({ "type": "boolean", "description": "Return minified HTML instead (default false); indent is then ignored" }));
+        }
+    }
     json!({
         "name": name,
         "description": format!(
             "Format {kind_label} text and return the formatted result.{extra} \
              Use before inserting {kind_label} into the editor, or to clean up \
-             {kind_label} the user pasted."
+             {kind_label} the user pasted. Pure: nothing in the editor changes."
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "text": { "type": "string", "description": format!("The raw {kind_label} text to format") }
-            },
+            "properties": Value::Object(props),
             "required": ["text"],
             "additionalProperties": false
         }
@@ -117,6 +227,15 @@ fn format_tool(name: &str, kind_label: &str, extra: &str) -> Value {
 }
 
 pub fn definitions() -> Value {
+    let mut all = base_definitions();
+    if let Value::Array(list) = &mut all {
+        list.extend(editing::definitions());
+        list.extend(control::definitions());
+    }
+    all
+}
+
+fn base_definitions() -> Value {
     json!([
         {
             "name": "open_file",
@@ -152,13 +271,15 @@ pub fn definitions() -> Value {
         },
         {
             "name": "search_project",
-            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive); returns matching lines with file path and line number, plus workspace_searched and scope so you can tell a project-wide search from an open-tabs-only one. Zero matches is a successful search with an empty results list, not an error. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
+            "description": "Search ALL open tabs plus files under the workspace folder for a literal substring (case-insensitive unless match_case) or a regex; returns matching lines with file path, 1-based line and 1-based column, plus workspace_searched and scope so you can tell a project-wide search from an open-tabs-only one. Zero matches is a successful search with an empty results list, not an error. The editor caps results at 200 per search; larger max_results values are clamped to 200. Use to locate text when you don't know which tab or file it is in; use find_in_tab for a single tab.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
                     "max_results": { "type": "integer", "minimum": 1, "description": "Maximum matches to return (default 50; values above 200 are clamped to the editor's 200-result cap)" },
-                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
+                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" },
+                    "match_case": { "type": "boolean", "description": "Case-sensitive matching (default: false for a literal query, true for a regex — the historical behaviour)" },
+                    "whole_word": { "type": "boolean", "description": "Match whole words only (default false)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -186,7 +307,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "find_in_tab",
-            "description": "Find a literal substring inside ONE open tab (defaults to the active tab); returns matching lines and a truncation flag. Use search_project instead to search across all tabs.",
+            "description": "Find a literal substring (case-insensitive unless match_case) or a regex inside ONE open tab (defaults to the active tab); returns matching lines with 1-based line and column, and a truncation flag. Use search_project instead to search across all tabs.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -194,7 +315,9 @@ pub fn definitions() -> Value {
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
                     "title": { "type": "string", "description": "Exact tab title, as read_tab accepts" },
                     "query": { "type": "string", "description": "Literal text to search for (or a regular expression when regex is true)" },
-                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" }
+                    "regex": { "type": "boolean", "description": "When true, query is a Qt-compatible regular expression; the server rejects an invalid pattern (default false: literal substring)" },
+                    "match_case": { "type": "boolean", "description": "Case-sensitive matching (default: false for a literal query, true for a regex — the historical behaviour)" },
+                    "whole_word": { "type": "boolean", "description": "Match whole words only (default false)" }
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -202,11 +325,13 @@ pub fn definitions() -> Value {
         },
         {
             "name": "new_tab",
-            "description": "Create a new untitled tab, optionally pre-filled with text. Use to hand generated or transformed content to the user inside the editor instead of pasting it into chat.",
+            "description": "Create a new untitled tab, optionally pre-filled with text, a syntax language and a tab title, and focus it. Returns {tab_index, tab_id, language?, title?}. Use to hand generated or transformed content to the user inside the editor instead of pasting it into chat.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "text": { "type": "string", "description": "Initial content for the new tab (default: empty)" }
+                    "text": { "type": "string", "description": "Initial content for the new tab (default: empty)" },
+                    "language": { "type": "string", "description": "Syntax-highlighting language, as list_languages names it or a common alias such as \"python\" (default: Plain Text); an unknown name is an error and no tab is created" },
+                    "title": { "type": "string", "description": "Tab title (default: the next \"Untitled N\")" }
                 },
                 "required": [],
                 "additionalProperties": false
@@ -259,24 +384,37 @@ pub fn definitions() -> Value {
         },
         {
             "name": "compare_tabs",
-            "description": "Open Notepatra's side-by-side Compare view for two open tabs. Use when the user wants to diff two documents they have open.",
+            "description": "Open Notepatra's side-by-side Compare view for two open tabs. Name each side by tab_id_a / tab_id_b (stable ids from list_open_tabs, preferred) or index_a / index_b (exactly one selector per side). Use when the user wants to see two open documents side by side; use diff_text to get the hunks back as data instead.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "tab_id_a": { "type": "integer", "description": "Stable tab id of the first tab (from list_open_tabs)" },
+                    "tab_id_b": { "type": "integer", "description": "Stable tab id of the second tab (from list_open_tabs)" },
                     "index_a": { "type": "integer", "minimum": 0, "description": "Zero-based index of the first tab" },
                     "index_b": { "type": "integer", "minimum": 0, "description": "Zero-based index of the second tab" }
                 },
-                "required": ["index_a", "index_b"],
+                "required": [],
                 "additionalProperties": false
             }
         },
         format_tool("format_json", "JSON", " Fails on invalid JSON."),
         format_tool("format_sql", "SQL", ""),
-        format_tool("format_html", "HTML", ""),
+        format_tool(
+            "format_html",
+            "HTML",
+            " Never changes the document's meaning: when the formatter cannot prove that, the call fails with the reason and its line:column, and nothing is returned.",
+        ),
         {
             "name": "list_notes",
-            "description": "List the user's Noter notes with title, file name, and last-modified time. Use before read_note to discover which notes exist.",
-            "inputSchema": no_args_schema()
+            "description": "List the user's Noter notes with title, file name, and last-modified time. Use before read_note to discover which notes exist. With include_trash, notes in the Noter Trash are listed too, marked trashed:true (restore_note / delete_note_permanently take those paths).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "include_trash": { "type": "boolean", "description": "Also list notes in the Noter Trash (default false)" }
+                },
+                "required": [],
+                "additionalProperties": false
+            }
         },
         {
             "name": "read_note",
@@ -329,9 +467,14 @@ pub fn definitions() -> Value {
         {
             "name": "apply_edit",
             "description": format!(
-                "Find-and-replace a literal string in one open tab (default: the active \
-                 tab): replaces the first occurrence, or every occurrence with all=true, \
-                 and returns the replacement count. {APPROVAL_NOTE}"
+                "Find-and-replace in one open tab (default: the active tab) or, with \
+                 scope all_open, in every open tab behind one card that lists each tab \
+                 and its match count. Replaces the first occurrence, or every one with \
+                 all=true, and returns the count. Default: literal and case-sensitive; a \
+                 literal replacement is inserted as-is ($1 stays $1). regex=true uses the \
+                 Replace dialog's engine, where $1 / ${{name}} in replace refer to groups. \
+                 If the document changes while the card waits, nothing is replaced. \
+                 {APPROVAL_NOTE}"
             ),
             "inputSchema": {
                 "type": "object",
@@ -340,7 +483,11 @@ pub fn definitions() -> Value {
                     "replace": { "type": "string", "description": "Replacement text" },
                     "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based tab index (default: active tab)" },
-                    "all": { "type": "boolean", "description": "Replace every occurrence (default false: first occurrence only)" }
+                    "all": { "type": "boolean", "description": "Replace every occurrence (default false: first occurrence only)" },
+                    "regex": { "type": "boolean", "description": "find is a regular expression (default false: literal)" },
+                    "match_case": { "type": "boolean", "description": "Case-sensitive matching (default true)" },
+                    "whole_word": { "type": "boolean", "description": "Match whole words only (default false)" },
+                    "scope": { "type": "string", "enum": ["tab", "all_open"], "description": "tab (default: the selected or active tab) or all_open (every open text tab; do not name a tab)" }
                 },
                 "required": ["find", "replace"],
                 "additionalProperties": false
@@ -368,7 +515,7 @@ pub fn definitions() -> Value {
         // ── v0.1.119 read tier ──────────────────────────────────────────
         {
             "name": "list_reminders",
-            "description": "List the user's Noter reminders, each tagged with a time bucket (Overdue, Today, This week, or Later), the note file it is bound to, and its due time. Use to see what the user has scheduled before acting on it.",
+            "description": "List the user's Noter reminders, each with its id (for delete_reminder / snooze_reminder / dismiss_reminder), a time bucket (Overdue, Today, This week, or Later), the note file it is bound to, and its due time. Use to see what the user has scheduled before acting on it.",
             "inputSchema": no_args_schema()
         },
         {
@@ -378,11 +525,12 @@ pub fn definitions() -> Value {
         },
         {
             "name": "git_diff",
-            "description": "Get the Git diff of the workspace repository (all changes, or just one path). Use after git_status to inspect exactly what changed.",
+            "description": "Get the Git diff of the workspace repository (all changes, or just one path): the unstaged working-tree changes, or with staged:true what is staged for the next commit. Use after git_status to inspect exactly what changed; files on the credential deny-list are redacted.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Restrict the diff to this repo-relative or absolute path (default: the whole working tree)" }
+                    "path": { "type": "string", "description": "Restrict the diff to this repo-relative or absolute path (default: the whole working tree)" },
+                    "staged": { "type": "boolean", "description": "Diff the index against HEAD (git diff --cached) instead of the working tree (default false)" }
                 },
                 "required": [],
                 "additionalProperties": false
@@ -419,7 +567,7 @@ pub fn definitions() -> Value {
         },
         {
             "name": "validate_npd",
-            "description": "Validate a Notepatra Diagram (.npd) document and return whether it parses plus any errors with line and column. Provide exactly one of tab_index (validate an open tab) or source (validate a string). Use before export_diagram to confirm the diagram is well-formed.",
+            "description": "Validate a Notepatra Diagram (.npd) document and return whether it parses plus any errors with line and column. Provide exactly one of tab_id / tab_index (validate an open Diagram tab) or source (validate a string). Use before export_diagram to confirm the diagram is well-formed.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -433,12 +581,12 @@ pub fn definitions() -> Value {
         },
         {
             "name": "run_sql",
-            "description": "Run a read-only SQL query against the editor's data engine and return columns and rows. SELECT-only: any non-read statement (INSERT/UPDATE/DELETE/DDL) is rejected by the editor and returns an error. Optionally query a CSV file by path instead of the open database.",
+            "description": "Run a read-only SQL query against the editor's data engine and return columns and rows. SELECT-only: any non-read statement (INSERT/UPDATE/DELETE/DDL) is rejected by the editor and returns an error. Optionally query a CSV file inside the workspace folder by path instead (as table `data`; Lite loads it into in-memory SQLite, Full into DuckDB).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "sql": { "type": "string", "description": "A read-only SQL SELECT (or WITH) statement; non-read statements are rejected by the editor" },
-                    "csv_path": { "type": "string", "description": "Absolute path of a CSV file to query instead of the open database (default: the editor's current data source)" }
+                    "csv_path": { "type": "string", "description": "Path of a CSV file inside the workspace folder to query as table `data` (default: an empty in-memory database)" }
                 },
                 "required": ["sql"],
                 "additionalProperties": false
@@ -509,7 +657,12 @@ pub fn definitions() -> Value {
         {
             "name": "export_diagram",
             "description": format!(
-                "Export the Notepatra Diagram (.npd) in an open tab to an image or PDF at a path on disk. \
+                "Export the Notepatra Diagram (.npd) in an open tab (tab_id or tab_index) to a \
+                 file on disk. png, jpeg and pdf are always available; webp, svg and html \
+                 only where this build supports them (get_capabilities lists \
+                 diagram_export_formats). The file is written to a temporary name and \
+                 replaced in one step. Protected destinations (shell start-up files, \
+                 credential stores, git hooks, autostart entries) are refused. \
                  {APPROVAL_NOTE}"
             ),
             "inputSchema": {
@@ -517,10 +670,10 @@ pub fn definitions() -> Value {
                 "properties": {
                     "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the tab holding the .npd diagram" },
-                    "path": { "type": "string", "description": "Absolute output path for the exported file" },
-                    "format": { "type": "string", "enum": ["png", "pdf"], "description": "Export format: png or pdf" }
+                    "path": { "type": "string", "description": "Absolute output path for the exported file; its folder must exist" },
+                    "format": { "type": "string", "description": "Export format, lowercase: png, jpeg, pdf, and webp / svg / html where supported (see get_capabilities.diagram_export_formats)" }
                 },
-                "required": ["tab_index", "path", "format"],
+                "required": ["path", "format"],
                 "additionalProperties": false
             }
         },
@@ -543,6 +696,7 @@ pub fn definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "source": { "type": "string", "description": "Initial .npd document text (default: an empty diagram)" },
+                    "template": { "type": "string", "enum": ["flow", "er", "system"], "description": "Start from the Diagram tab's New starter template instead of source: flow chart, ER diagram or system design" },
                     "title": { "type": "string", "description": "Tab title (default \"Diagram\")" }
                 },
                 "required": [],
@@ -551,21 +705,22 @@ pub fn definitions() -> Value {
         },
         {
             "name": "get_diagram_source",
-            "description": "Read the .npd source of an open Diagram tab by index. Errors if the tab is not a Diagram tab; use list_open_tabs to find it.",
+            "description": "Read the .npd source of an open Diagram tab, selected by tab_id (preferred) or tab_index. Errors if the tab is not a Diagram tab; use list_open_tabs to find it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "tab_id": { "type": "integer", "description": "Stable tab id from list_open_tabs. PREFER THIS over tab_index: an index is positional and silently re-points at a different document when another tab closes." },
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" }
                 },
-                "required": ["tab_index"],
+                "required": [],
                 "additionalProperties": false
             }
         },
         {
             "name": "set_diagram_source",
             "description": format!(
-                "Replace the entire .npd source of an open Diagram tab; the canvas \
+                "Replace the entire .npd source of an open Diagram tab (tab_id or \
+                 tab_index); the canvas \
                  re-renders immediately and the result reports valid plus any parse \
                  errors. {APPROVAL_NOTE}"
             ),
@@ -576,7 +731,7 @@ pub fn definitions() -> Value {
                     "tab_index": { "type": "integer", "minimum": 0, "description": "Zero-based index of the Diagram tab" },
                     "source": { "type": "string", "description": "The new .npd document text (replaces the whole source)" }
                 },
-                "required": ["tab_index", "source"],
+                "required": ["source"],
                 "additionalProperties": false
             }
         },
@@ -701,7 +856,7 @@ pub fn call(
         "format_json" => format_text(transport, args, "json"),
         "format_sql" => format_text(transport, args, "sql"),
         "format_html" => format_text(transport, args, "html"),
-        "list_notes" => no_arg_json(args, || transport.list_notes()),
+        "list_notes" => list_notes(transport, args),
         "read_note" => read_note(transport, args),
         "insert_text" => insert_text(transport, args),
         "replace_selection" => replace_selection(transport, args),
@@ -737,6 +892,78 @@ pub fn call(
         "render_chart" => render_chart(transport, args),
         "export_query_results" => export_query_results(transport, args),
         "export_chart" => export_chart(transport, args),
+        // v0.1.133
+        "activate_tab" => editing::activate_tab(transport, args),
+        "close_tab" => editing::close_tab(transport, args),
+        "reload_tab" => editing::reload_tab(transport, args),
+        "rename_file" => editing::rename_file(transport, args),
+        "save_all" => editing::save_all(transport, args),
+        "set_read_only" => editing::set_read_only(transport, args),
+        "undo" => editing::undo(transport, args),
+        "redo" => editing::redo(transport, args),
+        "transform_lines" => editing::transform_lines(transport, args),
+        "convert_case" => editing::convert_case(transport, args),
+        "comment_lines" => editing::comment_lines(transport, args),
+        "line_edit" => editing::line_edit(transport, args),
+        "set_eol" => editing::set_eol(transport, args),
+        "set_encoding" => editing::set_encoding(transport, args),
+        "bookmarks" => editing::bookmarks(transport, args),
+        "fold" => editing::fold(transport, args),
+        "set_view" => editing::set_view(transport, args),
+        "set_theme" => editing::set_theme(transport, args),
+        "set_preview" => editing::set_preview(transport, args),
+        "compare_with_file" => editing::compare_with_file(transport, args),
+        "check_brackets" => editing::check_brackets(transport, args),
+        "fix_brackets" => editing::fix_brackets(transport, args),
+        "hash_text" => editing::hash_text(transport, args),
+        "encode_text" => editing::encode_text(transport, args),
+        "diff_text" => editing::diff_text(transport, args),
+        "repair_json" => editing::repair_json(transport, args),
+        "markdown_convert" => editing::markdown_convert(transport, args),
+        "mermaid_to_npd" => editing::mermaid_to_npd(transport, args),
+        "list_symbols" => editing::list_symbols(transport, args),
+        "generate_password" => editing::generate_password(transport, args),
+        // v0.1.133 phase 3
+        "list_hunks" => control::call(transport, "list_hunks", args),
+        "list_conflicts" => control::call(transport, "list_conflicts", args),
+        "git_stage" => control::call(transport, "git_stage", args),
+        "git_unstage" => control::call(transport, "git_unstage", args),
+        "git_commit" => control::call(transport, "git_commit", args),
+        "git_branch_create" => control::call(transport, "git_branch_create", args),
+        "git_checkout" => control::call(transport, "git_checkout", args),
+        "git_stash" => control::call(transport, "git_stash", args),
+        "git_discard" => control::call(transport, "git_discard", args),
+        "git_fetch" => control::call(transport, "git_fetch", args),
+        "git_pull" => control::call(transport, "git_pull", args),
+        "git_push" => control::call(transport, "git_push", args),
+        "git_hunk" => control::call(transport, "git_hunk", args),
+        "resolve_conflict" => control::call(transport, "resolve_conflict", args),
+        "search_notes" => control::call(transport, "search_notes", args),
+        "rename_note" => control::call(transport, "rename_note", args),
+        "trash_note" => control::call(transport, "trash_note", args),
+        "restore_note" => control::call(transport, "restore_note", args),
+        "delete_note_permanently" => control::call(transport, "delete_note_permanently", args),
+        "delete_reminder" => control::call(transport, "delete_reminder", args),
+        "snooze_reminder" => control::call(transport, "snooze_reminder", args),
+        "dismiss_reminder" => control::call(transport, "dismiss_reminder", args),
+        "export_note" => control::call(transport, "export_note", args),
+        "get_preferences" => control::call(transport, "get_preferences", args),
+        "set_preference" => control::call(transport, "set_preference", args),
+        "set_workspace_folder" => control::call(transport, "set_workspace_folder", args),
+        "describe_table" => control::call(transport, "describe_table", args),
+        "test_connection" => control::call(transport, "test_connection", args),
+        "execute_sql" => control::call(transport, "execute_sql", args),
+        "add_connection" => control::call(transport, "add_connection", args),
+        "update_connection" => control::call(transport, "update_connection", args),
+        "delete_connection" => control::call(transport, "delete_connection", args),
+        "open_connections_dialog" => control::call(transport, "open_connections_dialog", args),
+        "open_schema_browser" => control::call(transport, "open_schema_browser", args),
+        "parse_http_file" => control::call(transport, "parse_http_file", args),
+        "curl_to_request" => control::call(transport, "curl_to_request", args),
+        "request_to_curl" => control::call(transport, "request_to_curl", args),
+        "rest_request" => control::call(transport, "rest_request", args),
+        "hex_dump" => control::call(transport, "hex_dump", args),
+        "clear_recent_files" => control::call(transport, "clear_recent_files", args),
         other => CallOutcome::UnknownTool(other.to_string()),
     }
 }
@@ -773,15 +1000,6 @@ fn optional_str<'a>(
         Some(_) => Err(CallOutcome::InvalidParams(format!(
             "{key} must be a string"
         ))),
-    }
-}
-
-fn required_index(args: &Map<String, Value>, key: &str) -> Result<usize, CallOutcome> {
-    match args.get(key) {
-        Some(v) => v.as_u64().map(|n| n as usize).ok_or_else(|| {
-            CallOutcome::InvalidParams(format!("{key} must be a non-negative integer"))
-        }),
-        None => Err(CallOutcome::InvalidParams(format!("{key} is required"))),
     }
 }
 
@@ -923,7 +1141,10 @@ fn open_file(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> 
         Err(e) => return e,
     };
     match transport.open_file(path) {
-        Ok(index) => CallOutcome::Ok(format!("Opened {path} as tab {index}")),
+        Ok(t) => CallOutcome::Ok(match t.id {
+            Some(id) => format!("Opened {path} as tab {} (tab_id {id})", t.index),
+            None => format!("Opened {path} as tab {}", t.index),
+        }),
         Err(e) => CallOutcome::ToolError(e.0),
     }
 }
@@ -992,8 +1213,16 @@ fn read_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> C
 }
 
 fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["query", "max_results", "regex"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &["query", "max_results", "regex", "match_case", "whole_word"],
+    ) {
         return e;
+    }
+    for k in ["match_case", "whole_word"] {
+        if let Err(e) = optional_bool(args, k, false) {
+            return e;
+        }
     }
     let query = match required_str(args, "query") {
         Ok(q) => q,
@@ -1013,6 +1242,11 @@ fn search_project(transport: &mut dyn EditorTransport, args: &Map<String, Value>
     // Clamp to the editor's server-side cap rather than requesting results
     // that can never come back.
     let max_results = max_results.min(MAX_RESULTS_CAP);
+    if args.contains_key("match_case") || args.contains_key("whole_word") {
+        let mut a = args.clone();
+        a.insert("max_results".into(), json!(max_results));
+        return to_outcome(transport.call_verb("search_project", Value::Object(a)));
+    }
     match transport.search_project(query, max_results, regex) {
         Ok(results) => json_text(&results),
         Err(e) => CallOutcome::ToolError(e.0),
@@ -1032,8 +1266,24 @@ fn get_selection(transport: &mut dyn EditorTransport, args: &Map<String, Value>)
 fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
     // NP-11: `title` was accepted by read_tab and rejected here with
     // "unexpected argument" — the same selector, two answers.
-    if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "title", "query", "regex"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &[
+            "tab_index",
+            "tab_id",
+            "title",
+            "query",
+            "regex",
+            "match_case",
+            "whole_word",
+        ],
+    ) {
         return e;
+    }
+    for k in ["match_case", "whole_word"] {
+        if let Err(e) = optional_bool(args, k, false) {
+            return e;
+        }
     }
     let query = match required_str(args, "query") {
         Ok(q) => q,
@@ -1054,12 +1304,40 @@ fn find_in_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -
         Ok(r) => r,
         Err(e) => return e,
     };
+    if args.contains_key("match_case") || args.contains_key("whole_word") {
+        // The bridge reads this verb's positional selector from "index".
+        let mut a = args.clone();
+        if let Some(i) = a.remove("tab_index") {
+            a.insert("index".into(), i);
+        }
+        return to_outcome(transport.call_verb("find_in_tab", Value::Object(a)));
+    }
     to_outcome(transport.find_in_tab(tab, title, query, regex))
 }
 
 fn new_tab(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["text"]) {
+    let spec = [
+        editing::Arg {
+            key: "text",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "language",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "title",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+    ];
+    if let Err(e) = editing::check(args, &spec) {
         return e;
+    }
+    if args.contains_key("language") || args.contains_key("title") {
+        return to_outcome(transport.call_verb("new_tab", Value::Object(args.clone())));
     }
     let text = match optional_str(args, "text") {
         Ok(t) => t,
@@ -1145,18 +1423,37 @@ fn set_language(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
 }
 
 fn compare_tabs(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["index_a", "index_b"]) {
+    if let Err(e) = reject_extras(args, &["index_a", "index_b", "tab_id_a", "tab_id_b"]) {
         return e;
     }
-    let index_a = match required_index(args, "index_a") {
-        Ok(i) => i,
-        Err(e) => return e,
-    };
-    let index_b = match required_index(args, "index_b") {
-        Ok(i) => i,
-        Err(e) => return e,
-    };
-    to_outcome(transport.compare_tabs(index_a, index_b))
+    let mut sides = [TabRef::default(); 2];
+    for (n, side) in ["a", "b"].iter().enumerate() {
+        let id_key = format!("tab_id_{side}");
+        let idx_key = format!("index_{side}");
+        let id = match args.get(&id_key) {
+            None => None,
+            Some(v) => match v.as_i64() {
+                Some(i) => Some(i),
+                None => return CallOutcome::InvalidParams(format!("{id_key} must be an integer")),
+            },
+        };
+        let index = match optional_index(args, &idx_key) {
+            Ok(i) => i,
+            Err(e) => return e,
+        };
+        match (id, index) {
+            (Some(_), Some(_)) => {
+                return CallOutcome::InvalidParams(format!(
+                    "provide {id_key} or {idx_key}, not both"
+                ))
+            }
+            (None, None) => {
+                return CallOutcome::InvalidParams(format!("provide {id_key} or {idx_key}"))
+            }
+            _ => sides[n] = TabRef { index, id },
+        }
+    }
+    to_outcome(transport.compare_tabs(sides[0], sides[1]))
 }
 
 fn format_text(
@@ -1164,14 +1461,22 @@ fn format_text(
     args: &Map<String, Value>,
     kind: &str,
 ) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["text"]) {
+    let spec = editing::format_spec(kind);
+    if let Err(e) = editing::check(args, spec) {
         return e;
     }
     let text = match required_str(args, "text") {
         Ok(t) => t,
         Err(e) => return e,
     };
-    match transport.format_text(kind, text) {
+    let result = if args.len() > 1 {
+        let mut a = args.clone();
+        a.insert("kind".into(), json!(kind));
+        transport.call_verb("format_text", Value::Object(a))
+    } else {
+        transport.format_text(kind, text)
+    };
+    match result {
         // Unwrap {text} so the tool returns the formatted text itself.
         Ok(v) => match v.get("text").and_then(Value::as_str) {
             Some(t) => CallOutcome::Ok(t.to_string()),
@@ -1240,8 +1545,36 @@ fn replace_selection(
 }
 
 fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["find", "replace", "tab_index", "tab_id", "all"]) {
+    if let Err(e) = reject_extras(
+        args,
+        &[
+            "find",
+            "replace",
+            "tab_index",
+            "tab_id",
+            "all",
+            "regex",
+            "match_case",
+            "whole_word",
+            "scope",
+        ],
+    ) {
         return e;
+    }
+    for k in ["regex", "match_case", "whole_word"] {
+        if let Err(e) = optional_bool(args, k, false) {
+            return e;
+        }
+    }
+    let scope = match optional_str(args, "scope") {
+        Ok(s) => s.unwrap_or("tab"),
+        Err(e) => return e,
+    };
+    if scope != "tab" && scope != "all_open" {
+        return CallOutcome::InvalidParams("scope must be \"tab\" or \"all_open\"".into());
+    }
+    if scope == "all_open" && (args.contains_key("tab_id") || args.contains_key("tab_index")) {
+        return CallOutcome::InvalidParams("scope all_open does not take a tab".into());
     }
     let find = match required_str(args, "find") {
         Ok(f) => f,
@@ -1259,6 +1592,14 @@ fn apply_edit(transport: &mut dyn EditorTransport, args: &Map<String, Value>) ->
         Ok(a) => a,
         Err(e) => return e,
     };
+    let extended = ["regex", "match_case", "whole_word", "scope"]
+        .iter()
+        .any(|k| args.contains_key(*k));
+    if extended {
+        let mut a = args.clone();
+        a.insert("all".into(), json!(all));
+        return to_outcome(transport.call_verb("apply_edit", Value::Object(a)));
+    }
     to_outcome(transport.apply_edit(find, replace, tab, all))
 }
 
@@ -1284,14 +1625,30 @@ const GIT_LOG_DEFAULT_LIMIT: usize = 20;
 const GIT_LOG_MAX_LIMIT: usize = 100;
 
 fn git_diff(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["path"]) {
+    if let Err(e) = reject_extras(args, &["path", "staged"]) {
         return e;
     }
     let path = match optional_str(args, "path") {
         Ok(p) => p,
         Err(e) => return e,
     };
-    to_outcome(transport.git_diff(path))
+    match optional_bool(args, "staged", false) {
+        Err(e) => e,
+        // v0.1.133: staged rides the generic verb channel.
+        Ok(true) => to_outcome(transport.call_verb("git_diff", Value::Object(args.clone()))),
+        Ok(false) => to_outcome(transport.git_diff(path)),
+    }
+}
+
+fn list_notes(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
+    if let Err(e) = reject_extras(args, &["include_trash"]) {
+        return e;
+    }
+    match optional_bool(args, "include_trash", false) {
+        Err(e) => e,
+        Ok(true) => to_outcome(transport.call_verb("list_notes", Value::Object(args.clone()))),
+        Ok(false) => to_outcome(transport.list_notes()),
+    }
 }
 
 fn git_log(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
@@ -1323,15 +1680,16 @@ fn validate_npd(transport: &mut dyn EditorTransport, args: &Map<String, Value>) 
     if let Err(e) = reject_extras(args, &["tab_index", "tab_id", "source"]) {
         return e;
     }
-    // Exactly one selector, mirroring read_tab's index-or-title contract.
-    match (args.get("tab_index"), args.get("source")) {
-        (Some(_), Some(_)) => {
+    // Exactly one selector: a tab (tab_id or tab_index) or a source string.
+    let has_tab = args.contains_key("tab_index") || args.contains_key("tab_id");
+    match (has_tab, args.contains_key("source")) {
+        (true, true) => {
             return CallOutcome::InvalidParams(
-                "provide exactly one of tab_index or source, not both".into(),
+                "provide exactly one of tab_id, tab_index or source".into(),
             )
         }
-        (None, None) => {
-            return CallOutcome::InvalidParams("provide tab_index or source".into());
+        (false, false) => {
+            return CallOutcome::InvalidParams("provide tab_id, tab_index or source".into());
         }
         _ => {}
     }
@@ -1437,8 +1795,12 @@ fn export_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>
         Ok(f) => f,
         Err(e) => return e,
     };
-    if format != "png" && format != "pdf" {
-        return CallOutcome::InvalidParams("format must be \"png\" or \"pdf\"".into());
+    // The accepted set is the running editor's (DiagramView, asked at
+    // runtime); only reject what no build could ever produce.
+    if format.is_empty() || !format.chars().all(|c| c.is_ascii_lowercase()) {
+        return CallOutcome::InvalidParams(
+            "format must be a lowercase format name such as \"png\" or \"pdf\"".into(),
+        );
     }
     to_outcome(transport.export_diagram(tab, path, format))
 }
@@ -1474,8 +1836,31 @@ fn get_capabilities(transport: &mut dyn EditorTransport, args: &Map<String, Valu
 // ── Phase 1 handlers ────────────────────────────────────────────────────────
 
 fn create_diagram(transport: &mut dyn EditorTransport, args: &Map<String, Value>) -> CallOutcome {
-    if let Err(e) = reject_extras(args, &["source", "title"]) {
+    let spec = [
+        editing::Arg {
+            key: "source",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "title",
+            kind: editing::Kind::Str,
+            required: false,
+        },
+        editing::Arg {
+            key: "template",
+            kind: editing::Kind::Enum(&["flow", "er", "system"]),
+            required: false,
+        },
+    ];
+    if let Err(e) = editing::check(args, &spec) {
         return e;
+    }
+    if args.contains_key("template") {
+        if args.contains_key("source") {
+            return CallOutcome::InvalidParams("provide source or template, not both".into());
+        }
+        return to_outcome(transport.call_verb("create_diagram", Value::Object(args.clone())));
     }
     let source = match optional_str(args, "source") {
         Ok(s) => s,

@@ -1069,147 +1069,7 @@ QWidget *NotesPanel::buildSidebar() {
                 QString newText = it->text(0).trimmed();
                 if (newText.isEmpty()) { refreshSidebar(); return; }
                 if (kind == QStringLiteral("meeting") && !payload.isEmpty()) {
-                    // A3 — titles are full Unicode; cap at the same 200
-                    // chars safeFilename / the meta writer enforce.
-                    newText = newText.left(200);
-                    // True no-op vs the RESOLVER display title. Slug-equality
-                    // is no longer the no-op test: "Café Sync" → "Cafe Sync"
-                    // shares a slug but IS a title change the meta must keep.
-                    // Unchanged text → zero disk writes, zero renames.
-                    if (newText == m_storage->displayTitleForFile(payload)) {
-                        refreshSidebar();
-                        return;
-                    }
-                    // Rename the file (canonical + backup ring + draft).
-                    QFileInfo fi(payload);
-                    QString slug = NotesStorage::safeFilename(newText);
-                    if (slug.isEmpty()) { refreshSidebar(); return; }
-                    // Keep the creation-date prefix from the existing filename
-                    // so date-bucket sorting stays correct. New notes are
-                    // stamped yyyy-MM-dd-hhmmss (6-digit time, newMeetingNote);
-                    // legacy ones used a 4-digit HHMM — accept both, matching
-                    // the display-side parser in populateMeetingsRoot. (\d{4}
-                    // alone silently DROPPED the prefix off every new note.)
-                    static const QRegExp prefixRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-)"));
-                    QRegExp px = prefixRx;
-                    QString prefix;
-                    if (px.indexIn(fi.fileName()) >= 0) prefix = px.cap(1);
-                    QString newName = prefix + slug + QStringLiteral(".html");
-                    QDir d = fi.dir();
-                    const QString oldStem = fi.fileName();
-                    // A3 — the filename is a stable ASCII disk-id, not the
-                    // title. A pure-CJK/emoji title folds to "untitled" and
-                    // must KEEP the existing filename (sync tools watch this
-                    // dir; "<prefix>-untitled.html" would be meaningless).
-                    // The title still commits to the meta below.
-                    const bool doRename = slug != QStringLiteral("untitled")
-                                          && newName != oldStem;
-                    QString newAbs = payload;
-                    if (doRename) {
-                    // Target already taken by another note? Dedup with " (n)"
-                    // inserted BEFORE the extension — split on the LAST dot,
-                    // never QFileInfo::baseName() (it splits on the FIRST dot
-                    // and mangles dotted names like "spec-1.2.html").
-                    if (d.exists(newName)) {
-                        const int dot = newName.lastIndexOf(QChar('.'));
-                        const QString stem = (dot > 0) ? newName.left(dot) : newName;
-                        const QString ext  = (dot > 0) ? newName.mid(dot)  : QString();
-                        for (int n = 2; n < 100 && d.exists(newName); ++n)
-                            newName = stem + QStringLiteral(" (%1)").arg(n) + ext;
-                    }
-                    // Rename the canonical file FIRST and CHECK the result.
-                    // QDir::rename fails on read-only dirs / existing targets;
-                    // unchecked, the buffer got repointed at a file that was
-                    // never renamed — i.e. at ANOTHER note, which the next
-                    // autosave would then clobber. A failure bails BEFORE any
-                    // title write, so the old label/title/meta stay intact
-                    // and the message below stays honest.
-                    if (d.exists(newName) || !d.rename(oldStem, newName)) {
-                        if (auto *mw = window())
-                            if (auto *sb = mw->findChild<QStatusBar *>())
-                                sb->showMessage(tr("Rename failed — the note keeps its old name"), 4000);
-                        refreshSidebar();   // restores the old label
-                        return;
-                    }
-                    // Canonical renamed — carry the family along (best-effort).
-                    for (const QString &name : d.entryList(QStringList() << oldStem + "*",
-                                                           QDir::Files | QDir::Hidden)) {
-                        QString suffix = name.mid(oldStem.size()); // .bak1 / .draft
-                        d.rename(name, newName + suffix);
-                    }
-                    newAbs = d.absoluteFilePath(newName);
-                    if (payload == m_currentPath) m_currentPath = newAbs;
-                    // A3 — a live pop-out mirroring this note must follow the
-                    // rename (its 2s reload loop reads the path each tick).
-                    if (m_popOut && m_popOut->notePath() == payload)
-                        m_popOut->setNotePath(newAbs);
-                    // M5/A3 — reminders + todos key off source_file. Follow
-                    // the file to newAbs so a reminder set on this note still
-                    // opens it: the open-note save below re-points HTML action
-                    // rows via reindexNote, but that SKIPS the synthetic
-                    // reminder rows, which would otherwise strand at the dead
-                    // path and red-error the editor on the next reminder click.
-                    if (m_todos) m_todos->repathNote(payload, newAbs);
-                    }   // doRename
-
-                    // ── A3 title commit — disk rename FIRST, title SECOND,
-                    // so a rename failure leaves *everything* untouched. ──
-                    if (newAbs == m_currentPath && !m_currentIsChecklist) {
-                        // Open note: rewrite the H1 in the live document and
-                        // force-save — saveCurrentNote injects the meta,
-                        // reindexes todos.db and refreshes the sidebar.
-                        // m_lastSeenH1 is pre-set so the save's adoption
-                        // block sees no H1 *change* (no double-adopt).
-                        setEditorH1(newText);
-                        m_currentTitle = newText;
-                        m_lastSeenH1   = newText;
-                        m_dirty = true;
-                        saveCurrentNote();
-                        // The sidebar rename is not an editor edit — Ctrl+Z
-                        // must not resurrect the old title text (the next
-                        // autosave would silently re-adopt it).
-                        if (m_editor) m_editor->document()->clearUndoRedoStacks();
-                        emit noteTitleChanged(m_currentTitle);
-                    } else {
-                        // Closed note: string-level head surgery on the raw
-                        // bytes (NOT a QTextDocument round-trip — that would
-                        // Qt-normalize a never-opened template file). Replace
-                        // the first <h1>'s INNER text (tag + attrs kept so
-                        // class="meet-title" survives for the todos parser),
-                        // then upsert the meta; saveNote's sanitize/validate
-                        // + atomic write gate corruption.
-                        QString err;
-                        QString raw = m_storage->readNote(newAbs, &err);
-                        bool committed = false;
-                        if (err.isEmpty()) {
-                            static const QRegularExpression h1Re(
-                                QStringLiteral("(<h1\\b[^>]*>).*?(</h1>)"),
-                                QRegularExpression::CaseInsensitiveOption
-                                    | QRegularExpression::DotMatchesEverythingOption);
-                            const QRegularExpressionMatch hm = h1Re.match(raw);
-                            if (hm.hasMatch())
-                                raw.replace(hm.capturedStart(), hm.capturedLength(),
-                                            hm.captured(1) + titleEntityEscape(newText)
-                                                + hm.captured(2));
-                            QString err2;
-                            committed = m_storage->saveNote(
-                                newAbs,
-                                NotesStorage::withTitleMeta(raw, newText), &err2);
-                        }
-                        if (!committed) {
-                            // Honest status — the file rename (if any) stands;
-                            // the resolver falls back to the renamed filename,
-                            // so the label still reads the new name.
-                            if (auto *mw = window())
-                                if (auto *sb = mw->findChild<QStatusBar *>())
-                                    sb->showMessage(tr("Renamed, but the title could not be written into the note"), 4000);
-                        }
-                    }
-                    if (m_popOut && m_popOut->notePath() == newAbs)
-                        m_popOut->setDisplayTitle(newText);
-                    m_storage->invalidateTitleCache(payload);
-                    m_storage->invalidateTitleCache(newAbs);
-                    refreshSidebar();
+                    renameNote(payload, newText, nullptr);
                 } else if (kind == QStringLiteral("todo") && !payload.isEmpty()) {
                     if (m_todos) m_todos->setText(payload, newText);
                     refreshSidebar();
@@ -1241,14 +1101,12 @@ QWidget *NotesPanel::buildSidebar() {
             });
         } else if (action == QLatin1String("trash")) {
             if (kind == QLatin1String("meeting")) {
-                if (payload == m_currentPath) {
-                    m_dirty = false; showEmptyPage(); m_currentPath.clear();
-                }
-                moveMeetingTreeToTrash(payload, trashFolder());
-                refreshSidebar();
+                QString terr;
+                const bool moved = !trashNote(payload, &terr).isEmpty();
                 if (auto *mw = window())
                     if (auto *sb = mw->findChild<QStatusBar *>())
-                        sb->showMessage(tr("Meeting moved to Trash — recover it under Trash"), 4000);
+                        sb->showMessage(moved ? tr("Meeting moved to Trash — recover it under Trash")
+                                              : terr, 4000);
             } else if (kind == QLatin1String("todo")) {
                 if (m_todos) m_todos->trashRow(payload);
                 refreshSidebar();
@@ -1258,7 +1116,7 @@ QWidget *NotesPanel::buildSidebar() {
             }
         } else if (action == QLatin1String("restore")) {
             if (kind == QLatin1String("trashed_meeting"))
-                restoreMeetingTreeFromTrash(payload, inboxFolder());
+                restoreNote(payload);
             else if (kind == QLatin1String("trashed_todo") && m_todos)
                 m_todos->restoreRow(payload);
             refreshSidebar();
@@ -1272,7 +1130,7 @@ QWidget *NotesPanel::buildSidebar() {
                     QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                 != QMessageBox::Yes) return;
             if (kind == QLatin1String("trashed_meeting"))
-                permanentlyDeleteMeetingTree(payload);
+                deleteNotePermanently(payload);
             else if (kind == QLatin1String("trashed_todo") && m_todos)
                 m_todos->deleteRow(payload);
             refreshSidebar();
@@ -1355,12 +1213,8 @@ QWidget *NotesPanel::buildSidebar() {
                     else if (picked == aExpPdf) exportNoteTo(payload, /*asPdf=*/true);
                     else if (picked == aExpMd)  exportNoteTo(payload, /*asPdf=*/false);
                     else if (picked == aDelete) {
-                        if (payload == m_currentPath) {
-                            m_dirty = false; showEmptyPage(); m_currentPath.clear();
-                        }
                         // v0.1.97 — atomic move of canonical + backup ring.
-                        moveMeetingTreeToTrash(payload, trashFolder());
-                        refreshSidebar();
+                        trashNote(payload);
                     }
                 } else if (kind == QStringLiteral("trashed_meeting")) {
                     // No "Open" — trash never opens. Restore first.
@@ -1369,8 +1223,7 @@ QWidget *NotesPanel::buildSidebar() {
                     QAction *picked = menu.exec(m_sidebarTree->mapToGlobal(pos));
                     if (!picked) return;
                     if (picked == aRestore) {
-                        restoreMeetingTreeFromTrash(payload, inboxFolder());
-                        refreshSidebar();
+                        restoreNote(payload);
                     } else if (picked == aPurge) {
                         // A3 — confirm with the display title, never the raw
                         // ".trashed-<ts>-…" filename (same resolver as the
@@ -1381,8 +1234,7 @@ QWidget *NotesPanel::buildSidebar() {
                                 .arg(m_storage->displayTitleForFile(payload)),
                             QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                             == QMessageBox::Yes) {
-                            permanentlyDeleteMeetingTree(payload);
-                            refreshSidebar();
+                            deleteNotePermanently(payload);
                         }
                     }
                 } else if (kind == QStringLiteral("reminder")) {
@@ -1700,6 +1552,23 @@ QWidget *NotesPanel::buildEmptyPage() {
     return w;
 }
 
+void NotesPanel::updateEmptyHint() {
+    auto *hint = m_emptyPage ? m_emptyPage->findChild<QLabel *>(
+                                   QStringLiteral("noterEmptyHint"))
+                             : nullptr;
+    if (!hint) return;
+    if (!m_accessBlocked.isEmpty()) {
+        hint->setTextFormat(Qt::PlainText);
+        hint->setWordWrap(true);
+        hint->setText(m_accessBlocked);
+        return;
+    }
+    hint->setTextFormat(Qt::RichText);
+    hint->setWordWrap(false);
+    hint->setText(tr("Press <b style='color:%1'>Ctrl+Alt+M</b> "
+                     "to start a new meeting note.").arg(m_pal.accent));
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  A5 — theme parity
 // ═══════════════════════════════════════════════════════════════════════
@@ -1738,11 +1607,7 @@ void NotesPanel::applyNoterTheme(const QString &themeName) {
     if (m_editorPage) m_editorPage->setStyleSheet(editorPageStyle(m_pal));
     if (m_emptyPage) {
         m_emptyPage->setStyleSheet(emptyPageStyle(m_pal));
-        // The keyboard-hint label bakes the accent into rich text.
-        if (auto *hint = m_emptyPage->findChild<QLabel *>(
-                QStringLiteral("noterEmptyHint")))
-            hint->setText(tr("Press <b style='color:%1'>Ctrl+Alt+M</b> "
-                             "to start a new meeting note.").arg(m_pal.accent));
+        updateEmptyHint();   // the keyboard hint bakes the accent into rich text
     }
 
     // ── reminder banner (label + buttons + live flash bg) ───────────
@@ -1826,6 +1691,213 @@ QString NotesPanel::todosDbPath() {
 QString NotesPanel::notesRoot() const { return defaultNotesFolder(); }
 QString NotesPanel::inboxFolder() const { return notesRoot() + QStringLiteral("/Inbox"); }
 QString NotesPanel::trashFolder() const { return notesRoot() + QStringLiteral("/Trash"); }
+
+// ── v0.1.133: rename / trash / restore / delete as functions ─────────────
+// The sidebar's pencil, ✕ and context menu and the MCP host both land here.
+
+bool NotesPanel::matchesAllSearchTerms(const QString &haystackLower,
+                                       const QStringList &terms) {
+    return matchesAllTerms(haystackLower, terms);
+}
+
+QString NotesPanel::renameNoteFiles(NotesStorage &storage, NotesTodos *todos,
+                                    const QString &payload, const QString &newTitle,
+                                    bool writeTitle, QString *err) {
+    // A3 — titles are full Unicode; cap at the same 200 chars safeFilename /
+    // the meta writer enforce.
+    const QString newText = newTitle.trimmed().left(200);
+    if (newText.isEmpty()) {
+        if (err) *err = tr("The title is empty");
+        return QString();
+    }
+    // True no-op vs the RESOLVER display title. Slug-equality is no longer
+    // the no-op test: "Café Sync" → "Cafe Sync" shares a slug but IS a title
+    // change the meta must keep. Unchanged text → zero disk writes.
+    if (newText == storage.displayTitleForFile(payload)) return payload;
+    // Rename the file (canonical + backup ring + draft).
+    QFileInfo fi(payload);
+    QString slug = NotesStorage::safeFilename(newText);
+    if (slug.isEmpty()) {
+        if (err) *err = tr("The title has no characters usable in a file name");
+        return QString();
+    }
+    // Keep the creation-date prefix from the existing filename so date-bucket
+    // sorting stays correct. New notes are stamped yyyy-MM-dd-hhmmss (6-digit
+    // time, newMeetingNote); legacy ones used a 4-digit HHMM — accept both,
+    // matching the display-side parser in populateMeetingsRoot.
+    static const QRegExp prefixRx(QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}-\\d{4,6}-)"));
+    QRegExp px = prefixRx;
+    QString prefix;
+    if (px.indexIn(fi.fileName()) >= 0) prefix = px.cap(1);
+    QString newName = prefix + slug + QStringLiteral(".html");
+    QDir d = fi.dir();
+    const QString oldStem = fi.fileName();
+    // A3 — the filename is a stable ASCII disk-id, not the title. A
+    // pure-CJK/emoji title folds to "untitled" and must KEEP the existing
+    // filename. The title still commits to the meta below.
+    const bool doRename = slug != QStringLiteral("untitled") && newName != oldStem;
+    QString newAbs = payload;
+    if (doRename) {
+        // Target already taken by another note? Dedup with " (n)" inserted
+        // BEFORE the extension — split on the LAST dot, never baseName().
+        if (d.exists(newName)) {
+            const int dot = newName.lastIndexOf(QChar('.'));
+            const QString stem = (dot > 0) ? newName.left(dot) : newName;
+            const QString ext  = (dot > 0) ? newName.mid(dot)  : QString();
+            for (int n = 2; n < 100 && d.exists(newName); ++n)
+                newName = stem + QStringLiteral(" (%1)").arg(n) + ext;
+        }
+        // Rename the canonical file FIRST and CHECK the result: unchecked, the
+        // buffer got repointed at a file that was never renamed — i.e. at
+        // ANOTHER note, which the next autosave would then clobber.
+        if (d.exists(newName) || !d.rename(oldStem, newName)) {
+            if (err) *err = tr("Rename failed — the note keeps its old name");
+            return QString();
+        }
+        // Canonical renamed — carry the family along (best-effort).
+        for (const QString &name : d.entryList(QStringList() << oldStem + "*",
+                                               QDir::Files | QDir::Hidden)) {
+            QString suffix = name.mid(oldStem.size()); // .bak1 / .draft
+            d.rename(name, newName + suffix);
+        }
+        newAbs = d.absoluteFilePath(newName);
+        // M5/A3 — reminders + todos key off source_file: follow the file.
+        if (todos) todos->repathNote(payload, newAbs);
+    }
+    if (writeTitle) {
+        // Closed note: string-level head surgery on the raw bytes (NOT a
+        // QTextDocument round-trip). Replace the first <h1>'s INNER text, then
+        // upsert the meta; saveNote's sanitize/validate + atomic write gate
+        // corruption.
+        QString rerr;
+        QString raw = storage.readNote(newAbs, &rerr);
+        bool committed = false;
+        if (rerr.isEmpty()) {
+            static const QRegularExpression h1Re(
+                QStringLiteral("(<h1\\b[^>]*>).*?(</h1>)"),
+                QRegularExpression::CaseInsensitiveOption
+                    | QRegularExpression::DotMatchesEverythingOption);
+            const QRegularExpressionMatch hm = h1Re.match(raw);
+            if (hm.hasMatch())
+                raw.replace(hm.capturedStart(), hm.capturedLength(),
+                            hm.captured(1) + titleEntityEscape(newText) + hm.captured(2));
+            QString err2;
+            committed = storage.saveNote(newAbs, NotesStorage::withTitleMeta(raw, newText),
+                                         &err2);
+        }
+        // Honest status — the file rename (if any) stands.
+        if (!committed && err)
+            *err = tr("Renamed, but the title could not be written into the note");
+    }
+    storage.invalidateTitleCache(payload);
+    storage.invalidateTitleCache(newAbs);
+    return newAbs;
+}
+
+QString NotesPanel::renameNote(const QString &payload, const QString &newTitle,
+                               QString *err) {
+    const QString newText = newTitle.trimmed().left(200);
+    // Unchanged title (vs the resolver's display title): zero disk writes.
+    if (!newText.isEmpty() && newText == m_storage->displayTitleForFile(payload)) {
+        refreshSidebar();
+        return payload;
+    }
+    // Unsaved typing in the open note is written under its current name
+    // first, so the rename (files, backups, draft) carries all of it.
+    if (payload == m_currentPath && m_dirty) saveCurrentNote();
+    // The open note's title lives in the live document: rewrite it there.
+    const bool openHere = payload == m_currentPath && !m_currentIsChecklist;
+    QString e;
+    const QString newAbs = renameNoteFiles(*m_storage, m_todos, payload, newText,
+                                           !openHere, &e);
+    auto status = [this](const QString &m) {
+        if (auto *mw = window())
+            if (auto *sb = mw->findChild<QStatusBar *>()) sb->showMessage(m, 4000);
+    };
+    if (newAbs.isEmpty()) {
+        if (!e.isEmpty()) status(e);
+        if (err) *err = e;
+        refreshSidebar();   // restores the old label
+        return QString();
+    }
+    if (newAbs != payload) {
+        if (payload == m_currentPath) m_currentPath = newAbs;
+        // A3 — a live pop-out mirroring this note must follow the rename.
+        if (m_popOut && m_popOut->notePath() == payload) m_popOut->setNotePath(newAbs);
+    }
+    if (openHere) {
+        // Open note: rewrite the H1 in the live document and force-save —
+        // saveCurrentNote injects the meta, reindexes todos.db and refreshes
+        // the sidebar. m_lastSeenH1 is pre-set so the save's adoption block
+        // sees no H1 *change* (no double-adopt).
+        setEditorH1(newText);
+        m_currentTitle = newText;
+        m_lastSeenH1   = newText;
+        m_dirty = true;
+        saveCurrentNote();
+        // The rename is not an editor edit — Ctrl+Z must not resurrect the
+        // old title text (the next autosave would silently re-adopt it).
+        if (m_editor) m_editor->document()->clearUndoRedoStacks();
+        emit noteTitleChanged(m_currentTitle);
+    } else if (!e.isEmpty()) {
+        status(e);
+    }
+    if (m_popOut && m_popOut->notePath() == newAbs) m_popOut->setDisplayTitle(newText);
+    refreshSidebar();
+    if (err) *err = e;
+    return newAbs;
+}
+
+QString NotesPanel::trashNoteFiles(const QString &path, const QString &root) {
+    return moveMeetingTreeToTrash(path, root + QStringLiteral("/Trash"));
+}
+
+QString NotesPanel::restoreNoteFiles(const QString &trashedPath, const QString &root) {
+    return restoreMeetingTreeFromTrash(trashedPath, root + QStringLiteral("/Inbox"));
+}
+
+bool NotesPanel::deleteNoteFiles(const QString &trashedPath) {
+    return permanentlyDeleteMeetingTree(trashedPath);
+}
+
+QString NotesPanel::trashNote(const QString &payload, QString *err) {
+    if (payload == m_currentPath) {
+        // Up to 5 s of typing since the last autosave belongs in the note
+        // that goes to Trash (and comes back with Restore): write it first.
+        // If that write fails, nothing is moved and the edits stay open.
+        if (m_dirty) saveCurrentNote();
+        if (m_dirty && m_lastSaveFailed) {
+            if (err)
+                *err = tr("The open note's unsaved edits could not be saved (%1); nothing "
+                          "was moved to Trash")
+                           .arg(m_lastSaveError.isEmpty() ? tr("disk write failed")
+                                                          : m_lastSaveError);
+            return QString();
+        }
+        // The open note leaves the editor first, so the 5 s autosave can
+        // never write it back to the path it just left.
+        m_dirty = false; showEmptyPage(); m_currentPath.clear();
+    }
+    // v0.1.97 — atomic move of canonical + backup ring.
+    const QString trashed = moveMeetingTreeToTrash(payload, trashFolder());
+    if (trashed.isEmpty() && err) *err = tr("Could not move the note to Trash");
+    refreshSidebar();
+    return trashed;
+}
+
+QString NotesPanel::restoreNote(const QString &trashedPath, QString *err) {
+    const QString restored = restoreMeetingTreeFromTrash(trashedPath, inboxFolder());
+    if (restored.isEmpty() && err) *err = tr("Could not restore the note from Trash");
+    refreshSidebar();
+    return restored;
+}
+
+bool NotesPanel::deleteNotePermanently(const QString &trashedPath, QString *err) {
+    const bool ok = permanentlyDeleteMeetingTree(trashedPath);
+    if (!ok && err) *err = tr("Could not delete the note");
+    refreshSidebar();
+    return ok;
+}
 QString NotesPanel::todosChecklistPath() const {
     return inboxFolder() + QStringLiteral("/quick-todos.html");
 }
@@ -1850,6 +1922,9 @@ QString NotesPanel::slugifyTitle(const QString &title) const {
 // produce the same logical content, just nested under their roots.
 void NotesPanel::refreshSidebar() {
     if (!m_sidebarTree) return;
+    // A blocked root lists as silently empty; say so instead.
+    m_accessBlocked = NotesStorage::accessBlockedMessage(notesRoot());
+    updateEmptyHint();
     // v0.1.97 — gate itemChanged signal so it doesn't fire while we
     // create / setText items during populate.
     m_loadingTree = true;

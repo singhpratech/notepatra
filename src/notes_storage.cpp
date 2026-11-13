@@ -30,6 +30,9 @@
     #include <fcntl.h>      // open(O_RDONLY) for the directory fsync
     #include <sys/types.h>
     #include <unistd.h>     // fsync, close
+    #include <sys/stat.h>   // accessBlockedMessage
+    #include <dirent.h>
+    #include <cerrno>
 #endif
 
 #ifdef Q_OS_WIN
@@ -193,13 +196,12 @@ bool NotesStorage::validateBody(const QString &fullHtml, QString *errorOut) cons
 // ═══════════════════════════════════════════════════════════════════════
 // saveNote — the six-step atomic protocol.
 //
-// Design choice: we use explicit `.tmp + rename` instead of QSaveFile.
-// Two reasons —
-//   1. The replace goes through NpAtomic::replaceFile (src/atomic_write.h),
-//      shared with the other durable-save sites.
-//   2. QSaveFile silently leaves a `.qsave` orphan when the process
-//      dies between commitWithReplace and dtor — the explicit form
-//      makes the orphan path predictable so listAllNotes can filter it.
+// The write goes through NpAtomic::writeFileNoFollow: a uniquely named,
+// exclusively created temp beside the note (`<note>.html.<random>.tmp`),
+// fsynced and renamed over the note. The old fixed `<note>.html.tmp` name was
+// opened with Truncate, so a symlink planted there was followed and its
+// target written. A temp orphaned by a crash ends in `.tmp`, which every
+// Noter listing filters.
 // ═══════════════════════════════════════════════════════════════════════
 
 bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml,
@@ -251,44 +253,18 @@ bool NotesStorage::saveNote(const QString &absolutePath, const QString &fullHtml
     //     just one step ahead.
     rotateBackups(absolutePath);
 
-    // (4) Write to a sibling `.tmp` and (5) atomic-rename. Mirror the
-    //     src/ai_tools.cpp idiom.
-    const QString tmpPath = absolutePath + QStringLiteral(".tmp");
+    // (4) Write to a uniquely named temp beside the note and (5) replace it
+    //     in one step (NpAtomic::writeFileNoFollow → NpAtomic::replaceFile).
+    //     The temp is created exclusively, so a symlink planted at the old
+    //     fixed `<note>.html.tmp` name can never redirect the write, and the
+    //     rename replaces a symlink at the note's own name instead of writing
+    //     through it (QSaveFile would follow it). The payload is fsynced before
+    //     the rename, an existing note keeps its permission bits, and on any
+    //     failure the note is left as it was.
     {
-        QFile tmp(tmpPath);
-        if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            if (errorOut)
-                *errorOut = QStringLiteral("Failed to open temp file: %1").arg(tmp.errorString());
-            return false;
-        }
-        const QByteArray bytes = cleaned.toUtf8();
-        const qint64 n = tmp.write(bytes);
-        // Force the data to STABLE STORAGE before the rename. flush()
-        // only drains Qt's userspace buffer into the kernel page cache —
-        // a power loss between rename and the kernel's writeback used to
-        // be able to surface a zero-length (or truncated) note under the
-        // canonical name. fsync the tmp file's payload first, so the
-        // rename can only ever publish fully-durable bytes. (A7 fix —
-        // the old comment claimed fsync-equivalence that never existed.)
-        tmp.flush();
-#ifdef Q_OS_WIN
-        FlushFileBuffers(reinterpret_cast<HANDLE>(_get_osfhandle(tmp.handle())));
-#else
-        if (tmp.handle() >= 0) ::fsync(tmp.handle());
-#endif
-        tmp.close();
-        if (n != bytes.size()) {
-            QFile::remove(tmpPath);
-            if (errorOut) *errorOut = QStringLiteral("Short write to temp file");
-            return false;
-        }
-    }
-
-    // Single-step replace + directory fsync; see src/atomic_write.h.
-    {
-        QString replaceErr;
-        if (!NpAtomic::replaceFile(tmpPath, absolutePath, &replaceErr)) {
-            if (errorOut) *errorOut = replaceErr;
+        QString writeErr;
+        if (!NpAtomic::writeFileNoFollow(absolutePath, cleaned.toUtf8(), &writeErr)) {
+            if (errorOut) *errorOut = writeErr;
             return false;
         }
     }
@@ -341,20 +317,18 @@ void NotesStorage::rotateBackups(const QString &absolutePath) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Draft sidecar — fast non-atomic write; survives a soft crash, gets
-// supplanted by the next saveNote().
+// Draft sidecar — survives a hard crash, gets supplanted by the next
+// saveNote(). Still `<note>.html.draft` (the name NotesPanel's recovery and
+// the rename carry-forward expect), but written like the note itself: a
+// unique exclusive temp renamed over it. Truncating the fixed name wrote
+// through a symlink planted there, and QSaveFile would follow one too.
 // ═══════════════════════════════════════════════════════════════════════
 
 bool NotesStorage::writeDraft(const QString &absolutePath, const QString &html) {
     const QString draftPath = absolutePath + QStringLiteral(".draft");
     QFileInfo fi(absolutePath);
     QDir().mkpath(fi.absolutePath());
-    QFile f(draftPath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-    const QByteArray b = html.toUtf8();
-    const qint64 n = f.write(b);
-    f.close();
-    return n == b.size();
+    return NpAtomic::writeFileNoFollow(draftPath, html.toUtf8());
 }
 
 void NotesStorage::clearDraft(const QString &absolutePath) {
@@ -1123,6 +1097,50 @@ QString NotesStorage::legacyH1In(const QString &html) {
     inner.replace(QLatin1String("&nbsp;"), QLatin1String(" "));
     inner = titleAttrUnescape(inner);
     return inner.simplified().left(200);
+}
+
+// Opening the directory is the honest probe: macOS privacy control (TCC) and
+// ACLs can let stat()/access() pass while QDir listings come back silently empty.
+QString NotesStorage::accessBlockedMessage(const QString &root) {
+    if (root.isEmpty()) return QString();
+    const QString abs = QFileInfo(root).absoluteFilePath();
+    bool blocked = false;
+#ifdef Q_OS_WIN
+    if (!QFileInfo(abs).isDir()) return QString();   // absent: never used
+    const QString pattern = QDir::toNativeSeparators(abs) + QStringLiteral("\\*");
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(reinterpret_cast<const wchar_t *>(pattern.utf16()), &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        blocked = (GetLastError() == ERROR_ACCESS_DENIED);
+    else
+        FindClose(h);
+#else
+    const QByteArray path = QFile::encodeName(abs);
+    struct stat st;
+    if (::stat(path.constData(), &st) != 0) {
+        blocked = (errno == EACCES || errno == EPERM);   // ENOENT: never used
+    } else if (S_ISDIR(st.st_mode)) {
+        DIR *d = ::opendir(path.constData());
+        if (!d)
+            blocked = (errno == EACCES || errno == EPERM);
+        else
+            ::closedir(d);
+    }
+#endif
+    if (!blocked) return QString();
+    QString msg = QCoreApplication::translate(
+                      "NotesStorage",
+                      "The system blocked access to the Noter folder %1. "
+                      "Notes there cannot be listed or opened.")
+                      .arg(QDir::toNativeSeparators(abs));
+#ifdef Q_OS_MAC
+    msg += QLatin1Char(' ') +
+           QCoreApplication::translate(
+               "NotesStorage",
+               "Allow access in System Settings > Privacy & Security > "
+               "Files and Folders.");
+#endif
+    return msg;
 }
 
 QString NotesStorage::prettyTitleFromFilename(const QString &absPath) {

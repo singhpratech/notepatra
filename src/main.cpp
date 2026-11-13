@@ -25,6 +25,11 @@
 #  define NOMINMAX
 #  include <windows.h>
 #endif
+#ifdef Q_OS_UNIX
+#  include <QSocketNotifier>
+#  include <sys/socket.h>
+#  include <unistd.h>
+#endif
 #ifdef Q_OS_LINUX
 #  include <xcb/xcb.h>
 #  include <cstring>
@@ -60,6 +65,37 @@ static void crashHandler(int sig) {
     signal(sig, SIG_DFL);
     raise(sig);
 }
+
+#ifdef Q_OS_UNIX
+// SIGTERM/SIGINT -> normal quit (self-pipe): the handler only write()s one
+// byte; a QSocketNotifier turns it into qApp->quit() on the GUI thread, so
+// the MCP endpoint file and the single-instance socket are cleaned up.
+static int g_quitSignalFd[2] = {-1, -1};
+static void quitSignalHandler(int) {
+    const char b = 1;
+    if (g_quitSignalFd[0] >= 0) {
+        const ssize_t r = ::write(g_quitSignalFd[0], &b, 1);
+        (void)r;
+    }
+}
+static void installQuitSignalHandlers(QCoreApplication *app) {
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, g_quitSignalFd) != 0) return;
+    auto *sn = new QSocketNotifier(g_quitSignalFd[1], QSocketNotifier::Read, app);
+    QObject::connect(sn, &QSocketNotifier::activated, app, [sn]() {
+        sn->setEnabled(false);
+        char b = 0;
+        const ssize_t r = ::read(g_quitSignalFd[1], &b, 1);
+        (void)r;
+        QCoreApplication::quit();
+    });
+    struct sigaction sa {};
+    sa.sa_handler = quitSignalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGINT, &sa, nullptr);
+}
+#endif
 
 #ifdef Q_OS_WIN
 static LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS *) {
@@ -249,6 +285,9 @@ int main(int argc, char *argv[]) {
     app.setApplicationDisplayName(NOTEPATRA_FLAVOR_NAME);  // flavor-aware name shown in window/taskbar
     app.setOrganizationName("Notepatra");
     app.setApplicationVersion(NOTEPATRA_VERSION);
+#ifdef Q_OS_UNIX
+    installQuitSignalHandlers(&app);
+#endif
 
     // macOS Finder/Dock opens (QFileOpenEvent) queue here until setHandler().
     FileOpenFilter fileOpenFilter;

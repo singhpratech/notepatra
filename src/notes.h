@@ -109,6 +109,31 @@ public:
     // the SAME path convention without constructing any Noter UI.
     static QString defaultNotesFolder();
 
+    // v0.1.133 — the sidebar's Rename / Move to Trash / Restore / Delete
+    // permanently as callable functions (the MCP host and the sidebar share
+    // them). Each keeps the open note, the pop-out and the 5 s autosave on
+    // the right path. "" / false on failure with *err.
+    QString renameNote(const QString &path, const QString &newTitle, QString *err = nullptr);
+    QString trashNote(const QString &path, QString *err = nullptr);
+    QString restoreNote(const QString &trashedPath, QString *err = nullptr);
+    bool deleteNotePermanently(const QString &trashedPath, QString *err = nullptr);
+    QString currentNotePath() const { return m_currentPath; }
+    // Edits that closing the panel would LOSE: the panel saves a dirty note
+    // on close, so only an unsaved note with no file, or one whose last save
+    // failed, counts.
+    bool hasUnsavedChanges() const {
+        return m_dirty && (m_currentPath.isEmpty() || m_lastSaveFailed);
+    }
+    // The same operations with no panel open (no note can be on screen).
+    static QString renameNoteFiles(NotesStorage &storage, NotesTodos *todos,
+                                   const QString &path, const QString &newTitle,
+                                   bool writeTitle, QString *err);
+    static QString trashNoteFiles(const QString &path, const QString &root);
+    static QString restoreNoteFiles(const QString &trashedPath, const QString &root);
+    static bool deleteNoteFiles(const QString &trashedPath);
+    // Noter's own search: every whitespace-split lowercase term must appear.
+    static bool matchesAllSearchTerms(const QString &haystackLower, const QStringList &terms);
+
     // Run the AI extraction over the note body + show the preview
     // dialog. Wired to the ✨ Extract button AND Ctrl+Alt+E.
     void endMeetingSweep();
@@ -218,6 +243,10 @@ private:
     QWidget *buildSidebar();
     QWidget *buildEditorPage();
     QWidget *buildEmptyPage();
+    // Empty-page hint: the keyboard hint, or the "system blocked access"
+    // notice when the Noter root cannot be opened (m_accessBlocked).
+    void updateEmptyHint();
+    QString m_accessBlocked;
 
     // Sidebar refresh — v0.1.97 tree shape. Rebuilds the QTreeWidget
     // from disk + the todos cache. Preserves the user's expand/collapse

@@ -286,6 +286,51 @@ int main(int argc, char *argv[]) {
     EXPECT("no session.json.tmp orphan after the writes",
            !QFileInfo::exists(sessionPath + QStringLiteral(".tmp")));
 
+    // (9) A symlink planted at the old fixed temp name is never followed. The
+    // save used to open session.json.tmp with Truncate, writing the session
+    // (unsaved buffer text included) into whatever the link pointed at.
+#ifndef Q_OS_WIN
+    {
+        QTemporaryDir outside;
+        const QString victim = outside.path() + QStringLiteral("/victim.txt");
+        const QString dangling = outside.path() + QStringLiteral("/created-through-link.txt");
+        const QString planted = sessionPath + QStringLiteral(".tmp");
+        EXPECT("(9) victim written", writeFile(victim, "VICTIM_ORIGINAL\n"));
+        EXPECT("(9) symlink planted at session.json.tmp",
+               QFile::link(victim, planted) && QFileInfo(planted).isSymLink());
+        ed->insertAt(QStringLiteral("D8_LINK_TOKEN\n"), 0, 0);
+        mw->saveSession();
+        EXPECT("(9) the link's target is untouched",
+               readFile(victim) == QByteArray("VICTIM_ORIGINAL\n"));
+        EXPECT("(9) session.json still saved, with the new edit",
+               readFile(sessionPath).contains("D8_LINK_TOKEN"));
+        EXPECT("(9) session.json is a regular file", !QFileInfo(sessionPath).isSymLink());
+        EXPECT("(9) the planted link is still a link", QFileInfo(planted).isSymLink());
+
+        // A dangling link: O_CREAT without O_EXCL would create its target.
+        QFile::remove(planted);
+        EXPECT("(9) dangling symlink planted", QFile::link(dangling, planted));
+        ed->insertAt(QStringLiteral("D8_DANGLING_TOKEN\n"), 0, 0);
+        mw->saveSession();
+        EXPECT("(9) nothing created through the dangling link", !QFileInfo::exists(dangling));
+        EXPECT("(9) session.json saved again",
+               readFile(sessionPath).contains("D8_DANGLING_TOKEN"));
+        QFile::remove(planted);
+
+        // A link AT session.json is replaced by the save, never written through.
+        QFile::remove(sessionPath);
+        EXPECT("(9) symlink planted at session.json itself",
+               QFile::link(victim, sessionPath) && QFileInfo(sessionPath).isSymLink());
+        ed->insertAt(QStringLiteral("D8_OWN_NAME_TOKEN\n"), 0, 0);
+        mw->saveSession();
+        EXPECT("(9) the link's target is still untouched",
+               readFile(victim) == QByteArray("VICTIM_ORIGINAL\n"));
+        EXPECT("(9) session.json is a regular file again", !QFileInfo(sessionPath).isSymLink());
+        EXPECT("(9) session.json holds the session",
+               readFile(sessionPath).contains("D8_OWN_NAME_TOKEN"));
+    }
+#endif
+
     delete mw;  // never close() — closeEvent would re-fire saveSession
     mw = nullptr;
     QFile::remove(sessionPath);

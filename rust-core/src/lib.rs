@@ -10,9 +10,12 @@ mod bracket_fix;
 mod diff;
 mod encoding;
 mod file_io;
+#[cfg(test)]
+mod fuzz;
 mod hash;
 mod html_fmt;
 mod json_fmt;
+mod json_repair;
 mod keygen;
 mod search;
 mod sql_fmt;
@@ -431,7 +434,7 @@ pub unsafe extern "C" fn npc_format_json(
     indent: c_int,
 ) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
-    text_to_result(json_fmt::format_json(input, indent as usize))
+    text_to_result(json_fmt::format_json(input, indent.clamp(0, 16) as usize))
 }
 
 /// Strict JSON validation. Returns an empty string when the input is valid
@@ -442,6 +445,24 @@ pub unsafe extern "C" fn npc_format_json(
 pub unsafe extern "C" fn npc_json_parse_error(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(json_fmt::json_parse_error(input))
+}
+
+/// Why npc_format_json (minify == 0) or npc_minify_json (minify != 0) would
+/// return the input unchanged, or an empty string when it will transform it.
+/// "not valid JSON: line L, column C: ..." or "left unchanged: <size limit>".
+#[no_mangle]
+pub unsafe extern "C" fn npc_json_format_refusal(
+    text: *const c_char,
+    text_len: size_t,
+    indent: c_int,
+    minify: c_int,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    text_to_result(json_fmt::format_refusal(
+        input,
+        indent.clamp(0, 16) as usize,
+        minify != 0,
+    ))
 }
 
 #[no_mangle]
@@ -469,6 +490,7 @@ pub unsafe extern "C" fn npc_fix_json_report(text: *const c_char, text_len: size
 // HTML Formatter
 // ═══════════════════════════════════════════════════════════
 
+/// Formatted HTML, or the input unchanged when the formatter declines.
 #[no_mangle]
 pub unsafe extern "C" fn npc_format_html(
     text: *const c_char,
@@ -476,7 +498,47 @@ pub unsafe extern "C" fn npc_format_html(
     indent: c_int,
 ) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
-    text_to_result(html_fmt::format_html(input, indent as usize))
+    text_to_result(html_fmt::format_html(input, indent.max(0) as usize))
+}
+
+/// Store an optional decline message in `message` (if non-null): empty when
+/// the formatter succeeded, otherwise what was found and where.
+unsafe fn html_outcome(outcome: html_fmt::HtmlOutcome, message: *mut TextResult) -> TextResult {
+    if !message.is_null() {
+        unsafe { *message = text_to_result(outcome.message.unwrap_or_default()) };
+    }
+    text_to_result(outcome.text)
+}
+
+/// Like npc_format_html, plus the reason when the text was left unchanged.
+/// `message` may be NULL; otherwise the caller frees it with
+/// npc_free_text_result (it is always set, empty on success).
+#[no_mangle]
+pub unsafe extern "C" fn npc_format_html_ex(
+    text: *const c_char,
+    text_len: size_t,
+    indent: c_int,
+    message: *mut TextResult,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    unsafe {
+        html_outcome(
+            html_fmt::format_html_report(input, indent.max(0) as usize),
+            message,
+        )
+    }
+}
+
+/// Remove only the whitespace the browser does not render; same contract
+/// as npc_format_html_ex.
+#[no_mangle]
+pub unsafe extern "C" fn npc_minify_html_ex(
+    text: *const c_char,
+    text_len: size_t,
+    message: *mut TextResult,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    unsafe { html_outcome(html_fmt::minify_html_report(input), message) }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -487,6 +549,17 @@ pub unsafe extern "C" fn npc_format_html(
 pub unsafe extern "C" fn npc_fix_brackets(text: *const c_char, text_len: size_t) -> TextResult {
     let input = unsafe { str_from_raw(text, text_len) };
     text_to_result(bracket_fix::fix_brackets(input))
+}
+
+/// What npc_fix_brackets changes (each insertion/removal with line and
+/// column), or why it changes nothing. Pair of npc_fix_json_report.
+#[no_mangle]
+pub unsafe extern "C" fn npc_fix_brackets_report(
+    text: *const c_char,
+    text_len: size_t,
+) -> TextResult {
+    let input = unsafe { str_from_raw(text, text_len) };
+    text_to_result(bracket_fix::fix_brackets_report(input))
 }
 
 #[no_mangle]

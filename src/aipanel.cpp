@@ -6,6 +6,7 @@
 #include "ai_context.h"
 #include "ai_intent.h"
 #include "ai_systemprompt.h"
+#include "path_denylist.h"
 #include "ai_tools.h"
 #include "chartrender.h"
 #include "charts/vega_chart_renderer.h"
@@ -923,6 +924,8 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // dialog, and forget either key independently. Pre-v0.1.55 this
     // button was a small popup menu against a single shared aiApiKey;
     // now it owns the whole cloud-config story.
+#ifndef NOTEPATRA_NO_CLOUD
+    // The dialog is cloud-provider only (keys + live Test request).
     auto *gearBtn = new QPushButton("⚙ Settings");
     gearBtn->setFixedHeight(26);
     gearBtn->setToolTip("AI Settings — manage OpenRouter / OpenAI keys");
@@ -937,6 +940,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             refreshCloudConfigBanner();
         });
     modelRow->addWidget(gearBtn);
+#endif
 
     // Reset session — moved here in v0.1.48 from the bottom of the row so
     // the top-bar shape is just [backend | model ↻ ⚙ Reset]. Mode toggles
@@ -2016,9 +2020,9 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
             "list (inline below the chat) for you to review + Apply.",
             "border-radius: 0;");
         m_agentSegBtn = makeSegBtn("Agent", QStringLiteral("#E07B5A"),
-            "Agent — full autonomous loop. Tool calls fire and edits "
-            "hit disk immediately. Use when you trust the model to "
-            "drive the workspace end-to-end.",
+            "Agent — the model runs tools in a loop. Reads run on "
+            "their own; each write shows an Approve card before it "
+            "touches disk.",
             "border-top-right-radius: 6px; border-bottom-right-radius: 6px;");
 
         auto *segGroup = new QButtonGroup(this);
@@ -2528,30 +2532,7 @@ AIPanel::AIPanel(QWidget *parent) : QWidget(parent) {
     // finished/error signal fires after that. So the streaming card would
     // stay active with the live-stats timer still ticking. Hook the stop
     // button to also end the bubble cleanly + stop the timer.
-    connect(m_stopBtn, &QPushButton::clicked, this, [this]() {
-        // hardening: safe to invoke even if the reply already finished
-        // (m_inAssistantBubble is false by then). Also guard m_stopBtn
-        // pointer in case the slot fires during teardown.
-        if (m_stopBtn) m_stopBtn->setEnabled(false);
-        // hardening: also flush any half-built agent state so the next
-        // turn doesn't carry stale tool-result fragments from the aborted run.
-        m_pendingToolResults = QJsonArray();
-        m_toolCallsThisTurn = 0;
-        m_toolCallsTotal = 0;
-        m_toolsActiveThisTurn = false;
-        // v0.1.112 — Stop also drops the perseveration/force-finalize state.
-        m_repeatGuard.reset();
-        m_pendingSystemNudge.clear();
-        m_lastToolErrorText.clear();
-        m_turnToolActions.clear();
-        // v0.1.111 — Stop means "cancel this run": neutralise any open write-
-        // approval card so clicking Approve on it AFTER Stop can't still write
-        // to disk, and reset the gate counters so the next turn isn't stranded.
-        cancelPendingWriteApprovals(QStringLiteral("run-stopped"));
-        if (m_inAssistantBubble) {
-            endAssistantBubble();
-        }
-    });
+    connect(m_stopBtn, &QPushButton::clicked, this, &AIPanel::stopActiveRun);
     connect(insertBtn, &QPushButton::clicked, this, [this]() {
         if (!m_lastResponse.isEmpty()) emit insertText(m_lastResponse);
     });
@@ -3325,6 +3306,31 @@ void AIPanel::showContextPopover() {
     refreshContextChips();  // reflect any exclude changes back on the chip
 }
 
+void AIPanel::stopActiveRun() {
+    // hardening: safe to invoke even if the reply already finished
+    // (m_inAssistantBubble is false by then). Also guard m_stopBtn
+    // pointer in case the slot fires during teardown.
+    if (m_stopBtn) m_stopBtn->setEnabled(false);
+    // hardening: also flush any half-built agent state so the next
+    // turn doesn't carry stale tool-result fragments from the aborted run.
+    m_pendingToolResults = QJsonArray();
+    m_toolCallsThisTurn = 0;
+    m_toolCallsTotal = 0;
+    m_toolsActiveThisTurn = false;
+    // v0.1.112 — Stop also drops the perseveration/force-finalize state.
+    m_repeatGuard.reset();
+    m_pendingSystemNudge.clear();
+    m_lastToolErrorText.clear();
+    m_turnToolActions.clear();
+    // v0.1.111 — Stop means "cancel this run": neutralise any open write-
+    // approval card so clicking Approve on it AFTER Stop can't still write
+    // to disk, and reset the gate counters so the next turn isn't stranded.
+    cancelPendingWriteApprovals(QStringLiteral("run-stopped"));
+    if (m_inAssistantBubble) {
+        endAssistantBubble();
+    }
+}
+
 void AIPanel::sendPrompt(const QString &action) {
     // hardening: bail early if core widgets were never built or m_ollama is null.
     // sendPrompt can be reached via QButtonGroup activation that fires before
@@ -3363,7 +3369,6 @@ void AIPanel::sendPrompt(const QString &action) {
             model = typed;
     }
     if (model.startsWith("(") || !m_modelCombo->isEnabled()) {
-        clearChat();
         setStatus("No Ollama model selected", true);
         appendErrorBubble(
             "No Ollama model selected.\n\n"
@@ -3379,7 +3384,13 @@ void AIPanel::sendPrompt(const QString &action) {
             "4. Click the refresh button above");
         return;
     }
-    m_ollama->setModel(model);
+
+    // Workspace-relative path of the open tab when it is a CSV (a Data-mode source).
+    QString openCsvRel;
+    if (!m_workspaceRoot.isEmpty() && CsvAnalyst::looksLikeCsv(m_currentFilePath)) {
+        const QString rel = QDir(m_workspaceRoot).relativeFilePath(m_currentFilePath);
+        if (!rel.startsWith(QLatin1String(".."))) openCsvRel = rel;
+    }
 
     // v0.1.61 — pre-send capability + context guard. Refuse politely BEFORE
     // dispatching when the selected model can't do what's needed (no tool
@@ -3403,13 +3414,14 @@ void AIPanel::sendPrompt(const QString &action) {
                 "Chat mode.");
             return;
         }
-        if (dataNow && DbConnections::loadAll().isEmpty()) {
+        const bool csvSource = CsvAnalyst::looksLikeCsv(m_pendingFilePath)
+                               || !openCsvRel.isEmpty();
+        if (dataNow && !csvSource && DbConnections::loadAll().isEmpty()) {
             appendErrorBubble(
-                "Data Mode needs at least one database connection (SQLite, "
-                "PostgreSQL, MySQL, SQL Server, or DuckDB). Click "
-                "Manage Connections… in the Data row above to add one, "
-                "then ask again. If you just have a CSV / Parquet file, add "
-                "it as a DuckDB connection pointing at the file path.");
+                "Data Mode needs something to analyse. Open or attach a CSV / "
+                "TSV file (paperclip button next to the input), or click Manage "
+                "Connections… in the Data row above to add a database "
+                "connection, then ask again.");
             return;
         }
 
@@ -3422,7 +3434,23 @@ void AIPanel::sendPrompt(const QString &action) {
         // (folder for Coding, connection for Data) above are kept because
         // those are about workspace state, not model identity.
     }
-    (void)model;  // formerly used by the removed model-capability gate above.
+    // Quick actions send only the selection unless the AI may see the whole file.
+    if (action != QLatin1String("custom") && !m_contextIsSelection
+        && !(isCodingMode() && Config::instance().aiShareOpenFile
+             && !m_currentFileText.isEmpty())) {
+        appendErrorBubble(
+            "Select the code you want this action to work on, then try again. "
+            "The AI can't see the rest of your file unless you switch to Coding "
+            "mode and turn on Auto-attach open file.");
+        return;
+    }
+
+    // Sending mid-reply ends the current reply like Stop, keeping its partial text.
+    if (m_inAssistantBubble) {
+        m_ollama->cancel();
+        stopActiveRun();
+    }
+    m_ollama->setModel(model);
 
     // Build the system prompt via the layered builder in ai_systemprompt.cpp.
     // The builder composes: identity + anti-tool-call + mode-specific +
@@ -3496,6 +3524,12 @@ void AIPanel::sendPrompt(const QString &action) {
                 "the real query. Multi-DB joins are not supported — query "
                 "each connection separately and combine in prose.\n";
             projectCtx = projectCtx.isEmpty() ? attached : projectCtx + attached;
+        }
+        if (!openCsvRel.isEmpty()) {
+            const QString csvCtx = QStringLiteral(
+                "\n\n## Open CSV file\nThe user has `%1` open. Query it with "
+                "`csv_query` using file_path `%1`.\n").arg(openCsvRel);
+            projectCtx = projectCtx.isEmpty() ? csvCtx : projectCtx + csvCtx;
         }
 
         systemPrompt = AiSystemPrompt::buildWithProjectContext(
@@ -3666,7 +3700,7 @@ void AIPanel::sendPrompt(const QString &action) {
     // to see the file in the first place. The aiCanSeeFile / codingModeOn
     // / shareFileToggle locals are defined earlier in this function (the
     // unified file-access policy).
-    QString contextForActions = m_context;
+    QString contextForActions = m_contextIsSelection ? m_context : QString();
     if (contextForActions.isEmpty() && aiCanSeeFile && !m_currentFileText.isEmpty()) {
         contextForActions = m_currentFileText;
     }
@@ -7141,21 +7175,15 @@ void AIPanel::saveChatHistory() {
         bytes = QJsonDocument(root).toJson(QJsonDocument::Compact);
     }
 
-    // Atomic write: .tmp + rename. Don't risk a half-written history
-    // file if the app gets killed mid-save.
-    const QString tmp = m_chatHistoryPath + ".tmp";
-    QFile f(tmp);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
-    const qint64 written = f.write(bytes);
-    NpAtomic::syncData(f);
-    f.close();
-    if (written != bytes.size()) {
-        QFile::remove(tmp);
-        return;
-    }
-    QString replaceErr;  // on failure the previous history file is left intact
-    if (!NpAtomic::replaceFile(tmp, m_chatHistoryPath, &replaceErr))
-        qWarning("[ai] chat history not saved: %s", qPrintable(replaceErr));
+    // Atomic write: a uniquely named temp beside the history file, fsynced
+    // and renamed over it, so a kill mid-save never leaves a half-written
+    // history. The temp is created exclusively (a symlink planted at the old
+    // fixed `<history>.tmp` name is never followed) and the rename replaces a
+    // symlink at the history's own name rather than writing through it. On
+    // any failure the previous history file is left intact.
+    QString writeErr;
+    if (!NpAtomic::writeFileNoFollow(m_chatHistoryPath, bytes, &writeErr))
+        qWarning("[ai] chat history not saved: %s", qPrintable(writeErr));
 }
 
 void AIPanel::loadChatHistory() {
@@ -7586,6 +7614,7 @@ private:
 }  // namespace
 
 void AIPanel::openAiSettingsDialog() {
+#ifndef NOTEPATRA_NO_CLOUD  // cloud-free build: no cloud keys, no Test request
     QDialog dlg(this);
     dlg.setWindowTitle("AI Settings — Cloud Providers");
     dlg.setMinimumWidth(640);
@@ -7635,6 +7664,7 @@ void AIPanel::openAiSettingsDialog() {
     root->addWidget(btnBox);
 
     dlg.exec();
+#endif
 }
 
 // v0.1.61 (Item 8) — handler for the bottom 3-segment toggle.
@@ -7758,17 +7788,60 @@ void AIPanel::applyComposerEdits(const QList<QPair<QString, QString>> &edits) {
             }
         }
 
+        // Re-check the write deny-list at Apply time (path and symlink target).
+        {
+            const QString clean = QDir::cleanPath(absPath);
+            const QString real = QFileInfo(clean).canonicalFilePath();
+            auto denied = [](const QString &p) {
+                return !p.isEmpty() &&
+                       (AiTools::isHardDenied(p) || PathDenylist::isWriteDangerous(p));
+            };
+            if (denied(clean) || denied(real)) {
+                failures << pair.first + " (refused: protected path)";
+                continue;
+            }
+        }
+
         // v0.1.111 — capture the pre-edit disk content BEFORE we overwrite,
         // so "Undo apply" can restore it. Read disk (the row's before-text is
         // the model's view; disk is ground truth for what we're replacing).
         QByteArray beforeBytes;
+        bool beforeRead = false;
         {
             QFile in(absPath);
-            if (in.open(QIODevice::ReadOnly)) { beforeBytes = in.readAll(); in.close(); }
+            if (in.open(QIODevice::ReadOnly)) {
+                beforeBytes = in.readAll();
+                beforeRead = true;
+                in.close();
+            }
+        }
+        if (!beforeRead && QFileInfo::exists(absPath)) {
+            failures << absPath + " (not written: the current file could not be read)";
+            continue;
+        }
+
+        // An existing text file is written back in its own encoding, BOM and line
+        // endings; an undecodable one is replaced wholesale as UTF-8 (as write_file does).
+        QByteArray bytes = after.toUtf8();
+        AiTools::TextFileFormat fmt;
+        QString beforeText, why;
+        if (beforeRead && AiTools::decodeTextFile(beforeBytes, &fmt, &beforeText, &why)) {
+            QString text = after;
+            if (!fmt.bom.isEmpty() && text.startsWith(QChar(0xFEFF))) text.remove(0, 1);
+            if (!text.contains(QLatin1String("\r\n")))
+                text = AiTools::withEol(text, AiTools::dominantEol(beforeText));
+            bool encOk = false;
+            const QByteArray encoded = AiTools::encodeWithCodec(fmt.codec, text, &encOk);
+            if (!encOk) {
+                failures << absPath + QString(" (not written: the new text has characters %1 "
+                                              "cannot encode; the file was not changed)")
+                                          .arg(fmt.label);
+                continue;
+            }
+            bytes = fmt.bom + encoded;
         }
 
         // Atomic write via the shared helper (same .tmp+rename used by undo).
-        const QByteArray bytes = after.toUtf8();
         bool wasNew = false;
         QString werr;
         if (!writeFileAtomic(absPath, bytes, &wasNew, &werr)) {
@@ -8065,10 +8138,16 @@ void AIPanel::updateInputAvailability() {
             // accurate but didn't help a first-time user who had no idea
             // where to find a model in the first place. Each state gives
             // a concrete next action with the exact command to run.
+#ifndef NOTEPATRA_NO_CLOUD
             QString why = QStringLiteral(
                 "Please select a model to start chatting. "
                 "Pick one from the dropdown above — Ollama runs locally on your machine, "
                 "or click ⚙ to add an API key for OpenRouter / OpenAI / Azure / Ollama Cloud.");
+#else
+            QString why = QStringLiteral(
+                "Please select a model to start chatting. "
+                "Pick one from the dropdown above — Ollama runs locally on your machine.");
+#endif
             if (m_modelCombo) {
                 const QString text = m_modelCombo->currentText().trimmed();
                 if (text.contains("offline", Qt::CaseInsensitive))

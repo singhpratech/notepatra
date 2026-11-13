@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.132 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.133 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -439,7 +439,7 @@ if(WIN32)
     # Rust staticlib needs these system libs on MSVC. Rust normally emits link
     # directives for them but being explicit avoids surprises across toolchains.
     target_link_libraries(${EXE_NAME} PRIVATE
-        ws2_32 userenv bcrypt ntdll
+        ws2_32 userenv bcrypt ntdll synchronization
         advapi32 ole32 shell32 dbghelp
         kernel32 user32 gdi32 winspool comdlg32
     )
@@ -619,7 +619,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_indent_guide_theme
     if(WIN32)
         target_compile_definitions(test_indent_guide_theme PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_indent_guide_theme PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32)
     elseif(APPLE)
         target_link_libraries(test_indent_guide_theme PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -652,6 +652,46 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_readonly_gate.c
     set_tests_properties(test_db_readonly_gate PROPERTIES
         LABELS "unit;ai;db;security" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_db_readonly_gate")
+endif()
+
+# ── v0.1.133 data-analyst fixes: SQL gate keyword args + CSV loader typing ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_db_gate_keyword_args.cpp")
+    add_executable(test_db_gate_keyword_args
+        test_db_gate_keyword_args.cpp
+        src/dbconnections.cpp
+        src/atomic_write.cpp
+    )
+    target_include_directories(test_db_gate_keyword_args PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_db_gate_keyword_args PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+    notepatra_add_qt_test(test_db_gate_keyword_args)
+    set_tests_properties(test_db_gate_keyword_args PROPERTIES
+        LABELS "unit;ai;db;security" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_db_gate_keyword_args")
+endif()
+# v0.1.133 SQL gate bypasses (nested comments, EXPLAIN bodies, U& names, file
+# scans) + owner-only db-connections.json
+foreach(_npt test_db_gate_bypasses test_db_connections_perms)
+    if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/${_npt}.cpp")
+        add_executable(${_npt} ${_npt}.cpp src/dbconnections.cpp src/atomic_write.cpp)
+        target_include_directories(${_npt} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_npt} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+        notepatra_add_qt_test(${_npt})
+        set_tests_properties(${_npt} PROPERTIES LABELS "unit;ai;db;security" TIMEOUT 120)
+        message(STATUS "Regression test enabled — target: ${_npt}")
+    endif()
+endforeach()
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_csv_loader_typing.cpp")
+    add_executable(test_csv_loader_typing
+        test_csv_loader_typing.cpp
+        src/csvanalyst.cpp
+    )
+    target_include_directories(test_csv_loader_typing PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_csv_loader_typing PRIVATE Qt5::Core Qt5::Sql)
+    notepatra_add_qt_test(test_csv_loader_typing)
+    set_tests_properties(test_csv_loader_typing PROPERTIES
+        LABELS "unit;ai;data-analyst" TIMEOUT 300)
+    message(STATUS "Regression test enabled — target: test_csv_loader_typing")
 endif()
 
 # ── .npd diagram parser (diagram subsystem; pure C++, no WebEngine) ──
@@ -834,7 +874,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_notes_storage.cpp"
     )
     target_link_libraries(test_notes_storage PRIVATE Qt5::Core Qt5::Network Qt5::Test)
     add_test(NAME test_notes_storage COMMAND $<TARGET_FILE:test_notes_storage>)
-    set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage")
+    set_tests_properties(test_notes_storage PROPERTIES LABELS "unit;noter;storage" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_notes_storage")
 endif()
 
@@ -1264,7 +1304,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_history.cp
     if(WIN32)
         target_compile_definitions(test_ai_chat_history PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_chat_history PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1327,7 +1367,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_write_gate.cpp"
     if(WIN32)
         target_compile_definitions(test_ai_write_gate PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_write_gate PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1390,7 +1430,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_fullscreen_exit
     if(WIN32)
         target_compile_definitions(test_ai_fullscreen_exit PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_ai_fullscreen_exit PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1459,7 +1499,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_pane.cpp")
     if(WIN32)
         target_compile_definitions(test_preview_pane PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_preview_pane PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1518,7 +1558,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preview_persist.cp
     if(WIN32)
         target_compile_definitions(test_preview_persist PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_preview_persist PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -1573,7 +1613,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history.cpp
     if(WIN32)
         target_compile_definitions(test_change_history PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history PRIVATE pthread dl m
@@ -1624,7 +1664,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_mai
     if(WIN32)
         target_compile_definitions(test_change_history_mainwindow PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history_mainwindow PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history_mainwindow PRIVATE pthread dl m
@@ -1678,7 +1718,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_restore_session_un
     if(WIN32)
         target_compile_definitions(test_restore_session_unreadable PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_restore_session_unreadable PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_restore_session_unreadable PRIVATE pthread dl m
@@ -1727,7 +1767,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_cold_start_order.c
     if(WIN32)
         target_compile_definitions(test_cold_start_order PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_cold_start_order PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_cold_start_order PRIVATE pthread dl m
@@ -1778,7 +1818,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_remote_open.cpp")
     if(WIN32)
         target_compile_definitions(test_remote_open PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_remote_open PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_remote_open PRIVATE pthread dl m
@@ -1829,7 +1869,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_file_open_event.cp
     if(WIN32)
         target_compile_definitions(test_file_open_event PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_file_open_event PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_file_open_event PRIVATE pthread dl m
@@ -1881,7 +1921,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_shortcuts_discover
     if(WIN32)
         target_compile_definitions(test_shortcuts_discoverability PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_shortcuts_discoverability PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_shortcuts_discoverability PRIVATE pthread dl m
@@ -1933,7 +1973,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_statusbar_wordcoun
     if(WIN32)
         target_compile_definitions(test_statusbar_wordcount_perf PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_statusbar_wordcount_perf PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_statusbar_wordcount_perf PRIVATE pthread dl m
@@ -1984,7 +2024,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_bulk_settext_guard
     if(WIN32)
         target_compile_definitions(test_bulk_settext_guard PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_bulk_settext_guard PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_bulk_settext_guard PRIVATE pthread dl m
@@ -2035,7 +2075,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_preshow_modal_hygi
     if(WIN32)
         target_compile_definitions(test_preshow_modal_hygiene PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_preshow_modal_hygiene PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_preshow_modal_hygiene PRIVATE pthread dl m
@@ -2086,7 +2126,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_watcher_prompts.cp
     if(WIN32)
         target_compile_definitions(test_watcher_prompts PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_watcher_prompts PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_watcher_prompts PRIVATE pthread dl m
@@ -2187,7 +2227,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_standalone_window.
     if(WIN32)
         target_compile_definitions(test_standalone_window PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_standalone_window PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_standalone_window PRIVATE pthread dl m
@@ -2239,7 +2279,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_crash_notice_mainw
     if(WIN32)
         target_compile_definitions(test_crash_notice_mainwindow PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_crash_notice_mainwindow PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_crash_notice_mainwindow PRIVATE pthread dl m
@@ -2257,6 +2297,89 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_crash_notice_mainw
         LABELS "integration;mainwindow;crash;d7"
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     message(STATUS "Regression test enabled — target: test_crash_notice_mainwindow")
+endif()
+
+# v0.1.133 — Noter startup touches ~/Documents only when config says Noter
+# is in use (macOS Documents prompt froze the GUI thread at launch).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_startup_lazy.cpp")
+    set(NOTER_LAZY_SOURCES ${SOURCES})
+    list(FILTER NOTER_LAZY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_noter_startup_lazy
+        test_noter_startup_lazy.cpp
+        ${NOTER_LAZY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_noter_startup_lazy rust_core)
+    target_compile_definitions(test_noter_startup_lazy PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_noter_startup_lazy PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_noter_startup_lazy PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_noter_startup_lazy PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_noter_startup_lazy PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_noter_startup_lazy PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_noter_startup_lazy PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_noter_startup_lazy PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_noter_startup_lazy PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_noter_startup_lazy PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_noter_startup_lazy PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_noter_startup_lazy PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_noter_startup_lazy COMMAND $<TARGET_FILE:test_noter_startup_lazy>)
+    set_tests_properties(test_noter_startup_lazy PROPERTIES
+        LABELS "integration;mainwindow;noter"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_noter_startup_lazy")
+endif()
+
+# v0.1.133 — a Noter root the OS will not open shows a notice, not an empty list.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_noter_access_notice.cpp")
+    add_executable(test_noter_access_notice
+        test_noter_access_notice.cpp
+        src/notes.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/notes_todos.cpp
+        src/notes_reminder.cpp
+        src/notes_popout.cpp
+        src/notes_sweep_dialog.cpp
+        src/notes_sweep_prompt.cpp
+        src/notes_extract_apply.cpp
+        src/notes_export.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+    )
+    target_include_directories(test_noter_access_notice PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_noter_access_notice PRIVATE
+        Qt5::Core Qt5::Widgets Qt5::Sql Qt5::Network Qt5::Test
+        Qt5::PrintSupport)
+    add_test(NAME test_noter_access_notice COMMAND $<TARGET_FILE:test_noter_access_notice>)
+    set_tests_properties(test_noter_access_notice PROPERTIES
+        LABELS "integration;noter;widget"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_noter_access_notice")
 endif()
 
 # D8 (win-open-ghost) — session autosave change-detection (idle ticks
@@ -2290,7 +2413,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_session_autosave_g
     if(WIN32)
         target_compile_definitions(test_session_autosave_guard PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_session_autosave_guard PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_session_autosave_guard PRIVATE pthread dl m
@@ -2341,7 +2464,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_rename_tab_file.cp
     if(WIN32)
         target_compile_definitions(test_rename_tab_file PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_rename_tab_file PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_rename_tab_file PRIVATE pthread dl m
@@ -2360,6 +2483,133 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_rename_tab_file.cp
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_rename_tab_file")
+endif()
+
+# v0.1.133 — MCP tools against the real MainWindow host (menu functions,
+# one undo step, approval card clicks).
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_tools.cpp")
+    set(MCP_HOST_TOOLS_SOURCES ${SOURCES})
+    list(FILTER MCP_HOST_TOOLS_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_mcp_host_tools
+        test_mcp_host_tools.cpp
+        ${MCP_HOST_TOOLS_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_mcp_host_tools rust_core)
+    target_compile_definitions(test_mcp_host_tools PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_mcp_host_tools PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_mcp_host_tools PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_mcp_host_tools PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_mcp_host_tools PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_mcp_host_tools PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_mcp_host_tools PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_mcp_host_tools PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_mcp_host_tools PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_mcp_host_tools PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_mcp_host_tools PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_mcp_host_tools PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_mcp_host_tools COMMAND $<TARGET_FILE:test_mcp_host_tools>)
+    set_tests_properties(test_mcp_host_tools PROPERTIES
+        LABELS "integration;mainwindow;mcp"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 240)
+    message(STATUS "Regression test enabled — target: test_mcp_host_tools")
+endif()
+
+# v0.1.133 Phase 3 MCP tools (git writes, Noter, settings, data, REST): the
+# bridge against a fake host, and the real MainWindow host against a temp
+# git repo, an isolated Noter folder and config, in-memory SQLite and a
+# loopback HTTP server.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge_control.cpp")
+    add_executable(test_mcp_bridge_control
+        test_mcp_bridge_control.cpp
+        src/mcp_bridge.cpp
+        src/path_denylist.cpp
+        src/singleinstance.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/diagram/npd_parser.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_mcp_bridge_control PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_bridge_control PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test_mcp_bridge_control PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent Qt5::Sql)
+    notepatra_add_qt_test(test_mcp_bridge_control)
+    set_tests_properties(test_mcp_bridge_control PROPERTIES
+        LABELS "unit;mcp;ipc" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_mcp_bridge_control")
+endif()
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_control.cpp")
+    set(MCP_HOST_CONTROL_SOURCES ${SOURCES})
+    list(FILTER MCP_HOST_CONTROL_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_mcp_host_control
+        test_mcp_host_control.cpp
+        ${MCP_HOST_CONTROL_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_mcp_host_control rust_core)
+    target_compile_definitions(test_mcp_host_control PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_mcp_host_control PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_mcp_host_control PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_mcp_host_control PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_mcp_host_control PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_mcp_host_control PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_mcp_host_control PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_mcp_host_control PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_mcp_host_control PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_mcp_host_control PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_mcp_host_control PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_mcp_host_control PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_mcp_host_control COMMAND $<TARGET_FILE:test_mcp_host_control>)
+    set_tests_properties(test_mcp_host_control PROPERTIES
+        LABELS "integration;mainwindow;mcp"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 300)
+    message(STATUS "Regression test enabled — target: test_mcp_host_control")
 endif()
 
 # D8 (win-open-ghost) — double-click occurrence highlight: doc-size
@@ -2393,7 +2643,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_occurrence_highlig
     if(WIN32)
         target_compile_definitions(test_occurrence_highlight_cap PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_occurrence_highlight_cap PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_occurrence_highlight_cap PRIVATE pthread dl m
@@ -2444,7 +2694,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_wat
     if(WIN32)
         target_compile_definitions(test_change_history_watcher PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history_watcher PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history_watcher PRIVATE pthread dl m
@@ -2485,7 +2735,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_change_history_str
     if(WIN32)
         target_compile_definitions(test_change_history_stress PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_change_history_stress PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_change_history_stress PRIVATE pthread dl m
@@ -2526,7 +2776,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_changehistory_stat
     if(WIN32)
         target_compile_definitions(test_changehistory_statusbar PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_changehistory_statusbar PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_changehistory_statusbar PRIVATE pthread dl m
@@ -2567,7 +2817,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_replace_correctnes
     if(WIN32)
         target_compile_definitions(test_replace_correctness PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_replace_correctness PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_replace_correctness PRIVATE pthread dl m
@@ -2607,7 +2857,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_findreplace_carry_
     if(WIN32)
         target_compile_definitions(test_findreplace_carry_forward PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_findreplace_carry_forward PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32 ole32 shell32 dbghelp
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
         target_link_libraries(test_findreplace_carry_forward PRIVATE pthread dl m
@@ -2677,7 +2927,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch.cpp"
         # main notepatra target links against. Without ntdll the stdlib's
         # sync I/O references go unresolved (LNK2019 NtWriteFile etc.).
         target_link_libraries(test_projectsearch PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -2716,7 +2966,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_projectsearch_ui.c
     )
     if(WIN32)
         target_link_libraries(test_projectsearch_ui PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3014,7 +3264,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_edit_plan.cpp")
         # main notepatra target links against — without these the stdlib's
         # sync I/O symbols go unresolved.
         target_link_libraries(test_edit_plan PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3050,7 +3300,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_inline_diff.cpp")
     )
     if(WIN32)
         target_link_libraries(test_inline_diff PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3170,6 +3420,52 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_fmtpanel_diff.cpp"
     message(STATUS "Regression test enabled — target: test_fmtpanel_diff")
 endif()
 
+# JSON / HTML / Bracket Tools end to end: the same FormatterPanel buttons
+# MainWindow adds (src/formatter_tools.cpp) over the real rustbridge wrappers
+# and Rust core. Invalid input must be left untouched with a "line L, column
+# C" reason; reports go to the banner, never into the text.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_json_bracket_tools.cpp")
+    add_executable(test_json_bracket_tools
+        test_json_bracket_tools.cpp
+        src/fmtpanel.cpp
+        src/formatter_tools.cpp
+        src/npp_palette.cpp
+        src/editor_symbols.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_json_bracket_tools rust_core)
+    target_include_directories(test_json_bracket_tools PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_json_bracket_tools PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::PrintSupport
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        target_compile_definitions(test_json_bracket_tools PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_json_bracket_tools PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_json_bracket_tools PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_json_bracket_tools PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_json_bracket_tools)
+    set_tests_properties(test_json_bracket_tools PROPERTIES
+        LABELS "regression;ui;json;brackets" TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_json_bracket_tools")
+endif()
+
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp")
     add_executable(test_compare_widget
         test_compare_widget.cpp
@@ -3212,7 +3508,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_compare_widget.cpp
     if(WIN32)
         target_compile_definitions(test_compare_widget PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_compare_widget PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32
         )
@@ -3274,7 +3570,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_options_actually_w
     if(WIN32)
         target_compile_definitions(test_options_actually_work PRIVATE QSCINTILLA_DLL)
         target_link_libraries(test_options_actually_work PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32 winspool comdlg32)
     elseif(APPLE)
@@ -3352,7 +3648,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
     endif()
     if(WIN32)
         target_link_libraries(test_sqlfmt PRIVATE
-            ws2_32 userenv bcrypt ntdll
+            ws2_32 userenv bcrypt ntdll synchronization
             advapi32 ole32 shell32 dbghelp
             kernel32 user32 gdi32
         )
@@ -3368,6 +3664,45 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_sqlfmt.cpp")
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
     message(STATUS "Regression test enabled — target: test_sqlfmt")
+endif()
+
+# ─── HTML formatter FFI contract ────────────────────────────────────────
+# The DOM-equivalence fuzzing lives in rust-core (cargo test); this pins
+# the bridge: formatted text + empty message, or the input unchanged + a
+# message with line and column.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_htmlfmt.cpp")
+    add_executable(test_htmlfmt
+        test_htmlfmt.cpp
+        src/rustbridge.cpp
+    )
+    add_dependencies(test_htmlfmt rust_core)
+    target_include_directories(test_htmlfmt PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+    )
+    target_link_libraries(test_htmlfmt PRIVATE
+        Qt5::Core
+        ${RUST_LIB}
+    )
+    if(WIN32)
+        target_link_libraries(test_htmlfmt PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32
+        )
+    elseif(APPLE)
+        target_link_libraries(test_htmlfmt PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_htmlfmt PRIVATE pthread dl m)
+    endif()
+    add_test(NAME test_htmlfmt COMMAND $<TARGET_FILE:test_htmlfmt>)
+    set_tests_properties(test_htmlfmt PROPERTIES
+        LABELS "regression;htmlfmt"
+        TIMEOUT 120
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    message(STATUS "Regression test enabled — target: test_htmlfmt")
 endif()
 
 # ── QSS arrow lint (v0.1.128) ──
@@ -3400,7 +3735,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen.cpp")
     target_link_libraries(test_passwordgen PRIVATE Qt5::Core ${RUST_LIB})
     if(WIN32)
         target_link_libraries(test_passwordgen PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32)
     elseif(APPLE)
         target_link_libraries(test_passwordgen PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -3430,7 +3765,7 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen_panel.
         Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test Qt5::Concurrent ${RUST_LIB})
     if(WIN32)
         target_link_libraries(test_passwordgen_panel PRIVATE
-            ws2_32 userenv bcrypt ntdll advapi32)
+            ws2_32 userenv bcrypt ntdll synchronization advapi32)
     elseif(APPLE)
         target_link_libraries(test_passwordgen_panel PRIVATE pthread dl m
             "-framework Security" "-framework CoreFoundation")
@@ -3441,6 +3776,252 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_passwordgen_panel.
     set_tests_properties(test_passwordgen_panel PROPERTIES
         LABELS "unit;passwordgen;panel" TIMEOUT 120)
     message(STATUS "Regression test enabled — target: test_passwordgen_panel")
+endif()
+
+# ── v0.1.133 chat + privacy regressions ──
+# test_ai_chat_privacy: real AIPanel vs a fake local Ollama (no-model notice
+# keeps history, send-while-streaming keeps the partial, cloud-free Settings
+# gate, quick actions honour Auto-attach, Data mode from a CSV).
+# test_openai_param_retry: rejected max_tokens/temperature 400 → one re-send.
+# test_config_permissions: config.json (API keys) is owner-only on Unix.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_ai_chat_privacy.cpp")
+    set(AI_CHAT_PRIVACY_SOURCES ${SOURCES})
+    list(FILTER AI_CHAT_PRIVACY_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_ai_chat_privacy
+        test_ai_chat_privacy.cpp
+        ${AI_CHAT_PRIVACY_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_ai_chat_privacy rust_core)
+    target_compile_definitions(test_ai_chat_privacy PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+    )
+    target_include_directories(test_ai_chat_privacy PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_ai_chat_privacy PRIVATE
+        Qt5::Widgets
+        Qt5::PrintSupport
+        Qt5::Network
+        Qt5::Concurrent
+        Qt5::Sql
+        Qt5::Charts
+        ${QSCINTILLA_LIB}
+        ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_ai_chat_privacy PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_ai_chat_privacy PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_ai_chat_privacy PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_ai_chat_privacy PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization
+            advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_ai_chat_privacy PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_ai_chat_privacy PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_ai_chat_privacy PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_ai_chat_privacy PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_ai_chat_privacy PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    notepatra_add_qt_test(test_ai_chat_privacy)
+    set_tests_properties(test_ai_chat_privacy PROPERTIES
+        LABELS "unit;ai;privacy" TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_ai_chat_privacy")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_openai_param_retry.cpp")
+    add_executable(test_openai_param_retry
+        test_openai_param_retry.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+        src/network_policy.cpp
+    )
+    target_include_directories(test_openai_param_retry PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_openai_param_retry PRIVATE Qt5::Core Qt5::Network Qt5::Sql)
+    notepatra_add_qt_test(test_openai_param_retry)
+    set_tests_properties(test_openai_param_retry PROPERTIES
+        LABELS "unit;ai;openai" TIMEOUT 90)
+    message(STATUS "Regression test enabled — target: test_openai_param_retry")
+endif()
+
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_config_permissions.cpp")
+    add_executable(test_config_permissions test_config_permissions.cpp)
+    target_include_directories(test_config_permissions PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_config_permissions PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_config_permissions)
+    set_tests_properties(test_config_permissions PROPERTIES
+        LABELS "unit;config;security" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_config_permissions")
+endif()
+
+# v0.1.133 — coding-agent write-path regressions: encoding/EOL/BOM round-trip
+# (apply_diff/write_file), search deny-list + symlink escape, Compose same-file
+# merge, and agent writes never discarding a dirty tab.
+if(NOTEPATRA_BUILD_TESTS)
+    foreach(_agent_t test_agent_edit_encoding test_ai_search_denylist test_ai_write_denylist)
+        add_executable(${_agent_t}
+            ${_agent_t}.cpp
+            src/ai_tools.cpp
+            src/path_denylist.cpp
+            src/atomic_write.cpp
+            src/git_tools.cpp
+            src/csvanalyst.cpp
+            src/dbconnections.cpp
+        )
+        target_include_directories(${_agent_t} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_agent_t} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+        add_test(NAME ${_agent_t} COMMAND $<TARGET_FILE:${_agent_t}>)
+        set_tests_properties(${_agent_t} PROPERTIES
+            LABELS "unit;ai;tools" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)
+    endforeach()
+
+    add_executable(test_edit_plan_same_file
+        test_edit_plan_same_file.cpp src/edit_plan.cpp src/diff_view.cpp src/rustbridge.cpp)
+    add_dependencies(test_edit_plan_same_file rust_core)
+    target_include_directories(test_edit_plan_same_file PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/rust-core/include)
+    target_link_libraries(test_edit_plan_same_file PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets ${RUST_LIB})
+    if(WIN32)
+        target_link_libraries(test_edit_plan_same_file PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp kernel32 user32 gdi32)
+    elseif(APPLE)
+        target_link_libraries(test_edit_plan_same_file PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_edit_plan_same_file PRIVATE pthread dl m)
+    endif()
+    notepatra_add_qt_test(test_edit_plan_same_file)
+    set_tests_properties(test_edit_plan_same_file PROPERTIES
+        LABELS "unit;coding-mode" TIMEOUT 60)
+
+    set(AGENT_DIRTY_TAB_SOURCES ${SOURCES})
+    list(FILTER AGENT_DIRTY_TAB_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_agent_write_dirty_tab
+        test_agent_write_dirty_tab.cpp ${AGENT_DIRTY_TAB_SOURCES} ${HEADERS})
+    add_dependencies(test_agent_write_dirty_tab rust_core)
+    target_compile_definitions(test_agent_write_dirty_tab PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_agent_write_dirty_tab PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_agent_write_dirty_tab PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_agent_write_dirty_tab PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_agent_write_dirty_tab PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_agent_write_dirty_tab PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_agent_write_dirty_tab PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_agent_write_dirty_tab PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_agent_write_dirty_tab COMMAND $<TARGET_FILE:test_agent_write_dirty_tab>)
+    set_tests_properties(test_agent_write_dirty_tab PROPERTIES
+        LABELS "integration;mainwindow;ai;write-gate"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 180)
+    message(STATUS "Regression tests enabled — coding-agent write path (4 targets)")
+endif()
+
+# v0.1.133 follow-ups — secret files stay out of git/MCP/list_dir output.
+if(NOTEPATRA_BUILD_TESTS)
+    foreach(_sec_t test_git_tools_secrets test_ai_list_dir_denylist test_csv_column_name_guidance)
+        add_executable(${_sec_t}
+            ${_sec_t}.cpp
+            src/ai_systemprompt.cpp
+            src/ai_tools.cpp
+            src/path_denylist.cpp
+            src/atomic_write.cpp
+            src/git_tools.cpp
+            src/csvanalyst.cpp
+            src/dbconnections.cpp
+        )
+        target_include_directories(${_sec_t} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${_sec_t} PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Sql)
+        add_test(NAME ${_sec_t} COMMAND $<TARGET_FILE:${_sec_t}>)
+        set_tests_properties(${_sec_t} PROPERTIES
+            LABELS "unit;ai;tools;security" ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+    endforeach()
+
+    add_executable(test_mcp_search_symlink
+        test_mcp_search_symlink.cpp
+        src/mcp_bridge.cpp
+        src/path_denylist.cpp
+        src/singleinstance.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/diagram/npd_parser.cpp
+        src/dbconnections.cpp
+    )
+    target_include_directories(test_mcp_search_symlink PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_search_symlink PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_link_libraries(test_mcp_search_symlink PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Test)
+    notepatra_add_qt_test(test_mcp_search_symlink)
+    set_tests_properties(test_mcp_search_symlink PROPERTIES
+        LABELS "unit;mcp;security" TIMEOUT 120)
+
+    set(COMPOSE_ENC_SOURCES ${SOURCES})
+    list(FILTER COMPOSE_ENC_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_compose_apply_encoding
+        test_compose_apply_encoding.cpp ${COMPOSE_ENC_SOURCES} ${HEADERS})
+    add_dependencies(test_compose_apply_encoding rust_core)
+    target_compile_definitions(test_compose_apply_encoding PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_compose_apply_encoding PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include ${QSCINTILLA_INCLUDE})
+    target_link_libraries(test_compose_apply_encoding PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_compose_apply_encoding PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_compose_apply_encoding PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_compose_apply_encoding PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_compose_apply_encoding PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_compose_apply_encoding PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_compose_apply_encoding PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_compose_apply_encoding PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_compose_apply_encoding PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_compose_apply_encoding PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_compose_apply_encoding COMMAND $<TARGET_FILE:test_compose_apply_encoding>)
+    set_tests_properties(test_compose_apply_encoding PROPERTIES
+        LABELS "unit;ai;coding-mode;encoding"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
 endif()
 
 # ── Install ──
@@ -3488,6 +4069,62 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_vega_chart.cpp")
         LABELS "unit;ai;data-analyst;charts;v0163"
     )
     message(STATUS "Regression test enabled — target: test_vega_chart")
+endif()
+
+# v0.1.133 — REST client: .http parser + variables + environments + history
+# redaction (test_http_file), Import/Copy as cURL (test_curl_convert), and the
+# panel + .http editor wiring against fake servers on 127.0.0.1
+# (test_rest_client). Pure tests list their sources; the panel test links the app.
+if(NOTEPATRA_BUILD_TESTS)
+    add_executable(test_http_file test_http_file.cpp src/http_file.cpp src/rest_history.cpp)
+    target_include_directories(test_http_file PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_http_file PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_http_file)
+    set_tests_properties(test_http_file PROPERTIES LABELS "unit;rest" TIMEOUT 60)
+
+    add_executable(test_curl_convert test_curl_convert.cpp src/curl_convert.cpp)
+    target_include_directories(test_curl_convert PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(test_curl_convert PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_curl_convert)
+    set_tests_properties(test_curl_convert PROPERTIES LABELS "unit;rest" TIMEOUT 60)
+
+    set(REST_CLIENT_TEST_SOURCES ${SOURCES})
+    list(FILTER REST_CLIENT_TEST_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_rest_client test_rest_client.cpp ${REST_CLIENT_TEST_SOURCES} ${HEADERS})
+    add_dependencies(test_rest_client rust_core)
+    target_compile_definitions(test_rest_client PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_rest_client PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_rest_client PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts Qt5::Test
+        ${QSCINTILLA_LIB} ${RUST_LIB})
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_rest_client PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_rest_client PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_rest_client PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_rest_client PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_rest_client PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_rest_client PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_rest_client PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_rest_client PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_rest_client PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    notepatra_add_qt_test(test_rest_client)
+    set_tests_properties(test_rest_client PROPERTIES LABELS "integration;rest" TIMEOUT 180)
+    message(STATUS "Regression tests enabled — targets: test_http_file, test_curl_convert, test_rest_client")
 endif()
 
 # v0.1.57 hit a CI regression because test_edit_plan was registered with

@@ -11,6 +11,7 @@
 #include "editor_symbols.h"
 
 class QContextMenuEvent;
+class QMenu;
 
 class Editor : public QsciScintilla {
     Q_OBJECT
@@ -173,6 +174,9 @@ signals:
     void changeHistoryUpdated();
     // The file path (Save As / rename) or the language changed.
     void documentIdentityChanged();
+    // Emitted just before the context menu opens, so a feature can add
+    // entries to `menu`. `pos` is the click position in viewport pixels.
+    void contextMenuAboutToShow(QMenu *menu, const QPoint &pos);
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;

@@ -121,21 +121,45 @@ TextResult npc_format_sql_compact(const char *text, size_t len, int indent_width
 
 /* ═══════════ JSON Formatter + Fixer ═══════════ */
 
+/* Format / minify change whitespace only: every token (key order, duplicate
+ * keys, number text, string escapes) is copied byte for byte. Invalid input
+ * is returned UNCHANGED; npc_json_parse_error says why. indent is clamped to
+ * 0..16. */
 TextResult npc_format_json(const char *text, size_t len, int indent);
 TextResult npc_minify_json(const char *text, size_t len);
-/* Strict validation: empty text = valid JSON, otherwise a parse error with
- * line/column. Never repairs, unlike npc_format_json. */
+/* Strict validation: empty text = valid JSON, otherwise
+ * "line L, column C: <what was found, what was expected>". */
 TextResult npc_json_parse_error(const char *text, size_t len);
+/* Why npc_format_json (minify = 0) / npc_minify_json (minify != 0) would
+ * return the input unchanged, or empty text when it will transform it:
+ * "not valid JSON: line L, column C: ..." or "left unchanged: <size limit>"
+ * (a size limit never calls a valid document invalid). */
+TextResult npc_json_format_refusal(const char *text, size_t len, int indent, int minify);
+/* Conservative repair: valid JSON with the same content, or the input
+ * unchanged when the right repair would be a guess. */
 TextResult npc_fix_json(const char *text, size_t len);
+/* What npc_fix_json did (every change with line/column), or why it changed
+ * nothing ("No changes made: ..."). */
 TextResult npc_fix_json_report(const char *text, size_t len);
 
 /* ═══════════ HTML Formatter ═══════════ */
 
+/* Re-indents HTML without changing its DOM. When it cannot prove that, it
+ * returns the text unchanged. */
 TextResult npc_format_html(const char *text, size_t len, int indent);
+/* Same, and `message` (may be NULL; free it with npc_free_text_result) is
+ * set to "" on success or to why the text was left unchanged (with line and
+ * column). npc_minify_html_ex removes only unrendered whitespace. */
+TextResult npc_format_html_ex(const char *text, size_t len, int indent, TextResult *message);
+TextResult npc_minify_html_ex(const char *text, size_t len, TextResult *message);
 
 /* ═══════════ Bracket Fixer ═══════════ */
 
+/* Inserts missing closers / removes stray closers, nothing else; balanced
+ * input (under any reading) is returned unchanged. */
 TextResult npc_fix_brackets(const char *text, size_t len);
+/* What npc_fix_brackets changes, each with line/column, or why nothing. */
+TextResult npc_fix_brackets_report(const char *text, size_t len);
 TextResult npc_check_brackets(const char *text, size_t len);
 
 /* ═══════════ Memory management ═══════════ */

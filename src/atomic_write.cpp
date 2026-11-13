@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRandomGenerator>
 
 // <windows.h> is confined to THIS translation unit on purpose — see the
 // header's closing note. WIN32_LEAN_AND_MEAN and NOMINMAX keep even this
@@ -94,6 +95,35 @@ bool replaceFile(const QString &tmpPath,
 #endif
     syncDirectoryOf(target);
     return true;
+}
+
+bool writeFileNoFollow(const QString &target, const QByteArray &bytes, QString *errorOut) {
+    QFile tmp;
+    bool opened = false;
+    for (int attempt = 0; attempt < 16 && !opened; ++attempt) {
+        tmp.setFileName(target + QLatin1Char('.')
+                        + QString::number(QRandomGenerator::global()->generate64(), 36)
+                        + QStringLiteral(".tmp"));
+        // NewOnly = O_CREAT|O_EXCL: an existing file or (even dangling)
+        // symlink at the name fails the open instead of being written through.
+        opened = tmp.open(QIODevice::WriteOnly | QIODevice::NewOnly);
+        if (!opened && !QFileInfo(tmp.fileName()).isSymLink() && !QFileInfo::exists(tmp.fileName()))
+            break;  // a real error, not a name collision
+    }
+    if (!opened) {
+        if (errorOut)
+            *errorOut = QStringLiteral("Failed to open temp file: %1").arg(tmp.errorString());
+        return false;
+    }
+    const qint64 n = tmp.write(bytes);
+    syncData(tmp);
+    tmp.close();
+    if (n != bytes.size()) {
+        QFile::remove(tmp.fileName());
+        if (errorOut) *errorOut = QStringLiteral("Short write to temp file");
+        return false;
+    }
+    return replaceFile(tmp.fileName(), target, errorOut);
 }
 
 }   // namespace NpAtomic

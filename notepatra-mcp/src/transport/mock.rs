@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use serde_json::{json, Value};
 
+mod control;
+mod verbs;
+
 use super::{
-    EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef, TabSelector,
-    TransportError,
+    EditorTransport, OpenedTab, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef,
+    TabSelector, TransportError,
 };
 
 /// Cap mirrored from the C++ bridge (kMaxFindMatches in src/mcp_bridge.cpp):
 /// find_in_tab stops after this many matches and sets `truncated`.
 const FIND_IN_TAB_CAP: usize = 500;
+
+/// Diagram export formats the mock pretends this build supports.
+const MOCK_DIAGRAM_FORMATS: &[&str] = &["png", "jpeg", "pdf"];
 
 /// Mock Noter root: create_note echoes note paths under this directory so
 /// `notepatra-mcp` (no --socket) demos the full write surface believably.
@@ -87,6 +93,7 @@ struct MockNote {
 }
 
 struct MockReminder {
+    id: String,
     file: String,
     title: String,
     due_iso: String,
@@ -94,9 +101,13 @@ struct MockReminder {
 }
 
 struct MockConnection {
-    name: &'static str,
-    driver: &'static str,
-    database: &'static str,
+    name: String,
+    driver: String,
+    host: String,
+    port: i64,
+    database: String,
+    username: String,
+    has_password: bool,
 }
 
 /// In-memory fake editor used by default and in tests.
@@ -107,7 +118,14 @@ pub struct MockEditor {
     notes: Vec<MockNote>,
     reminders: Vec<MockReminder>,
     connections: Vec<MockConnection>,
+    /// v0.1.133 per-tab state (read-only, bookmarks, EOL, encoding, undo)
+    /// keyed by tab id, plus app-wide view state. See mock/verbs.rs.
+    v133: verbs::State,
+    /// v0.1.133 phase 3: git, Noter trash, preferences, workspace (mock/control.rs).
+    control: control::State,
     approval: ApprovalMode,
+    /// Test hook: list_notes fails with this text (blocked Noter folder).
+    notes_error: Option<String>,
     /// Monotonic source for MockTab::id — never reused, so a closed tab's id
     /// can never silently resolve to a different document (v0.1.126, NP-13).
     next_tab_id: i64,
@@ -214,24 +232,28 @@ impl Default for MockEditor {
             // list_reminders demos the full bucketing without a real clock.
             reminders: vec![
                 MockReminder {
+                    id: "r1".into(),
                     file: "/home/user/Documents/Notepatra/Noter/release-checklist.html".into(),
                     title: "Release checklist".into(),
                     due_iso: "2026-07-16T09:00:00Z".into(),
                     bucket: "Overdue",
                 },
                 MockReminder {
+                    id: "r2".into(),
                     file: "/home/user/Documents/Notepatra/Noter/standup-2026-07-15.html".into(),
                     title: "Standup 2026-07-15".into(),
                     due_iso: "2026-07-17T17:00:00Z".into(),
                     bucket: "Today",
                 },
                 MockReminder {
+                    id: "r3".into(),
                     file: "/home/user/Documents/Notepatra/Noter/meeting-design.html".into(),
                     title: "Meeting with design".into(),
                     due_iso: "2026-07-20T15:00:00Z".into(),
                     bucket: "This week",
                 },
                 MockReminder {
+                    id: "r4".into(),
                     file: "/home/user/Documents/Notepatra/Noter/old-scratch.html".into(),
                     title: "Old scratch".into(),
                     due_iso: "2026-08-30T08:00:00Z".into(),
@@ -240,12 +262,19 @@ impl Default for MockEditor {
             ],
             // One saved connection so the phase-2 data verbs demo believably
             // offline (in-memory SQLite; no real database needed).
+            v133: verbs::State::default(),
+            control: control::State::default(),
             connections: vec![MockConnection {
-                name: "demo",
-                driver: "QSQLITE",
-                database: ":memory:",
+                name: "demo".into(),
+                driver: "QSQLITE".into(),
+                host: String::new(),
+                port: 0,
+                database: ":memory:".into(),
+                username: String::new(),
+                has_password: false,
             }],
             approval: ApprovalMode::Approve,
+            notes_error: None,
         }
     }
 }
@@ -316,6 +345,28 @@ impl MockEditor {
         self.approval = mode;
     }
 
+    /// Test hook: add a Diagram tab holding `source`; returns its tab id.
+    pub fn add_diagram_tab(&mut self, title: &str, source: &str) -> i64 {
+        let id = self.next_tab_id();
+        self.tabs.push(MockTab {
+            title: title.to_string(),
+            path: None,
+            content: source.to_string(),
+            modified: false,
+            language: "Plain Text".into(),
+            truncated: false,
+            is_diagram: true,
+            editable: false,
+            id,
+        });
+        id
+    }
+
+    /// Test hook: make list_notes fail the way a blocked Noter folder does.
+    pub fn simulate_notes_error(&mut self, message: &str) {
+        self.notes_error = Some(message.to_string());
+    }
+
     /// Test hook: mark a tab so reads report `truncated: true` (the real
     /// editor caps read_tab at 5 MB).
     pub fn simulate_truncated_tab(&mut self, index: usize) {
@@ -361,13 +412,20 @@ impl EditorTransport for MockEditor {
         true
     }
 
-    fn open_file(&mut self, path: &str) -> Result<usize, TransportError> {
+    fn call_verb(&mut self, verb: &str, args: Value) -> Result<Value, TransportError> {
+        self.mock_verb(verb, &args)
+    }
+
+    fn open_file(&mut self, path: &str) -> Result<OpenedTab, TransportError> {
         if let Some(i) = self
             .tabs
             .iter()
             .position(|t| t.path.as_deref() == Some(path))
         {
-            return Ok(i);
+            return Ok(OpenedTab {
+                index: i,
+                id: Some(self.tabs[i].id),
+            });
         }
         let title = path.rsplit('/').next().unwrap_or(path).to_string();
         let new_id = self.next_tab_id();
@@ -382,7 +440,10 @@ impl EditorTransport for MockEditor {
             editable: true,
             id: new_id,
         });
-        Ok(self.tabs.len() - 1)
+        Ok(OpenedTab {
+            index: self.tabs.len() - 1,
+            id: Some(new_id),
+        })
     }
 
     fn list_open_tabs(&self) -> Result<Vec<TabInfo>, TransportError> {
@@ -430,10 +491,11 @@ impl EditorTransport for MockEditor {
         let mut results = Vec::new();
         'outer: for tab in &self.tabs {
             for (n, line) in tab.content.lines().enumerate() {
-                if line.to_lowercase().contains(&query.to_lowercase()) {
+                if let Some(col) = verbs::find_col(line, query, false, false) {
                     results.push(SearchHit {
                         path: tab.path.clone().unwrap_or_default(),
                         line: n + 1,
+                        column: Some(col),
                         text: line.trim().to_string(),
                     });
                     if results.len() >= max_results {
@@ -468,6 +530,8 @@ impl EditorTransport for MockEditor {
         let t = &self.tabs[i];
         Ok(json!({
             "tab_index": i,
+            "tab_id": t.id,
+            "modified": t.modified,
             "title": t.title,
             "path": t.path,
             "language": t.language,
@@ -523,12 +587,12 @@ impl EditorTransport for MockEditor {
         let mut truncated = false;
         // Bridge semantics: case-insensitive substring, trimmed line text.
         for (n, line) in self.tabs[i].content.lines().enumerate() {
-            if line.to_lowercase().contains(&query.to_lowercase()) {
+            if let Some(col) = verbs::find_col(line, query, false, false) {
                 if matches.len() >= FIND_IN_TAB_CAP {
                     truncated = true;
                     break;
                 }
-                matches.push(json!({ "line": n + 1, "text": line.trim() }));
+                matches.push(json!({ "line": n + 1, "column": col, "text": line.trim() }));
             }
         }
         Ok(json!({ "matches": matches, "truncated": truncated }))
@@ -547,7 +611,7 @@ impl EditorTransport for MockEditor {
             editable: true,
             id: new_id,
         });
-        Ok(json!({ "tab_index": self.tabs.len() - 1 }))
+        Ok(json!({ "tab_index": self.tabs.len() - 1, "tab_id": new_id }))
     }
 
     fn goto_line(&mut self, line: usize, tab: TabRef) -> Result<Value, TransportError> {
@@ -616,9 +680,12 @@ impl EditorTransport for MockEditor {
         Ok(json!({ "ok": true, "tab_index": i, "language": language }))
     }
 
-    fn compare_tabs(&mut self, index_a: usize, index_b: usize) -> Result<Value, TransportError> {
-        self.check_index(index_a)?;
-        self.check_index(index_b)?;
+    fn compare_tabs(&mut self, a: TabRef, b: TabRef) -> Result<Value, TransportError> {
+        if a.is_unset() || b.is_unset() {
+            return Err(TransportError("compare needs two tabs".into()));
+        }
+        let index_a = self.resolve(a)?;
+        let index_b = self.resolve(b)?;
         if index_a == index_b {
             return Err(TransportError("compare needs two different tabs".into()));
         }
@@ -652,6 +719,9 @@ impl EditorTransport for MockEditor {
     }
 
     fn list_notes(&self) -> Result<Value, TransportError> {
+        if let Some(e) = &self.notes_error {
+            return Err(TransportError(e.clone()));
+        }
         let notes: Vec<Value> = self
             .notes
             .iter()
@@ -784,6 +854,7 @@ impl EditorTransport for MockEditor {
             .iter()
             .map(|r| {
                 json!({
+                    "id": r.id,
                     "note_file": r.file,
                     "note_title": r.title,
                     "due_iso": r.due_iso,
@@ -908,6 +979,7 @@ impl EditorTransport for MockEditor {
             "platform": std::env::consts::OS,
             "version": "0.1.119",
             "features": { "duckdb": false, "webengine": false, "noter": true },
+            "diagram_export_formats": MOCK_DIAGRAM_FORMATS,
         }))
     }
 
@@ -986,7 +1058,9 @@ impl EditorTransport for MockEditor {
             .iter()
             .find(|n| n.file == file)
             .ok_or_else(|| TransportError(format!("no note named {file:?}")))?;
+        let id = self.control.next_reminder_id();
         self.reminders.push(MockReminder {
+            id,
             file: file.to_string(),
             title: note.title.clone(),
             due_iso: due_iso.to_string(),
@@ -1002,13 +1076,19 @@ impl EditorTransport for MockEditor {
         path: &str,
         format: &str,
     ) -> Result<Value, TransportError> {
-        self.check_approval()?;
-        self.resolve(tab)?;
-        if format != "png" && format != "pdf" {
+        let i = self.resolve(tab)?;
+        if !self.tabs[i].is_diagram {
             return Err(TransportError(format!(
-                "unsupported export format {format:?} (expected png or pdf)"
+                "tab {i} is not a diagram (.npd) tab"
             )));
         }
+        if !MOCK_DIAGRAM_FORMATS.contains(&format) {
+            return Err(TransportError(format!(
+                "unsupported format: {format} (this build supports: {})",
+                MOCK_DIAGRAM_FORMATS.join("|")
+            )));
+        }
+        self.check_approval()?;
         // Bridge result shape: {path}.
         Ok(json!({ "path": path }))
     }
@@ -1037,6 +1117,7 @@ impl EditorTransport for MockEditor {
         });
         Ok(json!({
             "tab_index": self.tabs.len() - 1,
+            "tab_id": new_id,
             "valid": errors.is_empty(),
             "errors": errors,
         }))

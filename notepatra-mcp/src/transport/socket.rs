@@ -52,8 +52,8 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::{
-    endpoint, EditorTransport, SearchHit, SearchResults, Selection, TabContent, TabInfo, TabRef,
-    TabSelector, TransportError,
+    endpoint, EditorTransport, OpenedTab, ProgressHook, SearchHit, SearchResults, Selection,
+    TabContent, TabInfo, TabRef, TabSelector, TransportError,
 };
 
 /// Exact user-facing message when the bridge socket cannot be reached.
@@ -62,8 +62,21 @@ pub const NOT_RUNNING: &str = "Notepatra is not running (start the editor first)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// Write verbs block inside the editor on a human approval card for up to
-/// 120 s, so the socket read must outlast that window.
-const APPROVAL_TIMEOUT: Duration = Duration::from_secs(130);
+/// 120 s, then may run up to 60 s more (a git remote, a database, an HTTP
+/// request), so the socket read must outlast both.
+const APPROVAL_TIMEOUT: Duration = Duration::from_secs(200);
+/// Reads that open a database connection (the editor times them out at 20 s).
+const DB_READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// Reads that run git or scan Noter / a file (the editor caps each at 15 s).
+const SLOW_READS: &[&str] = &[
+    "list_hunks",
+    "list_conflicts",
+    "search_notes",
+    "hex_dump",
+    "git_diff",
+];
+/// How often a wait on the approval card is reported as MCP progress.
+const PROGRESS_TICK: Duration = Duration::from_secs(5);
 
 /// The approval-gated write verbs (must match the C++ bridge's card-gated
 /// verb set exactly). v0.1.119 adds create_note/append_note/set_reminder/
@@ -113,6 +126,9 @@ pub struct SocketEditor {
     base_timeout: Duration,
     search_timeout: Duration,
     approval_timeout: Duration,
+    /// Reports a long approval wait as MCP progress (v0.1.133, D16).
+    progress: Option<ProgressHook>,
+    progress_tick: Duration,
     #[cfg(any(unix, windows))]
     conn: RefCell<Option<Conn>>,
 }
@@ -163,6 +179,8 @@ impl SocketEditor {
             base_timeout: DEFAULT_TIMEOUT,
             search_timeout: SEARCH_TIMEOUT,
             approval_timeout: APPROVAL_TIMEOUT,
+            progress: None,
+            progress_tick: PROGRESS_TICK,
             #[cfg(any(unix, windows))]
             conn: RefCell::new(None),
         }
@@ -179,6 +197,12 @@ impl SocketEditor {
     /// (tests shrink it to keep suites fast).
     pub fn with_approval_timeout(mut self, approval: Duration) -> Self {
         self.approval_timeout = approval;
+        self
+    }
+
+    /// Overrides how often an approval wait reports progress (tests).
+    pub fn with_progress_tick(mut self, tick: Duration) -> Self {
+        self.progress_tick = tick;
         self
     }
 
@@ -216,9 +240,12 @@ impl SocketEditor {
     /// [`Conn`].
     #[cfg(any(unix, windows))]
     fn call(&self, verb: &str, args: Value) -> Result<Value, TransportError> {
-        let timeout = if verb == "search_project" {
+        let card = WRITE_VERBS.contains(&verb) || crate::tools::WRITE_TOOLS.contains(&verb);
+        let timeout = if verb == "search_project" || SLOW_READS.contains(&verb) {
             self.search_timeout
-        } else if WRITE_VERBS.contains(&verb) {
+        } else if verb == "test_connection" || verb == "describe_table" {
+            DB_READ_TIMEOUT.max(self.base_timeout)
+        } else if card {
             // The editor holds the response until the user answers the
             // approval card (up to 120 s) — wait it out.
             self.approval_timeout
@@ -230,7 +257,12 @@ impl SocketEditor {
             *guard = Some(self.establish()?);
         }
         let conn = guard.as_mut().expect("connection just established");
-        match conn.round_trip(verb, args, timeout) {
+        let hook = if card {
+            self.progress.as_ref().map(|h| (h, self.progress_tick))
+        } else {
+            None
+        };
+        match conn.round_trip(verb, args, timeout, hook) {
             Ok(v) => Ok(v),
             Err(e) => {
                 *guard = None;
@@ -380,6 +412,7 @@ impl Conn {
         verb: &str,
         args: Value,
         timeout: Duration,
+        hook: Option<(&ProgressHook, Duration)>,
     ) -> Result<Value, TransportError> {
         use std::io::Write;
 
@@ -395,8 +428,63 @@ impl Conn {
             .write_all(line.as_bytes())
             .and_then(|()| writer.flush())
             .map_err(|e| TransportError(format!("editor connection lost while sending: {e}")))?;
-        let resp = read_line_from(&mut self.reader, &format!("the {verb} response"))?;
+        let what = format!("the {verb} response");
+        let resp = match hook {
+            Some((h, tick)) => read_line_ticking(&mut self.reader, &what, timeout, h, tick)?,
+            None => read_line_from(&mut self.reader, &what)?,
+        };
         parse_response(&resp, id, verb)
+    }
+}
+
+/// [`read_line_from`] in `PROGRESS_TICK` slices, calling `hook` between them,
+/// so a client sees the wait for a human instead of 130 s of silence. Bytes
+/// that arrive across slices are kept (read_until appends before it errors).
+#[cfg(unix)]
+fn read_line_ticking(
+    reader: &mut std::io::BufReader<std::os::unix::net::UnixStream>,
+    what: &str,
+    total: Duration,
+    hook: &ProgressHook,
+    tick: Duration,
+) -> Result<String, TransportError> {
+    use std::io::BufRead;
+
+    let start = std::time::Instant::now();
+    let mut buf = Vec::new();
+    loop {
+        let left = total.saturating_sub(start.elapsed());
+        if left.is_zero() {
+            return Err(TransportError(format!(
+                "timed out waiting for {what} from the editor"
+            )));
+        }
+        reader
+            .get_ref()
+            .set_read_timeout(Some(left.min(tick)))
+            .map_err(|e| TransportError(format!("cannot set socket timeout: {e}")))?;
+        match reader.read_until(b'\n', &mut buf) {
+            Ok(_) if buf.ends_with(b"\n") => {
+                return String::from_utf8(buf)
+                    .map_err(|_| TransportError(format!("{what} from the editor was not UTF-8")))
+            }
+            Ok(_) => {
+                return Err(TransportError(format!(
+                    "the editor closed the connection while waiting for {what}"
+                )))
+            }
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                hook(start.elapsed().as_secs_f64(), total.as_secs_f64());
+            }
+            Err(e) => {
+                return Err(TransportError(format!(
+                    "editor connection failed while waiting for {what}: {e}"
+                )))
+            }
+        }
     }
 }
 
@@ -607,6 +695,16 @@ impl Conn {
     /// Commands exactly one read and blocks up to `timeout` for its result.
     /// Any non-success marks the connection dead (see [`Conn::dead`]).
     fn recv_line(&mut self, timeout: Duration, what: &str) -> Result<String, TransportError> {
+        self.recv_line_ticking(timeout, what, None)
+    }
+
+    /// [`Conn::recv_line`] that wakes every `PROGRESS_TICK` to call `hook`.
+    fn recv_line_ticking(
+        &mut self,
+        timeout: Duration,
+        what: &str,
+        hook: Option<(&ProgressHook, Duration)>,
+    ) -> Result<String, TransportError> {
         use std::sync::mpsc::RecvTimeoutError;
 
         let closed = |what: &str| {
@@ -619,7 +717,23 @@ impl Conn {
             self.dead = true;
             return Err(closed(what));
         }
-        let out = match self.line_rx.recv_timeout(timeout) {
+        let start = std::time::Instant::now();
+        let first = loop {
+            let left = timeout.saturating_sub(start.elapsed());
+            let slice = match hook {
+                Some((_, tick)) => left.min(tick),
+                None => left,
+            };
+            match self.line_rx.recv_timeout(slice) {
+                Err(RecvTimeoutError::Timeout) if start.elapsed() < timeout => {
+                    if let Some((h, _)) = hook {
+                        h(start.elapsed().as_secs_f64(), timeout.as_secs_f64());
+                    }
+                }
+                other => break other,
+            }
+        };
+        let out = match first {
             Ok(LineMsg::Line(l)) => return Ok(l),
             Ok(LineMsg::Eof) | Err(RecvTimeoutError::Disconnected) => closed(what),
             Ok(LineMsg::Err(e)) => TransportError(format!(
@@ -674,6 +788,7 @@ impl Conn {
         verb: &str,
         args: Value,
         timeout: Duration,
+        hook: Option<(&ProgressHook, Duration)>,
     ) -> Result<Value, TransportError> {
         // Belt-and-braces on the invariant `call` already upholds: never write
         // to a connection whose worker may still be parked in ReadFile.
@@ -687,7 +802,7 @@ impl Conn {
         self.next_id += 1;
         let line = build_request(id, verb, &args)?;
         self.send_line(line.into_bytes(), timeout, verb)?;
-        let resp = self.recv_line(timeout, &format!("the {verb} response"))?;
+        let resp = self.recv_line_ticking(timeout, &format!("the {verb} response"), hook)?;
         parse_response(&resp, id, verb)
     }
 }
@@ -738,15 +853,27 @@ fn tab_info_from(v: &Value) -> Result<TabInfo, TransportError> {
 }
 
 impl EditorTransport for SocketEditor {
-    fn open_file(&mut self, path: &str) -> Result<usize, TransportError> {
-        // Wire result: {"opened":true,"tab_index":N}.
+    fn set_progress(&mut self, hook: Option<ProgressHook>) {
+        self.progress = hook;
+    }
+
+    fn call_verb(&mut self, verb: &str, args: Value) -> Result<Value, TransportError> {
+        self.call(verb, args)
+    }
+
+    fn open_file(&mut self, path: &str) -> Result<OpenedTab, TransportError> {
+        // Wire result: {"opened":true,"tab_index":N,"tab_id"?:M}.
         let v = self.call("open_file", json!({ "path": path }))?;
         if v.get("opened").and_then(Value::as_bool) != Some(true) {
             return Err(malformed("opened"));
         }
-        Ok(v.get("tab_index")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| malformed("tab_index"))? as usize)
+        Ok(OpenedTab {
+            index: v
+                .get("tab_index")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| malformed("tab_index"))? as usize,
+            id: v.get("tab_id").and_then(Value::as_i64),
+        })
     }
 
     fn list_open_tabs(&self) -> Result<Vec<TabInfo>, TransportError> {
@@ -819,6 +946,7 @@ impl EditorTransport for SocketEditor {
                         .get("line")
                         .and_then(Value::as_u64)
                         .ok_or_else(|| malformed("line"))? as usize,
+                    column: h.get("column").and_then(Value::as_u64).map(|c| c as usize),
                     text: required_str(h, "text")?,
                 })
             })
@@ -932,11 +1060,17 @@ impl EditorTransport for SocketEditor {
         self.call("set_language", args)
     }
 
-    fn compare_tabs(&mut self, index_a: usize, index_b: usize) -> Result<Value, TransportError> {
-        self.call(
-            "compare_tabs",
-            json!({ "index_a": index_a, "index_b": index_b }),
-        )
+    fn compare_tabs(&mut self, a: TabRef, b: TabRef) -> Result<Value, TransportError> {
+        // Wire keys: tab_id_a / index_a and tab_id_b / index_b.
+        let mut args = json!({});
+        for (tab, id_key, idx_key) in [(a, "tab_id_a", "index_a"), (b, "tab_id_b", "index_b")] {
+            if let Some(id) = tab.id {
+                args[id_key] = json!(id);
+            } else if let Some(i) = tab.index {
+                args[idx_key] = json!(i);
+            }
+        }
+        self.call("compare_tabs", args)
     }
 
     fn format_text(&self, kind: &str, text: &str) -> Result<Value, TransportError> {

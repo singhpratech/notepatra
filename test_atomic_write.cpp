@@ -247,6 +247,57 @@ private slots:
     }
 
     // ── 6. syncDirectoryOf never throws on a missing path ─────────────
+    // ── 6b. writeFileNoFollow never writes through a symlink ─────────
+    // QSaveFile resolves a symlink at its target name and replaces the file
+    // it points to; the no-follow writer replaces the link itself.
+    void writeFileNoFollowReplacesALinkInsteadOfFollowingIt() {
+#ifdef Q_OS_WIN
+        QSKIP("symlinks need privileges on Windows");
+#else
+        QTemporaryDir dir, outside;
+        const QString victim = outside.filePath("victim.txt");
+        {
+            QFile v(victim);
+            QVERIFY(v.open(QIODevice::WriteOnly));
+            v.write("VICTIM");
+        }
+        const QString target = dir.filePath("note.html.draft");
+        QVERIFY(QFile::link(victim, target));
+        QString err;
+        QVERIFY2(NpAtomic::writeFileNoFollow(target, "NEW", &err), qPrintable(err));
+        QFile v(victim);
+        QVERIFY(v.open(QIODevice::ReadOnly));
+        QCOMPARE(v.readAll(), QByteArray("VICTIM"));
+        QVERIFY(!QFileInfo(target).isSymLink());
+        QFile t(target);
+        QVERIFY(t.open(QIODevice::ReadOnly));
+        QCOMPARE(t.readAll(), QByteArray("NEW"));
+
+        // A dangling link: nothing is created at its target.
+        const QString dangling = outside.filePath("created.txt");
+        const QString target2 = dir.filePath("second.draft");
+        QVERIFY(QFile::link(dangling, target2));
+        QVERIFY2(NpAtomic::writeFileNoFollow(target2, "TWO", &err), qPrintable(err));
+        QVERIFY(!QFileInfo::exists(dangling));
+        QVERIFY(!QFileInfo(target2).isSymLink());
+
+        // A new file gets the permissions a plain QFile::open gives.
+        const QString plain = dir.filePath("plain.txt");
+        {
+            QFile p(plain);
+            QVERIFY(p.open(QIODevice::WriteOnly));
+        }
+        const QString fresh = dir.filePath("fresh.txt");
+        QVERIFY2(NpAtomic::writeFileNoFollow(fresh, "x", &err), qPrintable(err));
+        QCOMPARE(QFile::permissions(fresh), QFile::permissions(plain));
+
+        // No temp is left behind.
+        const QStringList left = QDir(dir.path()).entryList(
+            QStringList() << QStringLiteral("*.tmp"), QDir::Files | QDir::Hidden | QDir::System);
+        QVERIFY2(left.isEmpty(), qPrintable(left.join(QLatin1Char(' '))));
+#endif
+    }
+
     void syncDirectoryOfToleratesMissingPath() {
         NpAtomic::syncDirectoryOf(QStringLiteral("/nonexistent/path/x.md"));
         // Reaching here without crashing is the assertion.
@@ -347,6 +398,8 @@ private slots:
     }
 
     // ── 8. The four historically-broken call sites use the helper ─────
+    // (or QSaveFile, which renames over the target on commit and never
+    // removes it first; dbconnections.cpp moved to it for owner-only perms)
     void knownCallSitesUseTheHelper() {
         const QStringList mustUse = {
             QStringLiteral("src/notes_storage.cpp"),
@@ -361,10 +414,12 @@ private slots:
             QVERIFY2(f.open(QIODevice::ReadOnly | QIODevice::Text),
                      qPrintable("cannot read " + path));
             const QString body = QString::fromUtf8(f.readAll());
-            if (!body.contains(QStringLiteral("NpAtomic::replaceFile"))) missing << rel;
+            if (!body.contains(QStringLiteral("NpAtomic::replaceFile("))
+                && !body.contains(QStringLiteral("NpAtomic::writeFileNoFollow("))
+                && !body.contains(QStringLiteral("QSaveFile f("))) missing << rel;
         }
         QVERIFY2(missing.isEmpty(),
-                 qPrintable("must route the save through NpAtomic::replaceFile: " +
+                 qPrintable("must route the save through NpAtomic::replaceFile / writeFileNoFollow or QSaveFile: " +
                             missing.join(QStringLiteral(", "))));
     }
 };

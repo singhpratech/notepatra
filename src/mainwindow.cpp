@@ -14,6 +14,13 @@
 #include "ai_interaction_log.h"
 #include "fontpack_dialog.h"
 #include "mcp_bridge.h"
+#include "atomic_write.h"
+#include "functionlist.h"
+#include "passwordgen_core.h"
+#include "diagram/mermaid_import.h"
+#include <QSaveFile>
+#include <QCryptographicHash>
+#include <QTemporaryFile>
 #include <QPointer>
 #include <QScopeGuard>
 #include <numeric>
@@ -251,10 +258,12 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <QJsonArray>
 #include <QTimer>
 #include "compare.h"
+#include "http_editor_support.h"
 #include "merge_helper_widget.h"
 #include "hexeditor.h"
 #include "gitgutter.h"
 #include "fmtpanel.h"
+#include "formatter_tools.h"
 #include "ollama.h"
 #include "ollamastatus.h"
 #include "notes.h"
@@ -985,7 +994,7 @@ ul { margin-top: 4px; }
 
 <h3>REST and Git</h3>
 <ul>
-<li><b>REST Client:</b> run selected HTTP requests from editor content, especially <code>.http</code> style request blocks.</li>
+<li><b>REST Client:</b> in a <code>.http</code> / <code>.rest</code> file, <code>Ctrl+Alt+R</code> (Tools &gt; Send Request) sends the request under the caret; <code>{{variables}}</code>, environments from <code>http-client.env.json</code>, Import cURL / Copy as cURL and a request history.</li>
 <li><b>Git Integration:</b> inspect repository status, changed files, and work with repository context without leaving the editor.</li>
 <li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
 </ul>
@@ -1062,7 +1071,7 @@ ul { margin-top: 4px; }
 <ul>
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
 <li><code>Ctrl+F</code> find, <code>%4</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
-<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Alt+R</code> Send Request (.http), <code>Ctrl+Shift+E</code> Workspace</li>
 <li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
 <li><code>%6</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
@@ -1493,6 +1502,19 @@ MainWindow::MainWindow(bool standaloneNoSession)
         for (int i = 0; i < m_tabs->count(); i++) {
             auto *ed = m_tabs->editorAt(i);
             if (ed && ed->filePath() == canonical) {
+                // Unsaved edits: never reload over them — hand off to the
+                // watcher's "File Changed" prompt (keep / reload is the user's call).
+                if (ed->isModified()) {
+                    if (m_fileWatcher) {
+                        m_fileTimestamps.remove(canonical);
+                        if (!m_fileWatcher->files().contains(canonical))
+                            m_fileWatcher->addPath(canonical);
+                        QTimer::singleShot(0, this, [this, canonical]() {
+                            onWatchedFileChanged(canonical);
+                        });
+                    }
+                    return;
+                }
                 // Already open — silent reload. Update the watcher's
                 // timestamp first so its fileChanged dialog doesn't fire.
                 if (m_fileWatcher && m_fileTimestamps.contains(canonical))
@@ -1799,14 +1821,26 @@ MainWindow::MainWindow(bool standaloneNoSession)
         }
     }
 
-    // Noter reminders are app-lifetime. One stat() decides — users who never
-    // opened Noter pay nothing and get zero Documents/ side effects (the
-    // service ctor path would mkpath .notepatra). The 1.5s delay lets the
-    // window paint before a catch-up digest can pop. If the user opens Noter
-    // within the window, ensureNoterTab ran the service first and this
-    // no-ops via the idempotence guard.
+    // Noter reminders are app-lifetime. The app's own config decides, never a
+    // probe of ~/Documents: on macOS even a stat there raises the Documents
+    // permission prompt and blocks the GUI thread until it is answered. Runs
+    // from the event loop after the window is shown, so the window paints
+    // and the MCP bridge greets before any blocking open. Profiles older
+    // than the flag (-1) probe the DB path, at most once per launch, and
+    // record only a FOUND DB: a miss may be a Documents folder that is
+    // blocked or not yet synced this launch, and saving it as 0 would turn
+    // an existing user's reminders off until they next open Noter.
     QTimer::singleShot(1500, this, [this]() {
-        if (QFileInfo::exists(NotesPanel::todosDbPath()))
+        auto &cfg = Config::instance();
+        static bool probedThisLaunch = false;
+        if (cfg.noterInUse < 0 && !probedThisLaunch) {
+            probedThisLaunch = true;
+            if (QFileInfo::exists(NotesPanel::todosDbPath())) {
+                cfg.noterInUse = 1;
+                cfg.save();
+            }
+        }
+        if (cfg.noterInUse == 1)
             ensureNoterReminderService();
     });
 
@@ -1851,9 +1885,28 @@ MainWindow::MainWindow(bool standaloneNoSession)
             auto *ed = m_tabs->editorAt(i);
             return ed ? ed->filePath() : QString();
         };
-        host.tabModified = [this](int i) {
-            auto *ed = m_tabs->editorAt(i);
-            return ed && ed->isModified();
+        // R7: unsaved work by tab TYPE: 1 = modified, 0 = nothing to lose,
+        // -1 = this kind of tab cannot say (a terminal, a tool panel), so
+        // close_tab must ask the human instead of assuming "clean".
+        auto dirtyState = [this](int i) -> int {
+            QWidget *w = m_tabs->widget(i);
+            if (!w) return 0;
+            if (Editor *ed = m_tabs->editorAt(i)) return ed->isModified() ? 1 : 0;
+            if (auto *de = qobject_cast<DiagramEditor *>(w)) return de->isModified() ? 1 : 0;
+            if (auto *np = qobject_cast<NotesPanel *>(w)) return np->hasUnsavedChanges() ? 1 : 0;
+            if (qobject_cast<WelcomeWidget *>(w)) return 0;
+            return -1;
+        };
+        host.tabModified = [dirtyState](int i) { return dirtyState(i) == 1; };
+        host.tabReportsModified = [dirtyState](int i) { return dirtyState(i) >= 0; };
+        // R18: changes whenever the tab's text does; the bridge compares it
+        // at Approve so typing during the wait is never discarded unseen.
+        host.tabRevision = [this](int i) -> QByteArray {
+            QString text;
+            if (Editor *ed = m_tabs->editorAt(i)) text = ed->text();
+            else if (auto *de = qobject_cast<DiagramEditor *>(m_tabs->widget(i))) text = de->npdText();
+            else return QByteArray();
+            return QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256);
         };
         host.tabText = [this](int i) {
             auto *ed = m_tabs->editorAt(i);
@@ -1913,6 +1966,32 @@ MainWindow::MainWindow(bool standaloneNoSession)
         host.tabEncoding = [this](int i) {
             auto *ed = m_tabs->editorAt(i);
             return ed ? ed->encoding() : QString();
+        };
+        // v0.1.133: the extra get_status fields, read from the same Editor
+        // state the status bar shows.
+        host.tabState = [this](int i) -> QJsonObject {
+            QJsonObject o;
+            auto *ed = m_tabs->editorAt(i);
+            if (!ed) return o;
+            o[QStringLiteral("eol")] = ed->eolModeName();
+            o[QStringLiteral("line_count")] = ed->lines();
+            o[QStringLiteral("length")] = ed->length();
+            o[QStringLiteral("read_only")] = ed->isReadOnly();
+            o[QStringLiteral("word_wrap")] =
+                ed->wrapMode() != QsciScintilla::WrapNone;
+            if (ed->hasSelectedText()) {
+                int l1 = 0, c1 = 0, l2 = 0, c2 = 0;
+                ed->getSelection(&l1, &c1, &l2, &c2);
+                QJsonObject sel;
+                sel[QStringLiteral("start_line")] = l1 + 1;
+                sel[QStringLiteral("start_col")] = c1 + 1;
+                sel[QStringLiteral("end_line")] = l2 + 1;
+                sel[QStringLiteral("end_col")] = c2 + 1;
+                o[QStringLiteral("selection")] = sel;
+            } else {
+                o[QStringLiteral("selection")] = QJsonValue();
+            }
+            return o;
         };
         host.cursorPosition = [this](int *line, int *col) {
             int l = 0, c = 0;
@@ -2023,19 +2102,27 @@ MainWindow::MainWindow(bool standaloneNoSession)
                     // fabricated data the user never had. The tool's own
                     // description has always said "Fails on invalid JSON";
                     // this makes that true. The panel keeps its fixer.
-                    const QString parseErr = RustCore::jsonParseError(text);
-                    if (!parseErr.isEmpty()) {
-                        if (errorOut)
-                            *errorOut =
-                                QStringLiteral("invalid JSON: %1").arg(parseErr);
+                    // The formatter's own verdict, verbatim: "not valid JSON:
+                    // line L, column C: ..." or a size limit (a valid file over
+                    // the limit is never called invalid, never a silent no-op).
+                    const QString refusal = RustCore::jsonFormatRefusal(text, 4, false);
+                    if (!refusal.isEmpty()) {
+                        if (errorOut) *errorOut = refusal;
                         return QString();
                     }
                     out = RustCore::formatJson(text);
                 }
                 else if (kind == QLatin1String("sql"))
                     out = RustCore::formatSql(text);
-                else if (kind == QLatin1String("html"))
-                    out = RustCore::formatHtml(text);
+                else if (kind == QLatin1String("html")) {
+                    QString msg;
+                    out = RustCore::formatHtml(text, 2, &msg);
+                    if (!msg.isEmpty()) {
+                        if (errorOut)
+                            *errorOut = QStringLiteral("HTML formatter declined: %1").arg(msg);
+                        return QString();
+                    }
+                }
             } catch (const std::exception &e) {
                 if (errorOut)
                     *errorOut = QString::fromUtf8(e.what());
@@ -2148,13 +2235,17 @@ MainWindow::MainWindow(bool standaloneNoSession)
         //    + runQuery, NotesStorage/NotesTodos, DiagramView export). ──
         // READ: Noter reminders (unbucketed; the bridge buckets them).
         host.reminders = [this]() -> QJsonArray {
-            ensureNoterReminderService(); // idempotent; guarantees m_noterTodos
             QJsonArray arr;
+            // A read must not create the Noter DB for someone who never used it.
+            if (!m_noterReminderEngine && Config::instance().noterInUse != 1)
+                return arr;
+            ensureNoterReminderService(); // idempotent; guarantees m_noterTodos
             if (!m_noterTodos) return arr;
             const QVector<TodoRow> rows = m_noterTodos->allScheduledReminders();
             for (const TodoRow &r : rows) {
                 if (!r.reminderAt.isValid()) continue;
                 QJsonObject o;
+                o[QStringLiteral("id")] = r.id; // delete/snooze/dismiss_reminder
                 o[QStringLiteral("note_file")] =
                     QDir::toNativeSeparators(r.sourceFile);
                 o[QStringLiteral("note_title")] =
@@ -2265,7 +2356,6 @@ MainWindow::MainWindow(bool standaloneNoSession)
             DbConnections::Record rec;
             QString engine;
             if (!csvPath.isEmpty()) {
-#ifdef NOTEPATRA_HAVE_DUCKDB
                 // Confine csv_path to the workspace root the git verbs use
                 // (FileExplorer::rootPath), via the SAME resolveSafePath helper:
                 // canonicalize + symlink-escape rejection + credential deny-list.
@@ -2285,6 +2375,7 @@ MainWindow::MainWindow(bool standaloneNoSession)
                     if (err) *err = QStringLiteral("csv_path is not an allowed file");
                     return QJsonObject();
                 }
+#ifdef NOTEPATRA_HAVE_DUCKDB
                 rec.driver = QStringLiteral("DUCKDB");
                 rec.database = csvCanon;
                 // Engine-level filesystem sandbox — the AUTHORITATIVE control
@@ -2299,10 +2390,9 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 rec.sandboxFilesystem = true;
                 engine = QStringLiteral("duckdb");
 #else
-                if (err)
-                    *err = QStringLiteral(
-                        "CSV queries require the Full edition (DuckDB)");
-                return QJsonObject();
+                // v0.1.133: Lite answers from an in-memory SQLite copy (table
+                // `data`, also `csv`); the read-only gate above already ran.
+                return mcpQueryCsvSqlite(csvCanon, sql, err);
 #endif
             } else {
                 rec.driver = QStringLiteral("QSQLITE");
@@ -2439,11 +2529,48 @@ MainWindow::MainWindow(bool standaloneNoSession)
             DiagramView view; // off-screen; same route as npd_render_qt.cpp
             view.resize(1000, 800);
             view.setSource(de->npdText());
-            if (!view.exportTo(format, path)) {
-                if (err) *err = QStringLiteral("export failed");
+            // v0.1.133 (D13): render to a sibling temp file, then replace the
+            // target in one step; the real DiagramView error is reported.
+            QTemporaryFile tmp(path + QStringLiteral(".npexport-XXXXXX"));
+            tmp.setAutoRemove(true);
+            if (!tmp.open()) {
+                if (err) *err = QStringLiteral("could not create a temporary "
+                                               "file next to %1")
+                                    .arg(QDir::toNativeSeparators(path));
+                return false;
+            }
+            const QString tmpPath = tmp.fileName();
+            tmp.close();
+            // Empty placeholder only reserved the name; the PDF writer judges
+            // success by existence, so let the exporter create it afresh.
+            QFile::remove(tmpPath);
+            QString viewErr;
+            QObject::connect(&view, &DiagramView::renderError, &view,
+                             [&viewErr](const QString &m) { viewErr = m; });
+            if (!view.exportTo(format, tmpPath)) {
+                if (err)
+                    *err = viewErr.isEmpty()
+                               ? QStringLiteral("could not export to %1")
+                                     .arg(QDir::toNativeSeparators(path))
+                               : QString(viewErr).replace(tmpPath, path);
+                return false;
+            }
+            {
+                QFile f(tmpPath);
+                if (f.open(QIODevice::ReadWrite)) NpAtomic::syncData(f);
+            }
+            QString replaceErr;
+            if (!NpAtomic::replaceFile(tmpPath, path, &replaceErr)) {
+                if (err) *err = replaceErr;
                 return false;
             }
             return true;
+        };
+        host.diagramExportFormats = [] {
+            QStringList out;
+            for (const QString &f : DiagramView::supportedExportFormats())
+                out << f.toLower();
+            return out;
         };
         // ACT: create a Diagram tab via the same helper the menu uses.
         host.createDiagram = [this](const QString &source, const QString &title) {
@@ -2656,19 +2783,672 @@ MainWindow::MainWindow(bool standaloneNoSession)
                     *err = QStringLiteral("chart export produced no data");
                 return false;
             }
-            QFile f(path);
-            if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                if (err) *err = QStringLiteral("could not write: %1")
-                                    .arg(QDir::toNativeSeparators(path));
+            // v0.1.133 (D13): temp-then-replace; a failed write leaves the
+            // old file intact instead of truncated.
+            QSaveFile f(path);
+            if (!f.open(QIODevice::WriteOnly) ||
+                f.write(bytes) != bytes.size() || !f.commit()) {
+                if (err) *err = QStringLiteral("could not write: %1 (%2)")
+                                    .arg(QDir::toNativeSeparators(path),
+                                         f.errorString());
                 return false;
             }
-            f.write(bytes);
-            f.close();
             return true;
         };
 #endif
+        // ── v0.1.133: tabs, editing, view, pure tools. Every op calls the
+        //    function the menu calls; nothing here opens a dialog. ──
+        host.tabAction = [this, dirtyState](int i, const QString &op, const QJsonObject &a,
+                                            QString *err) -> QJsonObject {
+            QJsonObject r;
+            QWidget *w = m_tabs->widget(i);
+            auto *ed = m_tabs->editorAt(i);
+            if (!w) {
+                *err = QStringLiteral("no tab at index %1").arg(i);
+                return r;
+            }
+            if (op == QLatin1String("activate_tab")) {
+                m_tabs->setCurrentIndex(i);
+                r[QStringLiteral("active")] = true;
+            } else if (op == QLatin1String("set_title")) {
+                m_tabs->setTabText(i, a.value(QLatin1String("title")).toString());
+            } else if (op == QLatin1String("close_tab")) {
+                // The card-less close: only a tab that provably loses nothing.
+                // An open Noter note is written first (as closing it would).
+                if (auto *np = qobject_cast<NotesPanel *>(w)) np->saveCurrentNote();
+                if (const int d = dirtyState(i); d != 0) { // the bridge checked; never prompt
+                    *err = d > 0 ? QStringLiteral("tab has unsaved changes")
+                                 : QStringLiteral("this kind of tab cannot report unsaved "
+                                                  "work; closing it needs approval");
+                    return r;
+                }
+                closeTab(i);
+            } else if (!ed && op != QLatin1String("set_preview")) {
+                *err = QStringLiteral("tab %1 is not a text editor").arg(i);
+            } else if (op == QLatin1String("set_read_only")) {
+                ed->setReadOnly(a.value(QLatin1String("on")).toBool());
+                r[QStringLiteral("read_only")] = ed->isReadOnly();
+            } else if (op == QLatin1String("bookmarks")) {
+                const QString act = a.value(QLatin1String("action")).toString();
+                if (act == QLatin1String("toggle")) {
+                    const int l = a.value(QLatin1String("line")).toInt() - 1;
+                    if (l < 0 || l >= ed->lines()) {
+                        *err = QStringLiteral("line %1 is past the end (%2 lines)")
+                                   .arg(l + 1).arg(ed->lines());
+                        return r;
+                    }
+                    // Search > Bookmarks > Toggle Bookmark, at a given line.
+                    if (ed->markersAtLine(l) & 1) ed->markerDelete(l, 0);
+                    else ed->markerAdd(l, 0);
+                    r[QStringLiteral("line")] = l + 1;
+                    r[QStringLiteral("bookmarked")] = bool(ed->markersAtLine(l) & 1);
+                } else if (act == QLatin1String("clear")) {
+                    ed->markerDeleteAll(0); // Clear All Bookmarks
+                }
+                QJsonArray lines;
+                for (int l = ed->markerFindNext(0, 1); l >= 0;
+                     l = ed->markerFindNext(l + 1, 1))
+                    lines.append(l + 1);
+                r[QStringLiteral("lines")] = lines;
+            } else if (op == QLatin1String("fold")) {
+                // View > Fold All toggles; MCP asks for a direction, so fold
+                // contracts explicitly and unfold is the menu's clearFolds().
+                if (a.value(QLatin1String("action")).toString() == QLatin1String("fold_all"))
+                    ed->SendScintilla(QsciScintillaBase::SCI_FOLDALL,
+                                      QsciScintillaBase::SC_FOLDACTION_CONTRACT);
+                else
+                    ed->clearFolds();
+                r[QStringLiteral("action")] = a.value(QLatin1String("action"));
+            } else if (op == QLatin1String("set_preview")) {
+                if (!m_previewAct) {
+                    *err = QStringLiteral("no preview pane in this window");
+                    return r;
+                }
+                m_tabs->setCurrentIndex(i);
+                const bool on = a.value(QLatin1String("on")).toBool();
+                if (m_previewAct->isChecked() != on) m_previewAct->setChecked(on);
+                else if (on && m_previewPane) m_previewPane->setSource(currentEditor());
+                r[QStringLiteral("on")] = m_previewAct->isChecked();
+            } else if (op == QLatin1String("compare_with_file")) {
+                // Tools > Compare with File..., with the path given instead
+                // of picked (the bridge has already deny-checked it).
+                const QString path = a.value(QLatin1String("path")).toString();
+                QFile file(path);
+                if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                    *err = QStringLiteral("could not read %1")
+                               .arg(QDir::toNativeSeparators(path));
+                    return r;
+                }
+                QString rightText = QTextStream(&file).readAll();
+                QString leftName = ed->filePath().isEmpty()
+                                       ? QStringLiteral("Current")
+                                       : QFileInfo(ed->filePath()).fileName();
+                auto *dlg = new CompareDialog(ed->text(), leftName, rightText,
+                                              QFileInfo(path).fileName(), this);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                dlg->show();
+                r[QStringLiteral("opened")] = true;
+            } else {
+                *err = QStringLiteral("unknown tab action: %1").arg(op);
+            }
+            return r;
+        };
+        host.editTab = [this](int i, const QString &op, const QJsonObject &a,
+                              QString *err) -> QJsonObject {
+            QJsonObject r;
+            auto *ed = m_tabs->editorAt(i);
+            if (op == QLatin1String("close_tab") && m_tabs->widget(i)) {
+                // Any tab type: the card carried the consent (unsaved edits,
+                // or a tab that cannot report them). A Diagram tab closes
+                // without a prompt; a Noter panel writes its note on close.
+                if (ed) ed->setModified(false);
+                closeTab(i);
+                return r;
+            }
+            if (!ed) {
+                *err = QStringLiteral("tab %1 is not a text editor").arg(i);
+                return r;
+            }
+            const auto replaceWhole = [ed](const QString &out) {
+                ed->beginUndoAction();
+                ed->selectAll();
+                ed->replaceSelectedText(out);
+                ed->endUndoAction();
+            };
+            // One transform over the selection or the whole document, one
+            // undo step; changed:false when the text came out identical.
+            const auto transform = [ed, err, replaceWhole](
+                                       const QString &scope,
+                                       const std::function<QString(const QString &)> &fn)
+                -> QJsonObject {
+                QJsonObject o;
+                if (scope == QLatin1String("selection")) {
+                    if (!ed->hasSelectedText()) {
+                        *err = QStringLiteral("no selection");
+                        return o;
+                    }
+                    const QString in = ed->selectedText();
+                    const QString out = fn(in);
+                    o[QStringLiteral("changed")] = out != in;
+                    if (out != in) {
+                        ed->beginUndoAction();
+                        ed->replaceSelectedText(out);
+                        ed->endUndoAction();
+                    }
+                } else {
+                    const QString in = ed->text();
+                    const QString out = fn(in);
+                    o[QStringLiteral("changed")] = out != in;
+                    if (out != in) replaceWhole(out);
+                }
+                return o;
+            };
+            if (op == QLatin1String("undo") || op == QLatin1String("redo")) {
+                const bool undo = op == QLatin1String("undo");
+                const int steps = a.value(QLatin1String("steps")).toInt(1);
+                int done = 0;
+                for (; done < steps; ++done) {
+                    if (undo ? !ed->isUndoAvailable() : !ed->isRedoAvailable()) break;
+                    if (undo) ed->undo(); else ed->redo();
+                }
+                if (done == 0) *err = QStringLiteral("nothing to %1").arg(op);
+                r[QStringLiteral("steps")] = done;
+            } else if (op == QLatin1String("transform_lines")) {
+                // Edit > Line Operations / Blank Operations: same RustCore
+                // call, same mode number, per menu item.
+                const QString o = a.value(QLatin1String("op")).toString();
+                const int tw = ed->tabWidth();
+                std::function<QString(const QString &)> fn;
+                static const QStringList sorts = {
+                    QStringLiteral("sort_asc"),     QStringLiteral("sort_desc"),
+                    QStringLiteral("sort_int_asc"), QStringLiteral("sort_int_desc"),
+                    QStringLiteral("sort_len_asc"), QStringLiteral("sort_len_desc")};
+                if (sorts.contains(o)) {
+                    const int m = sorts.indexOf(o);
+                    fn = [m](const QString &t) { return RustCore::sortLines(t, m); };
+                } else if (o == QLatin1String("dedupe")) {
+                    fn = [](const QString &t) { return RustCore::removeDuplicates(t, 0); };
+                } else if (o == QLatin1String("dedupe_consecutive")) {
+                    fn = [](const QString &t) { return RustCore::removeDuplicates(t, 1); };
+                } else if (o == QLatin1String("remove_empty")) {
+                    fn = [](const QString &t) { return RustCore::removeEmptyLines(t, 0); };
+                } else if (o == QLatin1String("remove_blank")) {
+                    fn = [](const QString &t) { return RustCore::removeEmptyLines(t, 1); };
+                } else if (o == QLatin1String("join")) {
+                    fn = [](const QString &t) { return RustCore::joinLines(t, " "); };
+                } else if (o == QLatin1String("reverse")) {
+                    fn = [](const QString &t) { return RustCore::reverseLines(t); };
+                } else if (o == QLatin1String("trim_trailing")) {
+                    fn = [](const QString &t) { return RustCore::trimLines(t, 0); };
+                } else if (o == QLatin1String("trim_leading")) {
+                    fn = [](const QString &t) { return RustCore::trimLines(t, 1); };
+                } else if (o == QLatin1String("trim_both")) {
+                    fn = [](const QString &t) { return RustCore::trimLines(t, 2); };
+                } else if (o == QLatin1String("tab_to_space")) {
+                    fn = [tw](const QString &t) { return RustCore::convertWhitespace(t, tw, 0); };
+                } else if (o == QLatin1String("space_to_tab")) {
+                    fn = [tw](const QString &t) { return RustCore::convertWhitespace(t, tw, 1); };
+                } else {
+                    *err = QStringLiteral("unknown op: %1").arg(o);
+                    return r;
+                }
+                r = transform(a.value(QLatin1String("scope")).toString(), fn);
+            } else if (op == QLatin1String("convert_case")) {
+                // Edit > Convert Case to: modes 0..4 in menu order.
+                static const QStringList modes = {
+                    QStringLiteral("upper"), QStringLiteral("lower"),
+                    QStringLiteral("proper"), QStringLiteral("sentence"),
+                    QStringLiteral("invert")};
+                const int m = modes.indexOf(a.value(QLatin1String("mode")).toString());
+                if (m < 0) {
+                    *err = QStringLiteral("unknown mode");
+                    return r;
+                }
+                const QString scope = a.value(QLatin1String("scope")).toString();
+                r = transform(scope.isEmpty() ? QStringLiteral("selection") : scope,
+                              [m](const QString &t) { return RustCore::convertCase(t, m); });
+            } else if (op == QLatin1String("comment_lines")) {
+                const int from = a.value(QLatin1String("start_line")).toInt() - 1;
+                const int to = a.value(QLatin1String("end_line")).toInt() - 1;
+                if (from < 0 || to < from || to >= ed->lines()) {
+                    *err = QStringLiteral("lines %1-%2 are outside the document (%3 lines)")
+                               .arg(from + 1).arg(to + 1).arg(ed->lines());
+                    return r;
+                }
+                const bool block = a.value(QLatin1String("kind")).toString() ==
+                                   QLatin1String("block");
+                const Editor::CommentSyntax cs = Editor::commentSyntaxFor(ed->language());
+                if (block ? (cs.blockOpen.isEmpty() || cs.blockClose.isEmpty())
+                          : cs.line.isEmpty()) {
+                    *err = QStringLiteral("%1 has no %2 comment syntax")
+                               .arg(ed->language(),
+                                    block ? QStringLiteral("block") : QStringLiteral("line"));
+                    return r;
+                }
+                // Select the lines, then the Comment/Uncomment menu item.
+                QString last = ed->text(to);
+                while (last.endsWith(QLatin1Char('\n')) || last.endsWith(QLatin1Char('\r')))
+                    last.chop(1);
+                const QString before = ed->text();
+                ed->setSelection(from, 0, to, last.size());
+                const QString action = a.value(QLatin1String("action")).toString();
+                if (action == QLatin1String("comment")) block ? ed->commentBlock() : ed->commentLine();
+                else if (action == QLatin1String("uncomment")) block ? ed->uncommentBlock() : ed->uncommentLine();
+                else block ? ed->toggleBlockComment() : ed->toggleComment();
+                r[QStringLiteral("changed")] = ed->text() != before;
+            } else if (op == QLatin1String("line_edit")) {
+                const int l = a.value(QLatin1String("line")).toInt() - 1;
+                const QString o = a.value(QLatin1String("op")).toString();
+                if (l < 0 || l >= ed->lines()) {
+                    *err = QStringLiteral("line %1 is past the end (%2 lines)")
+                               .arg(l + 1).arg(ed->lines());
+                    return r;
+                }
+                if ((o == QLatin1String("move_up") && l == 0) ||
+                    (o == QLatin1String("move_down") && l >= ed->lines() - 1)) {
+                    *err = QStringLiteral("line %1 cannot move %2").arg(l + 1)
+                               .arg(o == QLatin1String("move_up") ? QStringLiteral("up")
+                                                                  : QStringLiteral("down"));
+                    return r;
+                }
+                // Edit > Line Operations, at the given line.
+                ed->setCursorPosition(l, 0);
+                ed->beginUndoAction();
+                if (o == QLatin1String("duplicate")) ed->duplicateLine();
+                else if (o == QLatin1String("delete")) ed->deleteLine();
+                else if (o == QLatin1String("move_up")) ed->moveLineUp();
+                else ed->moveLineDown();
+                ed->endUndoAction();
+                r[QStringLiteral("line_count")] = ed->lines();
+            } else if (op == QLatin1String("set_eol")) {
+                // Edit > EOL Conversion (the menu always converts).
+                const QString eol = a.value(QLatin1String("eol")).toString();
+                const QString name = eol == QLatin1String("crlf") ? QStringLiteral("Windows (CR LF)")
+                                     : eol == QLatin1String("cr") ? QStringLiteral("Macintosh (CR)")
+                                                                  : QStringLiteral("Unix (LF)");
+                ed->beginUndoAction();
+                ed->setEolModeByName(name, a.value(QLatin1String("convert")).toBool(true));
+                ed->endUndoAction();
+                if (m_tabs->currentIndex() == i) m_statusBar->updateEol(name);
+                r[QStringLiteral("eol")] = ed->eolModeName();
+            } else if (op == QLatin1String("set_encoding")) {
+                const QString enc = a.value(QLatin1String("encoding")).toString();
+                if (a.value(QLatin1String("mode")).toString() == QLatin1String("reinterpret")) {
+                    // Encoding > Reinterpret bytes as (the bridge's card
+                    // carried the discard consent the menu asks for).
+                    if (ed->isModified() && !a.value(QLatin1String("discard_unsaved")).toBool()) {
+                        *err = QStringLiteral("tab has unsaved changes");
+                        return r;
+                    }
+                    if (!ed->reloadWithEncoding(enc, /*force=*/true)) {
+                        *err = QStringLiteral("could not reload the file as %1").arg(enc);
+                        return r;
+                    }
+                } else {
+                    ed->convertEncoding(enc); // Encoding > Convert to
+                }
+                if (m_tabs->currentIndex() == i) m_statusBar->updateEncoding(enc);
+                r[QStringLiteral("encoding")] = ed->encoding();
+            } else if (op == QLatin1String("reload_tab")) {
+                QString lerr; // File > Reload from Disk
+                if (ed->filePath().isEmpty() || !ed->loadFile(ed->filePath(), &lerr)) {
+                    *err = lerr.isEmpty() ? QStringLiteral("could not reload") : lerr;
+                    return r;
+                }
+                updateTabTitle(i);
+                r[QStringLiteral("reloaded")] = true;
+            } else if (op == QLatin1String("rename_file")) {
+                QString rerr;
+                switch (renameTabFile(i, a.value(QLatin1String("new_name")).toString(), &rerr)) {
+                case RenameResult::Renamed:
+                case RenameResult::Unchanged:
+                    r[QStringLiteral("path")] = QDir::toNativeSeparators(ed->filePath());
+                    break;
+                case RenameResult::InvalidName:
+                    *err = QStringLiteral("not a valid file name");
+                    break;
+                case RenameResult::TargetExists:
+                    *err = QStringLiteral("a file with that name already exists; nothing was renamed");
+                    break;
+                case RenameResult::NoFile:
+                    *err = QStringLiteral("the tab has no file on disk");
+                    break;
+                default:
+                    *err = rerr.isEmpty() ? QStringLiteral("rename failed") : rerr;
+                }
+            } else if (op == QLatin1String("apply_edit")) {
+                // Search > Replace: the dialog's Replace All engine.
+                QString find = a.value(QLatin1String("find")).toString();
+                QString repl = a.value(QLatin1String("replace")).toString();
+                bool isRegex = a.value(QLatin1String("regex")).toBool();
+                const bool cs = a.value(QLatin1String("match_case")).toBool(true);
+                const bool ww = a.value(QLatin1String("whole_word")).toBool();
+                const QString text = ed->text();
+                if (isRegex && !QRegularExpression(find).isValid()) {
+                    *err = QStringLiteral("invalid regex: %1")
+                               .arg(QRegularExpression(find).errorString());
+                    return r;
+                }
+                QString pattern = find;
+                QString replAll = repl;
+                bool patRegex = isRegex;
+                if (ww) {
+                    pattern = QStringLiteral("\\b(?:%1)\\b")
+                                  .arg(isRegex ? find : QRegularExpression::escape(find));
+                    // Literal promoted to regex: keep the caller's dollars literal.
+                    if (!isRegex) replAll.replace(QLatin1String("$"), QLatin1String("$$"));
+                    patRegex = true;
+                }
+                const int count = int(RustCore::countMatches(text, pattern, patRegex, cs));
+                r[QStringLiteral("count")] = count;
+                if (a.value(QLatin1String("dry_run")).toBool()) return r;
+                if (count == 0) {
+                    *err = QStringLiteral("no match");
+                    return r;
+                }
+                if (a.value(QLatin1String("all")).toBool()) {
+                    replaceWhole(RustCore::replaceAll(text, pattern, replAll, patRegex, cs));
+                    return r;
+                }
+                // First match only: the byte range findAll reports, replaced
+                // in place (Scintilla positions are UTF-8 bytes).
+                const auto hits = RustCore::findAll(text, find, isRegex, cs, ww);
+                if (hits.isEmpty()) {
+                    *err = QStringLiteral("no match");
+                    return r;
+                }
+                const QByteArray all8 = text.toUtf8();
+                const QByteArray hit8 = all8.mid(int(hits[0].start), int(hits[0].length));
+                QString out = repl;
+                if (isRegex) {
+                    const QString hit = QString::fromUtf8(hit8);
+                    const auto self = RustCore::findAll(hit, find, true, cs, ww);
+                    if (self.isEmpty() || self[0].start != 0 ||
+                        self[0].length != size_t(hit8.size())) {
+                        *err = QStringLiteral("the first match cannot be replaced on "
+                                              "its own unambiguously; use all:true");
+                        r[QStringLiteral("count")] = 0;
+                        return r;
+                    }
+                    out = RustCore::replaceAll(hit, find, repl, true, cs);
+                }
+                const QByteArray out8 = out.toUtf8();
+                ed->beginUndoAction();
+                ed->SendScintilla(QsciScintillaBase::SCI_SETTARGETRANGE,
+                                  (unsigned long)hits[0].start,
+                                  (long)(hits[0].start + hits[0].length));
+                ed->SendScintilla(QsciScintillaBase::SCI_REPLACETARGET,
+                                  (uintptr_t)out8.size(), out8.constData());
+                ed->endUndoAction();
+                r[QStringLiteral("count")] = 1;
+            } else {
+                *err = QStringLiteral("unknown edit: %1").arg(op);
+            }
+            return r;
+        };
+        host.appAction = [this](const QString &op, const QJsonObject &a,
+                                QString *err) -> QJsonObject {
+            QJsonObject r;
+            const auto action = [this](const QString &name) {
+                return findChild<QAction *>(name);
+            };
+            if (op == QLatin1String("set_theme")) {
+                // Settings > Theme: trigger the same checkable action.
+                const QString t = a.value(QLatin1String("theme")).toString();
+                QAction *act = action(QStringLiteral("theme") + t);
+                if (!act) {
+                    *err = QStringLiteral("no theme action for %1").arg(t);
+                    return r;
+                }
+                act->trigger();
+                r[QStringLiteral("theme")] = Config::instance().theme;
+                return r;
+            }
+            // View menu toggles, by the objectName the menu already carries.
+            static const struct { const char *key; const char *act; } kToggles[] = {
+                {"word_wrap", "viewWordWrap"},
+                {"show_whitespace", "viewShowWhitespace"},
+                {"show_eol", "viewShowEol"},
+                {"indent_guides", "viewShowIndentGuide"}};
+            for (const auto &t : kToggles) {
+                if (!a.contains(QLatin1String(t.key))) continue;
+                QAction *act = action(QLatin1String(t.act));
+                if (!act) {
+                    *err = QStringLiteral("no View action %1").arg(QLatin1String(t.act));
+                    return r;
+                }
+                act->setChecked(a.value(QLatin1String(t.key)).toBool());
+                r[QLatin1String(t.key)] = act->isChecked();
+            }
+            if (a.contains(QLatin1String("zoom"))) {
+                // View > Zoom: the persisted font size, applied everywhere.
+                Config::instance().fontSize =
+                    qBound(6, a.value(QLatin1String("zoom")).toInt(), 48);
+                Config::instance().save();
+                applyConfigEverywhere();
+                r[QStringLiteral("zoom")] = Config::instance().fontSize;
+            }
+            return r;
+        };
+        host.computeText = [](const QString &op, const QJsonObject &a,
+                              QString *err) -> QJsonObject {
+            QJsonObject r;
+            const QString text = a.value(QLatin1String("text")).toString();
+            if (op == QLatin1String("check_brackets")) {
+                r[QStringLiteral("report")] = RustCore::checkBrackets(text);
+            } else if (op == QLatin1String("fix_brackets")) {
+                const QString fixed = RustCore::fixBrackets(text);
+                r[QStringLiteral("fixed")] = fixed;
+                r[QStringLiteral("changed")] = fixed != text;
+                // The fixer's own report: what it inserted or removed, at which
+                // line:column (checkBrackets would only re-describe the input).
+                r[QStringLiteral("report")] = RustCore::fixBracketsReport(text);
+            } else if (op == QLatin1String("hash_text")) {
+                static const QStringList algos = {
+                    QStringLiteral("md5"), QStringLiteral("sha1"),
+                    QStringLiteral("sha256"), QStringLiteral("sha512")};
+                const QString algo = a.value(QLatin1String("algo")).toString();
+                r[QStringLiteral("algo")] = algo;
+                r[QStringLiteral("hash")] =
+                    RustCore::computeHash(text.toUtf8(), algos.indexOf(algo));
+            } else if (op == QLatin1String("encode_text")) {
+                const QString o = a.value(QLatin1String("op")).toString();
+                QString out; // Utilities > Base64 / URL, same calls
+                if (o == QLatin1String("base64_encode")) out = RustCore::base64Encode(text.toUtf8());
+                else if (o == QLatin1String("base64_decode")) out = RustCore::base64Decode(text.toUtf8());
+                else if (o == QLatin1String("url_encode")) out = RustCore::urlEncode(text);
+                else out = RustCore::urlDecode(text);
+                r[QStringLiteral("text")] = out;
+            } else if (op == QLatin1String("diff_text")) {
+                const RustCore::DiffInfo d = RustCore::computeDiff(
+                    a.value(QLatin1String("left")).toString(),
+                    a.value(QLatin1String("right")).toString());
+                // Consecutive non-equal entries form one hunk.
+                QJsonArray hunks;
+                QJsonObject cur;
+                QJsonArray lines;
+                int emitted = 0;
+                bool truncated = false;
+                const auto flush = [&]() {
+                    if (lines.isEmpty()) return;
+                    cur[QStringLiteral("lines")] = lines;
+                    hunks.append(cur);
+                    cur = QJsonObject();
+                    lines = QJsonArray();
+                };
+                for (const RustCore::DiffEntry &en : d.entries) {
+                    if (en.tag == 0) { flush(); continue; }
+                    if (emitted >= 5000) { truncated = true; break; }
+                    if (lines.isEmpty()) {
+                        cur[QStringLiteral("left_line")] = en.leftLine;
+                        cur[QStringLiteral("right_line")] = en.rightLine;
+                    }
+                    QJsonObject l;
+                    l[QStringLiteral("op")] = en.tag == 1 ? QStringLiteral("+")
+                                                          : QStringLiteral("-");
+                    l[QStringLiteral("text")] = en.text;
+                    lines.append(l);
+                    ++emitted;
+                }
+                flush();
+                r[QStringLiteral("identical")] = hunks.isEmpty() && !truncated;
+                r[QStringLiteral("added")] = d.added;
+                r[QStringLiteral("removed")] = d.removed;
+                r[QStringLiteral("hunks")] = hunks;
+                r[QStringLiteral("truncated")] = truncated;
+            } else if (op == QLatin1String("format")) {
+                const QString kind = a.value(QLatin1String("kind")).toString();
+                const int indent = a.value(QLatin1String("indent")).toInt();
+                QString out;
+                if (kind == QLatin1String("json")) {
+                    // Strict first, as format_json always has (NP-09): the
+                    // formatter's own refusal (parse error or size limit),
+                    // unprefixed, never a silent unchanged "success".
+                    const QString refusal = RustCore::jsonFormatRefusal(
+                        text, indent, a.value(QLatin1String("minify")).toBool());
+                    if (!refusal.isEmpty()) {
+                        *err = refusal;
+                        return r;
+                    }
+                    out = a.value(QLatin1String("minify")).toBool()
+                              ? RustCore::minifyJson(text)
+                              : RustCore::formatJson(text, indent);
+                } else if (kind == QLatin1String("sql")) {
+                    out = RustCore::formatSql(
+                        text, indent,
+                        a.value(QLatin1String("keyword_case")).toString() != QLatin1String("lower"));
+                } else {
+                    // Declines (text unchanged + message) when it cannot prove the DOM safe.
+                    QString msg;
+                    out = a.value(QLatin1String("minify")).toBool()
+                              ? RustCore::minifyHtml(text, &msg)
+                              : RustCore::formatHtml(text, indent, &msg);
+                    if (!msg.isEmpty()) {
+                        *err = QStringLiteral("HTML formatter declined: %1").arg(msg);
+                        return r;
+                    }
+                }
+                if (out.isEmpty()) *err = QStringLiteral("formatter returned empty output");
+                r[QStringLiteral("text")] = out;
+            } else if (op == QLatin1String("repair_json")) {
+                // JSON Tools > Fix + Format, as data: explicit opt-in only.
+                const QString fixed = RustCore::fixJson(text);
+                r[QStringLiteral("fixed")] = fixed;
+                r[QStringLiteral("report")] = RustCore::fixJsonReport(text);
+                // True only for a real repair that now parses; a decline is false.
+                r[QStringLiteral("repaired")] =
+                    fixed != text && RustCore::jsonParseError(fixed).isEmpty();
+            } else if (op == QLatin1String("markdown_convert")) {
+                const QString out =
+                    markdownConvert(a.value(QLatin1String("op")).toString(), text);
+                if (out.isNull()) *err = QStringLiteral("nothing to convert");
+                r[QStringLiteral("text")] = out;
+            } else if (op == QLatin1String("mermaid_to_npd")) {
+                r[QStringLiteral("source")] = Npd::mermaidToNpd(text);
+            } else if (op == QLatin1String("list_symbols")) {
+                const QString lang = a.value(QLatin1String("language")).toString();
+                QJsonArray syms;
+                for (const FunctionList::Symbol &s : FunctionList::parseSymbols(text, lang)) {
+                    QJsonObject o;
+                    o[QStringLiteral("name")] = s.name;
+                    o[QStringLiteral("kind")] = s.kind;
+                    o[QStringLiteral("line")] = s.line;
+                    syms.append(o);
+                }
+                r[QStringLiteral("language")] = lang;
+                r[QStringLiteral("symbols")] = syms;
+            } else if (op == QLatin1String("generate_password")) {
+                PasswordGen::Options o;
+                o.mode = a.value(QLatin1String("mode")).toString() == QLatin1String("passphrase")
+                             ? PasswordGen::Mode::Passphrase
+                             : PasswordGen::Mode::Characters;
+                o.length = a.value(QLatin1String("length")).toInt(20);
+                if (a.contains(QLatin1String("classes"))) {
+                    o.classes = 0;
+                    for (const QJsonValue &c : a.value(QLatin1String("classes")).toArray()) {
+                        const QString n = c.toString();
+                        if (n == QLatin1String("lower")) o.classes |= PasswordGen::Lower;
+                        else if (n == QLatin1String("upper")) o.classes |= PasswordGen::Upper;
+                        else if (n == QLatin1String("digits")) o.classes |= PasswordGen::Digits;
+                        else if (n == QLatin1String("symbols")) o.classes |= PasswordGen::Symbols;
+                    }
+                }
+                o.excludeLookalikes = a.value(QLatin1String("exclude_lookalikes")).toBool();
+                o.requireEachClass = a.value(QLatin1String("require_each")).toBool(true);
+                o.words = a.value(QLatin1String("words")).toInt(6);
+                if (a.contains(QLatin1String("separator")))
+                    o.separator = a.value(QLatin1String("separator")).toString().at(0);
+                o.capitalise = a.value(QLatin1String("capitalise")).toBool();
+                o.appendDigits = a.value(QLatin1String("append_digits")).toBool();
+                if (const QString v = PasswordGen::validate(o); !v.isEmpty()) {
+                    *err = v;
+                    return r;
+                }
+                QJsonArray out;
+                for (const QString &p :
+                     PasswordGen::generateMany(o, a.value(QLatin1String("count")).toInt(1)))
+                    out.append(p);
+                r[QStringLiteral("passwords")] = out;
+            } else if (op == QLatin1String("diagram_template")) {
+                r[QStringLiteral("source")] = DiagramEditor::templateSource(
+                    a.value(QLatin1String("template")).toString());
+            } else {
+                *err = QStringLiteral("unknown operation: %1").arg(op);
+            }
+            return r;
+        };
+        installMcpControlHost(host); // v0.1.133 Phase 3 verbs
         new McpBridge(std::move(host), this);
     }
+}
+
+// The Tools > Markdown Converter transforms, moved verbatim out of the menu
+// lambdas so MCP markdown_convert runs the same code. A null QString means
+// "nothing to replace" (the table op on an empty selection).
+QString MainWindow::markdownConvert(const QString &op, const QString &input) {
+    if (op == QLatin1String("table")) {
+        // Convert CSV/tab-separated to markdown table
+        QStringList lines = input.split("\n", Qt::SkipEmptyParts);
+        if (lines.isEmpty()) return QString();
+        QString result;
+        for (int i = 0; i < lines.size(); i++) {
+            QStringList cols = lines[i].split(QRegularExpression("[,\t]"));
+            result += "| " + cols.join(" | ") + " |\n";
+            if (i == 0) {
+                result += "|";
+                for (int j = 0; j < cols.size(); j++) result += " --- |";
+                result += "\n";
+            }
+        }
+        return result;
+    }
+    if (op == QLatin1String("list")) {
+        QStringList lines = input.split("\n", Qt::SkipEmptyParts);
+        QString result;
+        for (const auto &l : lines) result += "- " + l.trimmed() + "\n";
+        return result;
+    }
+    if (op == QLatin1String("code_block")) return "```\n" + input + "\n```";
+    if (op == QLatin1String("bold")) return "**" + input + "**";
+    if (op == QLatin1String("italic")) return "*" + input + "*";
+    if (op == QLatin1String("link")) return "[" + input + "](url)";
+    if (op == QLatin1String("heading")) return "## " + input;
+    if (op == QLatin1String("html_to_markdown")) {
+        QString text = input;
+        text.replace(QRegularExpression("<br\\s*/?>"), "\n");
+        text.replace(QRegularExpression("<p>(.*?)</p>"), "\\1\n\n");
+        text.replace(QRegularExpression("<strong>(.*?)</strong>"), "**\\1**");
+        text.replace(QRegularExpression("<b>(.*?)</b>"), "**\\1**");
+        text.replace(QRegularExpression("<em>(.*?)</em>"), "*\\1*");
+        text.replace(QRegularExpression("<i>(.*?)</i>"), "*\\1*");
+        text.replace(QRegularExpression("<h1>(.*?)</h1>"), "# \\1\n");
+        text.replace(QRegularExpression("<h2>(.*?)</h2>"), "## \\1\n");
+        text.replace(QRegularExpression("<h3>(.*?)</h3>"), "### \\1\n");
+        text.replace(QRegularExpression("<a href=\"(.*?)\">(.*?)</a>"), "[\\2](\\1)");
+        text.replace(QRegularExpression("<[^>]+>"), "");
+        return text;
+    }
+    return QString();
 }
 
 Editor *MainWindow::currentEditor() {
@@ -4093,80 +4873,102 @@ void MainWindow::buildMenus() {
 
     // --- Markdown Converter ---
     auto *mdMenu = feat->addMenu("Markdown Converter");
-    mdMenu->addAction("Selection → Markdown Table", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        // Convert CSV/tab-separated to markdown table
-        QStringList lines = e->selectedText().split("\n", Qt::SkipEmptyParts);
-        if (lines.isEmpty()) return;
-        QString result;
-        for (int i = 0; i < lines.size(); i++) {
-            QStringList cols = lines[i].split(QRegularExpression("[,\t]"));
-            result += "| " + cols.join(" | ") + " |\n";
-            if (i == 0) {
-                result += "|";
-                for (int j = 0; j < cols.size(); j++) result += " --- |";
-                result += "\n";
-            }
-        }
-        e->replaceSelectedText(result);
-    });
-    mdMenu->addAction("Selection → Markdown List", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        QStringList lines = e->selectedText().split("\n", Qt::SkipEmptyParts);
-        QString result;
-        for (const auto &l : lines) result += "- " + l.trimmed() + "\n";
-        e->replaceSelectedText(result);
-    });
-    mdMenu->addAction("Selection → Markdown Code Block", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("```\n" + e->selectedText() + "\n```");
-    });
-    mdMenu->addAction("Selection → Bold", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("**" + e->selectedText() + "**");
-    });
-    mdMenu->addAction("Selection → Italic", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("*" + e->selectedText() + "*");
-    });
-    mdMenu->addAction("Selection → Link", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("[" + e->selectedText() + "](url)");
-    });
-    mdMenu->addAction("Selection → Heading", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        e->replaceSelectedText("## " + e->selectedText());
-    });
-    mdMenu->addAction("HTML → Markdown (strip tags)", this, [E]() {
-        auto *e = E(); if (!e || !e->hasSelectedText()) return;
-        QString text = e->selectedText();
-        text.replace(QRegularExpression("<br\\s*/?>"), "\n");
-        text.replace(QRegularExpression("<p>(.*?)</p>"), "\\1\n\n");
-        text.replace(QRegularExpression("<strong>(.*?)</strong>"), "**\\1**");
-        text.replace(QRegularExpression("<b>(.*?)</b>"), "**\\1**");
-        text.replace(QRegularExpression("<em>(.*?)</em>"), "*\\1*");
-        text.replace(QRegularExpression("<i>(.*?)</i>"), "*\\1*");
-        text.replace(QRegularExpression("<h1>(.*?)</h1>"), "# \\1\n");
-        text.replace(QRegularExpression("<h2>(.*?)</h2>"), "## \\1\n");
-        text.replace(QRegularExpression("<h3>(.*?)</h3>"), "### \\1\n");
-        text.replace(QRegularExpression("<a href=\"(.*?)\">(.*?)</a>"), "[\\2](\\1)");
-        text.replace(QRegularExpression("<[^>]+>"), "");
-        e->replaceSelectedText(text);
-    });
+    // Bodies live in MainWindow::markdownConvert (shared with MCP).
+    const struct { const char *label; const char *op; } mdItems[] = {
+        {"Selection → Markdown Table", "table"},
+        {"Selection → Markdown List", "list"},
+        {"Selection → Markdown Code Block", "code_block"},
+        {"Selection → Bold", "bold"},
+        {"Selection → Italic", "italic"},
+        {"Selection → Link", "link"},
+        {"Selection → Heading", "heading"},
+        {"HTML → Markdown (strip tags)", "html_to_markdown"},
+    };
+    for (const auto &it : mdItems) {
+        const QString op = QString::fromLatin1(it.op);
+        mdMenu->addAction(QString::fromUtf8(it.label), this, [E, op]() {
+            auto *e = E(); if (!e || !e->hasSelectedText()) return;
+            const QString out = markdownConvert(op, e->selectedText());
+            if (!out.isNull()) e->replaceSelectedText(out);
+        });
+    }
 
     // --- REST Client ---
     auto *restAct = feat->addAction("REST Client (.http)");
     restAct->setShortcut(QKeySequence("Ctrl+Shift+R"));
     restAct->setStatusTip("Opens REST client in a new tab. Select HTTP request first.");
-    connect(restAct, &QAction::triggered, this, [this, E]() {
+    auto newRestTab = [this]() {
         auto *rest = new RestClient;
         // Theme propagation — palette-driven stylesheets re-render.
         connect(this, &MainWindow::themeChanged, rest, &RestClient::onThemeChanged);
-        if (E() && E()->hasSelectedText()) rest->executeRequest(E()->selectedText());
+        connect(rest, &RestClient::openInTabRequested, this,
+                [this](const QString &text, const QString &lang) {
+                    Editor *ed = newFile();
+                    if (!ed) return;
+                    {
+                        Editor::ScopedBulkLoad bulk(ed);
+                        ed->setText(text);
+                    }
+                    ed->setLanguage(lang);
+                    m_statusBar->updateLanguage(lang);
+                });
         exitAiFullscreenIfActive();
         int idx = m_tabs->addTab(rest, "REST Client");
         m_tabs->setCurrentIndex(idx);
+        return rest;
+    };
+    m_newRestTab = newRestTab;
+    connect(restAct, &QAction::triggered, this, [E, newRestTab]() {
+        Editor *src = E();
+        const QString sel = src && src->hasSelectedText() ? src->selectedText() : QString();
+        const QString path = src ? src->filePath() : QString();
+        RestClient *rest = newRestTab();
+        if (!sel.isEmpty()) rest->executeRequest(sel, path);
     });
+
+    // Send Request: the .http request under the caret goes to the REST
+    // Client tab (reused if one is open). Enabled only on .http/.rest tabs,
+    // so Ctrl+Alt+R is never taken from anything else.
+    auto *sendHttpAct = feat->addAction("Send Request");
+    sendHttpAct->setObjectName(QStringLiteral("actSendHttpRequest"));
+    sendHttpAct->setShortcut(QKeySequence("Ctrl+Alt+R"));
+    sendHttpAct->setStatusTip("Send the request under the caret in a .http or .rest file to the REST Client.");
+    sendHttpAct->setEnabled(false);
+    auto sendHttpAt = [this, newRestTab](Editor *ed, int line) {
+        if (!ed) return;
+        RestClient *rest = qobject_cast<RestClient *>(m_tabs->currentWidget());
+        for (int i = m_tabs->count() - 1; !rest && i >= 0; --i)
+            rest = qobject_cast<RestClient *>(m_tabs->widget(i));
+        if (rest) {
+            exitAiFullscreenIfActive();
+            m_tabs->setCurrentWidget(rest);
+        } else {
+            rest = newRestTab();
+        }
+        rest->sendHttpRequest(ed->text(), line, ed->filePath());
+    };
+    connect(sendHttpAct, &QAction::triggered, this, [this, sendHttpAt]() {
+        Editor *ed = m_tabs->currentEditor();
+        auto *sup = HttpEditorSupport::ensure(ed);
+        if (!sup || !sup->isActive()) return;
+        int line = 0, col = 0;
+        ed->getCursorPosition(&line, &col);
+        sendHttpAt(ed, line);
+    });
+    auto syncHttpTab = [this, sendHttpAct, sendHttpAt]() {
+        bool created = false;
+        HttpEditorSupport *sup = HttpEditorSupport::ensure(m_tabs->currentEditor(), &created);
+        if (sup && created) {
+            connect(sup, &HttpEditorSupport::sendRequested, this, sendHttpAt);
+            connect(sup, &HttpEditorSupport::activeChanged, sendHttpAct, [this, sendHttpAct, sup](bool on) {
+                sendHttpAct->setEnabled(on && m_tabs->currentEditor() == sup->editor());
+            });
+        }
+        if (sup) sup->refreshMarkerColors();
+        sendHttpAct->setEnabled(sup && sup->isActive());
+    };
+    connect(m_tabs, &QTabWidget::currentChanged, this, syncHttpTab);
+    connect(this, &MainWindow::themeChanged, this, syncHttpTab);
 
     // --- Noter (meeting thinkpad) ---
     // v0.1.112 — "(toggle)" in the label because triggering it CLOSES the
@@ -4318,11 +5120,12 @@ void MainWindow::buildMenus() {
             "  Content-Type: application/json\n\n"
             "  {\"name\": \"test\", \"value\": 42}\n\n"
             "Usage:\n"
-            "  1. Select the request block\n"
-            "  2. Ctrl+Shift+R to open REST panel\n"
-            "  3. Response appears with headers + body\n"
-            "  4. JSON is auto-pretty-printed\n\n"
-            "Supports: GET, POST, PUT, DELETE, PATCH, HEAD\n"
+            "  1. Save the file as .http or .rest\n"
+            "  2. Put the caret in a request and press Ctrl+Alt+R\n"
+            "     (or click the green marker, or right-click > Send Request)\n"
+            "  3. The REST Client tab shows status, body and headers\n\n"
+            "Variables: @name = value lines, {{name}} anywhere, and\n"
+            "environments from http-client.env.json next to the file.\n"
             "### separates multiple requests in one file");
     });
 
@@ -4483,6 +5286,7 @@ void MainWindow::buildMenus() {
     auto addTheme = [&](const QString &label, const QString &configKey,
                         const std::function<void()> &apply) {
         auto *act = themeMenu->addAction(label);
+        act->setObjectName(QStringLiteral("theme") + configKey); // MCP set_theme
         act->setCheckable(true);
         themeGroup->addAction(act);
         if (Config::instance().theme.compare(configKey, Qt::CaseInsensitive) == 0)
@@ -4770,14 +5574,10 @@ void MainWindow::buildMenus() {
     pluginsMenu->addAction("JSON Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("JSON Tools", "JSON");
         connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
-        p->addButton("Format", [](const QString &s) { return RustCore::formatJson(s, 4); });
-        p->addButton("Minify", [](const QString &s) { return RustCore::minifyJson(s); });
-        p->addButton("Fix + Format", [](const QString &s) {
-            QString report = RustCore::fixJsonReport(s);
-            QString fixed = RustCore::fixJson(s);
-            QString formatted = RustCore::formatJson(fixed, 4);
-            return "/* ═══ FIX REPORT ═══\n" + report + "\n═══════════════════ */\n\n" + formatted;
-        });
+        // Format / Minify / Fix + Format (formatter_tools.cpp). The output is
+        // only JSON; what a fix changed (or why it declined) is in the banner
+        // and its tooltip.
+        FormatterTools::addJsonButtons(p);
 
         // Ollama status + model selector + AI Fix button
         auto *ollamaBar = new OllamaStatus(p);
@@ -4970,42 +5770,51 @@ void MainWindow::buildMenus() {
                 firstStruct = firstBracket;
             if (firstStruct > 0) cleaned = cleaned.mid(firstStruct);
 
-            // 4. Try to format the result — if formatJson returns something
-            //    sensible (>2 chars, more than just "{}"), use it. Otherwise
-            //    show the raw cleaned text so the user can at least see what
-            //    the model returned.
-            QString formatted = RustCore::formatJson(cleaned, 4);
-            QString result = formatted.length() > 2 ? formatted : cleaned;
-
-            if (result.isEmpty()) {
+            // 4. The reply must be valid JSON to count as a fix. formatJson is
+            //    strict (invalid input comes back unchanged), so validate
+            //    first: an invalid reply is shown as is, with the parser's
+            //    position, and is NOT recorded as a fix.
+            if (cleaned.isEmpty()) {
                 p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
-                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
-            } else {
-                p->setOutput(result);
-                // Smart description of WHAT actually changed (commas, braces,
-                // brackets, quotes etc.) — same helper Format / Minify use.
-                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
-                int origChars = fixState->originalInput.length();
-                int newChars = result.length();
-                int newLines = result.count('\n') + 1;
-                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
-                             .arg(newChars).arg(newLines).arg(desc), false);
-                // Log to session history with the change description
-                p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
-
-                // Stash result + enable the FormatterPanel's built-in Show
-                // Diff button via recordFix(). The panel emits
-                // showDiffRequested() which we connected above to open a
-                // CompareWidget tab — same code path as Format/Minify/Fix.
-                fixState->fixedOutput = result;
-                fixState->hasResult = true;
-                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+                p->setStatus("Failed: AI Fix returned an empty reply — try a different model or enable Show thinking", true);
+                return;
             }
+            const FormatterTools::AiJsonReply reply = FormatterTools::checkAiJsonReply(cleaned);
+            if (!reply.ok) {
+                p->setOutput(reply.text);
+                p->setStatus(QString("Failed: AI Fix — the model's reply is not valid JSON: %1 "
+                                     "(the reply is shown below)").arg(reply.error),
+                             true);
+                p->logAction("AI Fix (Ollama)", fixState->originalInput.length(),
+                             reply.text.length(),
+                             QStringLiteral("reply is not valid JSON: ") + reply.error);
+                return;
+            }
+            const QString result = reply.text;
+            p->setOutput(result);
+            // Smart description of WHAT actually changed (commas, braces,
+            // brackets, quotes etc.) — same helper Format / Minify use.
+            QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+            int origChars = fixState->originalInput.length();
+            int newChars = result.length();
+            int newLines = result.count('\n') + 1;
+            p->setStatus(QString("Done: AI Fix — %1 chars, %2 lines (%3). Click Show Diff to see changes.")
+                         .arg(newChars).arg(newLines).arg(desc), false);
+            // Log to session history with the change description
+            p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
+
+            // Stash result + enable the FormatterPanel's built-in Show
+            // Diff button via recordFix(). The panel emits
+            // showDiffRequested() which we connected above to open a
+            // CompareWidget tab — same code path as Format/Minify/Fix.
+            fixState->fixedOutput = result;
+            fixState->hasResult = true;
+            p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setStatus("Failed: AI Fix — " + msg, true);
             p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
@@ -5019,65 +5828,13 @@ void MainWindow::buildMenus() {
     pluginsMenu->addAction("HTML Tools (inbuilt)", this, [this, E]() {
         auto *p = new FormatterPanel("HTML Tools", "HTML");
         connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
-        p->addButton("Format (2 spaces)", [](const QString &s) { return RustCore::formatHtml(s, 2); });
-        p->addButton("Format (4 spaces)", [](const QString &s) { return RustCore::formatHtml(s, 4); });
-        p->addButton("Minify", [](const QString &s) {
-            // Strip newlines and extra spaces between tags
-            QString result = s;
-            result.replace(QRegularExpression("\\s*\\n\\s*"), "");
-            result.replace(QRegularExpression(">\\s+<"), "><");
-            return result;
-        });
-        p->addButton("Fix + Format", [](const QString &s) {
-            // Fix common HTML issues then format
-            QString fixed = s;
-            // Close unclosed self-closing tags
-            QRegularExpression re_img("<img([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_img, "<img\\1 />");
-            QRegularExpression re_br("<br\\s*>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_br, "<br />");
-            QRegularExpression re_hr("<hr\\s*>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_hr, "<hr />");
-            QRegularExpression re_input("<input([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_input, "<input\\1 />");
-            QRegularExpression re_meta("<meta([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_meta, "<meta\\1 />");
-            QRegularExpression re_link("<link([^>]*[^/])>", QRegularExpression::CaseInsensitiveOption);
-            fixed.replace(re_link, "<link\\1 />");
-
-            // Count open/close tags to detect missing closers
-            QString report = "/* ═══ HTML FIX REPORT ═══\n";
-            QRegularExpression re_open("<([a-zA-Z][a-zA-Z0-9]*)(?:\\s[^>]*)?>");
-            QRegularExpression re_close("</([a-zA-Z][a-zA-Z0-9]*)>");
-            QStringList voidTags = {"br","hr","img","input","meta","link","area","base","col","embed","source","track","wbr"};
-
-            QMap<QString, int> openCount, closeCount;
-            auto openMatches = re_open.globalMatch(fixed);
-            while (openMatches.hasNext()) {
-                auto m = openMatches.next();
-                QString tag = m.captured(1).toLower();
-                if (!voidTags.contains(tag)) openCount[tag]++;
-            }
-            auto closeMatches = re_close.globalMatch(fixed);
-            while (closeMatches.hasNext()) {
-                auto m = closeMatches.next();
-                closeCount[m.captured(1).toLower()]++;
-            }
-            int issues = 0;
-            for (auto it = openCount.begin(); it != openCount.end(); ++it) {
-                int diff = it.value() - closeCount.value(it.key(), 0);
-                if (diff > 0) {
-                    report += QString("Missing %1 </%2> closing tag(s)\n").arg(diff).arg(it.key());
-                    // Add missing closing tags at the end
-                    for (int i = 0; i < diff; i++) fixed += "</" + it.key() + ">";
-                    issues++;
-                }
-            }
-            if (issues == 0) report += "No issues found.\n";
-            report += "═══════════════════════ */\n\n";
-
-            return report + RustCore::formatHtml(fixed, 2);
-        });
+        // Format (2/4 spaces), Minify and Check + Format all go through the
+        // DOM-preserving Rust formatter (formatter_tools.cpp): they change
+        // only whitespace a browser does not render, and a document they
+        // cannot follow is left unchanged with what and where in the banner.
+        // (The old regex Minify / "Fix + Format" changed rendered text,
+        // prepended a report comment and appended guessed end tags.)
+        FormatterTools::addHtmlButtons(p);
 
         // Ollama status + AI Fix
         auto *ollamaBar = new OllamaStatus(p);
@@ -5231,31 +5988,43 @@ void MainWindow::buildMenus() {
             int firstAngle = cleaned.indexOf('<');
             if (firstAngle > 0) cleaned = cleaned.mid(firstAngle);
 
-            // 4. Format the result; fall back to cleaned text if formatHtml
-            //    returns something useless (empty / single space).
-            QString formatted = RustCore::formatHtml(cleaned, 2);
-            QString result = formatted.length() > 1 ? formatted : cleaned;
-
-            if (result.isEmpty()) {
+            // 4. Re-indent the reply with the DOM-preserving formatter. When
+            //    it declines (the reply is still mis-nested, has stray end
+            //    tags, ...) the reply is shown as is and the banner says
+            //    what and where: that is not a successful fix.
+            if (cleaned.isEmpty()) {
                 p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
-                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
-            } else {
-                p->setOutput(result);
-                QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
-                int origChars = fixState->originalInput.length();
-                int newChars  = result.length();
-                int newLines  = result.count('\n') + 1;
-                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                p->setStatus("Failed: AI Fix returned an empty reply — try a different model or enable Show thinking", true);
+                return;
+            }
+            const FormatterTools::AiJsonReply reply = FormatterTools::checkAiHtmlReply(cleaned);
+            const QString result = reply.text;
+            p->setOutput(result);
+            QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
+            int origChars = fixState->originalInput.length();
+            int newChars  = result.length();
+            int newLines  = result.count('\n') + 1;
+            if (reply.ok) {
+                p->setStatus(QString("Done: AI Fix — %1 chars, %2 lines (%3). Click Show Diff to see changes.")
                              .arg(newChars).arg(newLines).arg(desc), false);
                 p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
-                fixState->hasResult = true;
-                p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
+            } else {
+                // Still a candidate the user may want to compare, so Show
+                // Diff stays available, but it is not reported as fixed.
+                p->setStatus(QString("Not formatted: AI Fix — the formatter could not follow "
+                                     "the model's HTML: %1 (the reply is shown below as is)")
+                                 .arg(reply.error),
+                             true);
+                p->logAction("AI Fix (Ollama)", origChars, newChars,
+                             QStringLiteral("reply not formatted: ") + reply.error);
             }
+            fixState->hasResult = true;
+            p->recordFix(fixState->originalInput, result, "AI Fix (Ollama)");
         });
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setStatus("Failed: AI Fix — " + msg, true);
             p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
@@ -5267,10 +6036,17 @@ void MainWindow::buildMenus() {
 
     // Bracket Tools (inbuilt) — check, fix, AI fix
     pluginsMenu->addAction("Bracket Tools (inbuilt)", this, [this, E]() {
-        auto *p = new FormatterPanel("Bracket Tools", "JavaScript");
+        // The Rust checker/fixer works out how to read the text itself
+        // (C-style, script, SQL/Lua, plain text); the panel language only
+        // picks the highlighting, so take it from the tab instead of
+        // painting every file as JavaScript (no lexer when the panel has
+        // none for that language).
+        auto *p = new FormatterPanel("Bracket Tools",
+                                     E() ? E()->language() : QStringLiteral("Plain Text"));
         connect(this, &MainWindow::themeChanged, p, &FormatterPanel::onThemeChanged);
-        p->addButton("Check", [](const QString &s) { return RustCore::checkBrackets(s); });
-        p->addButton("Auto-Fix", [](const QString &s) { return RustCore::fixBrackets(s); });
+        // Check reports in the banner and leaves the text alone; Auto-Fix
+        // says what it inserted/removed and where (formatter_tools.cpp).
+        FormatterTools::addBracketButtons(p);
 
         // Ollama status + AI Fix
         auto *ollamaBar = new OllamaStatus(p);
@@ -5430,14 +6206,14 @@ void MainWindow::buildMenus() {
 
             if (result.isEmpty()) {
                 p->setOutput("(model returned empty response after stripping)\n\nRaw response:\n" + response);
-                p->setStatus("✗ AI fix returned empty — try a different model or enable Show thinking", true);
+                p->setStatus("Failed: AI Fix returned an empty reply — try a different model or enable Show thinking", true);
             } else {
                 p->setOutput(result);
                 QString desc = FormatterPanel::describeChanges(fixState->originalInput, result);
                 int origChars = fixState->originalInput.length();
                 int newChars  = result.length();
                 int newLines  = result.count('\n') + 1;
-                p->setStatus(QString("✓ AI fix complete — %1 chars, %2 lines (%3). Click 'Show Diff' to see changes.")
+                p->setStatus(QString("Done: AI Fix — %1 chars, %2 lines (%3). Click Show Diff to see changes.")
                              .arg(newChars).arg(newLines).arg(desc), false);
                 p->logAction("AI Fix (Ollama)", origChars, newChars, desc);
                 fixState->hasResult = true;
@@ -5447,7 +6223,7 @@ void MainWindow::buildMenus() {
         connect(ollama, &OllamaClient::error, p, [p, aiBtn, firstToken](const QString &msg) {
             aiBtn->setText("AI Fix (Ollama)");
             *firstToken = true;
-            p->setStatus("✗ AI fix failed: " + msg, true);
+            p->setStatus("Failed: AI Fix — " + msg, true);
             p->setOutput("Error: " + msg + "\n\nIs Ollama running? Try: ollama serve");
         });
 
@@ -5770,6 +6546,7 @@ void MainWindow::buildMenus() {
             "  %3Terminal\n"
             "  %4AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
+            "  Ctrl+Alt+R      Send Request (.http)\n"
             "  Ctrl+Shift+E    File Explorer\n"
             "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
             "TABS\n"
@@ -5861,6 +6638,12 @@ NotesPanel *MainWindow::findNoterPanel(int *indexOut) const {
 
 void MainWindow::ensureNoterReminderService() {
     if (m_noterReminderEngine) return;                      // idempotent
+    // Every Noter use funnels through here; later launches start reminders.
+    auto &cfg = Config::instance();
+    if (cfg.noterInUse != 1) {
+        cfg.noterInUse = 1;
+        cfg.save();
+    }
     m_noterTodos = new NotesTodos(NotesPanel::todosDbPath(), this);
     m_noterTodos->open(nullptr);
     m_noterReminderEngine = new NotesReminderEngine(m_noterTodos, this);
@@ -6275,37 +7058,16 @@ void MainWindow::saveSession() {
     session["tabs"] = tabs;
 
     QDir().mkpath(QFileInfo(sessionFilePath()).path());
-    // Atomic write — .tmp + rename, so a crash mid-write can never leave a
-    // truncated session.json (QSaveFile deliberately avoided, see
-    // notes_storage.cpp).
-    const QString target = sessionFilePath();
-    const QString tmpPath = target + QStringLiteral(".tmp");
-    QFile tmp(tmpPath);
-    if (!tmp.open(QIODevice::WriteOnly | QIODevice::Truncate)) return;
-    const QByteArray payload = QJsonDocument(session).toJson();
-    const bool wroteAll = tmp.write(payload) == payload.size();
-    tmp.close();
-    if (!wroteAll) { QFile::remove(tmpPath); return; }
-#ifdef Q_OS_WIN
-    // MoveFileExW(REPLACE_EXISTING) swaps atomically. The old remove-then-
-    // rename left a window with NO session.json on disk, and a rename
-    // failure after the remove deleted the only surviving copy. On failure
-    // keep the .tmp — it may be the freshest copy that exists.
-    if (!::MoveFileExW(
-            reinterpret_cast<const wchar_t *>(
-                QDir::toNativeSeparators(tmpPath).utf16()),
-            reinterpret_cast<const wchar_t *>(
-                QDir::toNativeSeparators(target).utf16()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    // Atomic write — a uniquely named temp beside session.json, renamed over
+    // it on commit, so a crash mid-write can never leave a truncated
+    // session.json and a failed write leaves the previous one in place.
+    // The temp is created exclusively: the old fixed `session.json.tmp` was
+    // opened with Truncate, so a symlink planted there was followed and its
+    // target overwritten with the session (which holds unsaved buffer text).
+    // The rename replaces a symlink at session.json itself rather than
+    // writing through it (QSaveFile would follow one).
+    if (!NpAtomic::writeFileNoFollow(sessionFilePath(), QJsonDocument(session).toJson()))
         return;
-    }
-#else
-    if (std::rename(QFile::encodeName(tmpPath).constData(),
-                    QFile::encodeName(target).constData()) != 0) {
-        QFile::remove(tmpPath);
-        return;
-    }
-#endif
 
     // Only after a successful rename — a failed write leaves the flags set
     // so the next tick retries.

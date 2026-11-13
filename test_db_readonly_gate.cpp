@@ -297,18 +297,14 @@ int main(int argc, char **argv) {
     }
 
     // (2) EXPLAIN ANALYZE DELETE — ANALYZE actually EXECUTES the wrapped DELETE.
-    //     Correctly REJECTED from the read path (isReadOnlyQuery==false). But
-    //     PRODUCT RISK: classifySql early-returns on the ANALYZE check before
-    //     the mutation scan, so isMutation()==false even though the statement
-    //     DOES mutate. Safe today (the read gate keys on isReadOnlyQuery, which
-    //     rejects it), but a human-approval card keyed on isMutation would
-    //     mislabel it as read-only. Assert the REAL (imperfect) value + flag.
+    //     REJECTED from the read path (isReadOnlyQuery==false). Since v0.1.133
+    //     the gate classifies the explained statement itself, so the DELETE is
+    //     also labelled a mutation (it used to read false here: a documented
+    //     risk for an approval card keyed on isMutation).
     {
         const QString sql = "EXPLAIN ANALYZE DELETE FROM users WHERE id = 1";
         expectRO ("EXPLAIN ANALYZE DELETE rejected",   sql, false);
-        // RISK: under-labelled as non-mutation (see comment above).
-        expectMut("EXPLAIN ANALYZE DELETE mutation-label (real=false, RISK)",
-                  sql, false);
+        expectMut("EXPLAIN ANALYZE DELETE is a mutation", sql, true);
     }
 
     // (3) SELECT ... INTO — creates a new table on SQL Server / Postgres.

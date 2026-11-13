@@ -157,10 +157,81 @@ fn tools_list_shape() {
             "open_data_analyst",
             "render_chart",
             "export_query_results",
-            "export_chart"
+            "export_chart",
+            // v0.1.133 — tabs/files, editing, view, pure tools
+            "activate_tab",
+            "close_tab",
+            "reload_tab",
+            "rename_file",
+            "save_all",
+            "set_read_only",
+            "undo",
+            "redo",
+            "transform_lines",
+            "convert_case",
+            "comment_lines",
+            "line_edit",
+            "set_eol",
+            "set_encoding",
+            "bookmarks",
+            "fold",
+            "set_view",
+            "set_theme",
+            "set_preview",
+            "compare_with_file",
+            "check_brackets",
+            "fix_brackets",
+            "hash_text",
+            "encode_text",
+            "diff_text",
+            "repair_json",
+            "markdown_convert",
+            "mermaid_to_npd",
+            "list_symbols",
+            "generate_password",
+            "list_hunks",
+            "list_conflicts",
+            "git_stage",
+            "git_unstage",
+            "git_commit",
+            "git_branch_create",
+            "git_checkout",
+            "git_stash",
+            "git_discard",
+            "git_fetch",
+            "git_pull",
+            "git_push",
+            "git_hunk",
+            "resolve_conflict",
+            "search_notes",
+            "rename_note",
+            "trash_note",
+            "restore_note",
+            "delete_note_permanently",
+            "delete_reminder",
+            "snooze_reminder",
+            "dismiss_reminder",
+            "export_note",
+            "get_preferences",
+            "set_preference",
+            "set_workspace_folder",
+            "describe_table",
+            "test_connection",
+            "execute_sql",
+            "add_connection",
+            "update_connection",
+            "delete_connection",
+            "open_connections_dialog",
+            "open_schema_browser",
+            "parse_http_file",
+            "curl_to_request",
+            "request_to_curl",
+            "rest_request",
+            "hex_dump",
+            "clear_recent_files"
         ]
     );
-    assert_eq!(names.len(), 49);
+    assert_eq!(names.len(), 119);
     for tool in tools {
         assert!(tool["description"].as_str().is_some_and(|d| !d.is_empty()));
         let schema = &tool["inputSchema"];
@@ -699,20 +770,9 @@ fn write_tool_descriptions_state_the_approval_gate() {
     let responses =
         run_lines(&[json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string()]);
     let tools = responses[0]["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 49);
-    let write_tools = [
-        "insert_text",
-        "replace_selection",
-        "apply_edit",
-        "save_tab",
-        "create_note",
-        "append_note",
-        "set_reminder",
-        "export_diagram",
-        "set_diagram_source",
-        "export_query_results",
-        "export_chart",
-    ];
+    assert_eq!(tools.len(), 119);
+    // Derived from the tier table, so a new write tool is covered by default.
+    let write_tools = notepatra_mcp::tools::WRITE_TOOLS;
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
         let description = tool["description"].as_str().unwrap();
@@ -1175,30 +1235,36 @@ fn open_note_opens_a_tab_and_errors_on_unknown() {
 
 #[test]
 fn v0119_write_tools_happy_paths() {
-    let responses = run_lines(&[
-        call_line(
-            1,
-            "create_note",
-            json!({ "title": "New Note", "body": "hello body" }),
-        ),
-        call_line(
-            2,
-            "append_note",
-            json!({ "file": RELEASE_NOTE, "text": "\n- one more" }),
-        ),
-        call_line(
-            3,
-            "set_reminder",
-            json!({ "file": RELEASE_NOTE, "due_iso": "2026-07-20T09:00:00Z" }),
-        ),
-        call_line(
-            4,
-            "export_diagram",
-            json!({ "tab_index": 0, "path": "/tmp/out.png", "format": "png" }),
-        ),
-        // The created note now exists and is readable.
-        call_line(5, "list_reminders", json!({})),
-    ]);
+    let mut editor = MockEditor::default();
+    let diagram = editor.add_diagram_tab("flow.npd", "diagram flow\n");
+    let responses = run_lines_with(
+        editor,
+        &[
+            call_line(
+                1,
+                "create_note",
+                json!({ "title": "New Note", "body": "hello body" }),
+            ),
+            call_line(
+                2,
+                "append_note",
+                json!({ "file": RELEASE_NOTE, "text": "\n- one more" }),
+            ),
+            call_line(
+                3,
+                "set_reminder",
+                json!({ "file": RELEASE_NOTE, "due_iso": "2026-07-20T09:00:00Z" }),
+            ),
+            // v0.1.133: the mock, like the bridge, exports Diagram tabs only.
+            call_line(
+                4,
+                "export_diagram",
+                json!({ "tab_id": diagram, "path": "/tmp/out.png", "format": "png" }),
+            ),
+            // The created note now exists and is readable.
+            call_line(5, "list_reminders", json!({})),
+        ],
+    );
     for r in &responses {
         assert_eq!(r["result"]["isError"], false, "unexpected error in {r}");
     }
@@ -1266,6 +1332,7 @@ fn v0119_write_tools_denied_and_timed_out_pass_through_verbatim() {
     ] {
         let mut editor = MockEditor::default();
         editor.set_approval(mode);
+        let diagram = editor.add_diagram_tab("flow.npd", "diagram flow\n");
         let responses = run_lines_with(
             editor,
             &[
@@ -1283,7 +1350,7 @@ fn v0119_write_tools_denied_and_timed_out_pass_through_verbatim() {
                 call_line(
                     4,
                     "export_diagram",
-                    json!({ "tab_index": 0, "path": "/tmp/o.pdf", "format": "pdf" }),
+                    json!({ "tab_id": diagram, "path": "/tmp/o.pdf", "format": "pdf" }),
                 ),
             ],
         );
@@ -1303,8 +1370,8 @@ fn v0119_write_tools_malformed_arguments_are_invalid_params() {
         call_line(
             4,
             "export_diagram",
-            json!({ "tab_index": 0, "path": "/tmp/o.gif", "format": "gif" }),
-        ), // bad format
+            json!({ "tab_index": 0, "path": "/tmp/o.gif", "format": "GIF!" }),
+        ), // not a format name (the editor judges real names: see below)
         call_line(
             5,
             "export_diagram",
@@ -1407,10 +1474,14 @@ fn p0a_list_languages_and_get_capabilities() {
         .unwrap()
         .len();
     assert_eq!(caps["tool_count"], expected as u64);
-    assert_eq!(caps["tool_count"], 49);
-    assert_eq!(caps["tiers"]["read"], 24);
-    assert_eq!(caps["tiers"]["act"], 14); // +select_range (v0.1.121)
-    assert_eq!(caps["tiers"]["write"], 11);
+    assert_eq!(caps["tool_count"], 119);
+    assert_eq!(caps["tiers"]["read"], 46); // v0.1.133 phase 3: +9
+    assert_eq!(caps["tiers"]["act"], 22); // +2 non-modal windows, test_connection
+    assert_eq!(caps["tiers"]["write"], 51); // +28
+                                            // v0.1.133: export_diagram's accepted formats come from the editor.
+    assert!(caps["diagram_export_formats"]
+        .as_array()
+        .is_some_and(|a| !a.is_empty()));
     assert!(caps["features"]["duckdb"].is_boolean());
     assert!(caps["features"]["webengine"].is_boolean());
     assert!(caps["features"]["noter"].is_boolean());
@@ -1953,4 +2024,183 @@ fn every_advertised_tab_selector_is_actually_accepted() {
             "{name} advertises tab_id in its schema and then rejects it: {msg}"
         );
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// v0.1.133 — Phase 1 contract defects.
+// ═══════════════════════════════════════════════════════════════════════
+
+/// D2: the diagram tools advertised tab_id, then required tab_index.
+#[test]
+fn v0133_diagram_tools_take_tab_id_or_tab_index() {
+    let mut editor = MockEditor::default();
+    let id = editor.add_diagram_tab("flow.npd", "diagram flow\n");
+    let responses = run_lines_with(
+        editor,
+        &[
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string(),
+            call_line(2, "get_diagram_source", json!({ "tab_id": id })),
+            call_line(3, "validate_npd", json!({ "tab_id": id })),
+            call_line(
+                4,
+                "set_diagram_source",
+                json!({ "tab_id": id, "source": "diagram er\n" }),
+            ),
+            call_line(
+                5,
+                "export_diagram",
+                json!({ "tab_id": id, "path": "/tmp/f.pdf", "format": "pdf" }),
+            ),
+            call_line(6, "get_diagram_source", json!({ "tab_index": 3 })),
+            call_line(7, "get_diagram_source", json!({})),
+            call_line(8, "validate_npd", json!({ "tab_id": id, "source": "x" })),
+            call_line(9, "get_diagram_source", json!({ "tab_id": 424242 })),
+        ],
+    );
+    let tools = responses[0]["result"]["tools"].as_array().unwrap();
+    for name in [
+        "get_diagram_source",
+        "set_diagram_source",
+        "export_diagram",
+        "validate_npd",
+    ] {
+        let t = tools.iter().find(|t| t["name"] == name).unwrap();
+        let req = t["inputSchema"]["required"].as_array().unwrap();
+        assert!(
+            !req.iter().any(|r| r == "tab_index" || r == "tab_id"),
+            "{name} must not require one particular selector: {req:?}"
+        );
+        assert!(t["inputSchema"]["properties"].get("tab_id").is_some());
+    }
+    for r in &responses[1..5] {
+        assert_eq!(r["result"]["isError"], false, "{r}");
+    }
+    assert_eq!(json_of(&responses[5])["source"], "diagram er\n");
+    assert_eq!(responses[6]["error"]["code"], -32602);
+    assert_eq!(responses[7]["error"]["code"], -32602);
+    assert_eq!(responses[8]["result"]["isError"], true);
+    assert!(text_of(&responses[8]).contains("was closed"));
+}
+
+/// D2: export_diagram's format set belongs to the editor, which names what
+/// it supports when it refuses one.
+#[test]
+fn v0133_export_diagram_format_is_judged_by_the_editor() {
+    let mut editor = MockEditor::default();
+    let id = editor.add_diagram_tab("flow.npd", "diagram flow\n");
+    let responses = run_lines_with(
+        editor,
+        &[
+            call_line(
+                1,
+                "export_diagram",
+                json!({ "tab_id": id, "path": "/tmp/f.jpeg", "format": "jpeg" }),
+            ),
+            call_line(
+                2,
+                "export_diagram",
+                json!({ "tab_id": id, "path": "/tmp/f.gif", "format": "gif" }),
+            ),
+            call_line(
+                3,
+                "export_diagram",
+                json!({ "tab_index": 0, "path": "/tmp/f.png", "format": "png" }),
+            ),
+        ],
+    );
+    assert_eq!(responses[0]["result"]["isError"], false);
+    assert_eq!(responses[1]["result"]["isError"], true);
+    assert!(text_of(&responses[1]).contains("this build supports"));
+    assert!(text_of(&responses[2]).contains("not a diagram"));
+}
+
+/// D3: compare_tabs takes stable ids; a stale one is an error.
+#[test]
+fn v0133_compare_tabs_by_tab_id() {
+    let responses = run_lines(&[
+        call_line(1, "compare_tabs", json!({ "tab_id_a": 1, "tab_id_b": 2 })),
+        call_line(2, "compare_tabs", json!({ "tab_id_a": 1, "index_b": 2 })),
+        call_line(3, "compare_tabs", json!({ "tab_id_a": 1, "tab_id_b": 99 })),
+        call_line(
+            4,
+            "compare_tabs",
+            json!({ "tab_id_a": 1, "index_a": 0, "index_b": 1 }),
+        ),
+        call_line(5, "compare_tabs", json!({ "index_a": 0 })),
+        call_line(6, "compare_tabs", json!({ "index_a": 0, "index_b": 1 })),
+    ]);
+    assert_eq!(responses[0]["result"]["isError"], false);
+    assert_eq!(responses[1]["result"]["isError"], false);
+    assert_eq!(responses[2]["result"]["isError"], true);
+    assert!(text_of(&responses[2]).contains("was closed"));
+    assert_eq!(responses[3]["error"]["code"], -32602);
+    assert_eq!(responses[4]["error"]["code"], -32602);
+    assert_eq!(responses[5]["result"]["isError"], false); // the old shape still works
+}
+
+/// D9: tab-creating tools return the stable id, additively.
+#[test]
+fn v0133_results_carry_tab_id() {
+    let responses = run_lines(&[
+        call_line(
+            1,
+            "open_file",
+            json!({ "path": "/home/user/project/src/main.rs" }),
+        ),
+        call_line(2, "new_tab", json!({ "text": "x" })),
+        call_line(3, "create_diagram", json!({})),
+        call_line(4, "get_status", json!({})),
+    ]);
+    assert!(
+        text_of(&responses[0]).contains("(tab_id 1)"),
+        "{}",
+        text_of(&responses[0])
+    );
+    assert!(json_of(&responses[1])["tab_id"].as_i64().is_some());
+    assert!(json_of(&responses[2])["tab_id"].as_i64().is_some());
+    assert!(json_of(&responses[3])["tab_id"].as_i64().is_some());
+    // Additive: the old field is still there.
+    assert!(json_of(&responses[1])["tab_index"].as_u64().is_some());
+}
+
+/// D14: the pure formatters are READ tier (no editor state is touched).
+#[test]
+fn v0133_formatters_are_read_tier() {
+    use notepatra_mcp::tools::{ACT_TOOLS, READ_TOOLS};
+    for name in ["format_json", "format_sql", "format_html"] {
+        assert!(READ_TOOLS.contains(&name), "{name} must be READ");
+        assert!(!ACT_TOOLS.contains(&name));
+    }
+}
+
+/// D8b: a blocked Noter folder is reported in resources/list, not hidden.
+#[test]
+fn v0133_resources_list_reports_unlistable_notes() {
+    let mut editor = MockEditor::default();
+    editor.simulate_notes_error("the OS denied access to the Noter folder");
+    let responses = run_lines_with(
+        editor,
+        &[
+            request_line(1, "resources/list", json!({})),
+            request_line(
+                2,
+                "resources/read",
+                json!({ "uri": "notepatra://notes/unavailable" }),
+            ),
+        ],
+    );
+    let res = responses[0]["result"]["resources"].as_array().unwrap();
+    // Tabs are still listed.
+    assert!(res
+        .iter()
+        .any(|r| r["uri"].as_str().unwrap().starts_with("notepatra://tab/")));
+    let marker = res
+        .iter()
+        .find(|r| r["uri"] == "notepatra://notes/unavailable")
+        .expect("an explanatory resource");
+    assert!(marker["description"].as_str().unwrap().contains("denied"));
+    let text = responses[1]["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains("denied"), "{text}");
 }

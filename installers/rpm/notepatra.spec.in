@@ -14,6 +14,7 @@ Requires:       qt5-qtbase-gui
 Requires:       qt5-qtbase-mysql
 Requires:       qt5-qtbase-postgresql
 Requires:       qt5-qtcharts
+Requires:       qt5-qtsvg
 Requires:       glibc
 Requires:       libstdc++
 

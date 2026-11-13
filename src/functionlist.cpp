@@ -29,9 +29,8 @@ FunctionList::FunctionList(QWidget *parent) : QWidget(parent) {
     });
 }
 
-void FunctionList::updateSymbols(const QString &text, const QString &language) {
-    m_tree->clear();
-
+QVector<FunctionList::Symbol> FunctionList::parseSymbols(const QString &text,
+                                                        const QString &language) {
     struct Pattern { QRegularExpression re; QString kind; };
     QVector<Pattern> patterns;
 
@@ -50,35 +49,42 @@ void FunctionList::updateSymbols(const QString &text, const QString &language) {
         patterns.append({QRegularExpression("^\\s*(?:def|function|fn|func|sub)\\s+(\\w+)"), "function"});
     }
 
-    QTreeWidgetItem *classesNode = nullptr, *funcsNode = nullptr;
-    QStringList lines = text.split('\n');
-
+    QVector<Symbol> out;
+    const QStringList lines = text.split('\n');
     for (int lineNum = 0; lineNum < lines.size(); lineNum++) {
         const QString &line = lines[lineNum];
         for (const auto &pat : patterns) {
             auto match = pat.re.match(line);
             if (match.hasMatch()) {
-                QString name = match.captured(1);
-                QTreeWidgetItem *parent;
-                if (pat.kind == "class") {
-                    if (!classesNode) {
-                        classesNode = new QTreeWidgetItem(m_tree, QStringList("Classes"));
-                        classesNode->setExpanded(true);
-                        QFont bf = classesNode->font(0); bf.setBold(true); classesNode->setFont(0, bf);
-                    }
-                    parent = classesNode;
-                } else {
-                    if (!funcsNode) {
-                        funcsNode = new QTreeWidgetItem(m_tree, QStringList("Functions"));
-                        funcsNode->setExpanded(true);
-                        QFont bf = funcsNode->font(0); bf.setBold(true); funcsNode->setFont(0, bf);
-                    }
-                    parent = funcsNode;
-                }
-                auto *item = new QTreeWidgetItem(parent, QStringList(name));
-                item->setData(0, Qt::UserRole, lineNum + 1);
+                out.append({match.captured(1), pat.kind, lineNum + 1});
                 break;
             }
         }
+    }
+    return out;
+}
+
+void FunctionList::updateSymbols(const QString &text, const QString &language) {
+    m_tree->clear();
+    QTreeWidgetItem *classesNode = nullptr, *funcsNode = nullptr;
+    for (const Symbol &sym : parseSymbols(text, language)) {
+        QTreeWidgetItem *parent;
+        if (sym.kind == "class") {
+            if (!classesNode) {
+                classesNode = new QTreeWidgetItem(m_tree, QStringList("Classes"));
+                classesNode->setExpanded(true);
+                QFont bf = classesNode->font(0); bf.setBold(true); classesNode->setFont(0, bf);
+            }
+            parent = classesNode;
+        } else {
+            if (!funcsNode) {
+                funcsNode = new QTreeWidgetItem(m_tree, QStringList("Functions"));
+                funcsNode->setExpanded(true);
+                QFont bf = funcsNode->font(0); bf.setBold(true); funcsNode->setFont(0, bf);
+            }
+            parent = funcsNode;
+        }
+        auto *item = new QTreeWidgetItem(parent, QStringList(sym.name));
+        item->setData(0, Qt::UserRole, sym.line);
     }
 }

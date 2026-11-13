@@ -38,6 +38,7 @@
 // both shapes).
 // ═══════════════════════════════════════════════════════════════════════
 
+#include <QByteArray>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -187,6 +188,19 @@ bool resolveSafeWritePath(const QString &pathArg,
                           const QString &workspaceRoot,
                           QString *outAbsTarget,
                           QString *outErrorKind = nullptr);
+
+// Text-file encoding round-trip shared by write_file, apply_diff and Compose apply.
+struct TextFileFormat {
+    QByteArray bom;                       // raw BOM bytes, re-emitted as-is
+    QByteArray codec = "UTF-8";
+    QString label = QStringLiteral("UTF-8");
+};
+// Detects BOM / UTF-8 / Windows-1252; false (with *why) when the bytes do not round-trip.
+bool decodeTextFile(const QByteArray &raw, TextFileFormat *fmt, QString *text, QString *why);
+// *ok is false when `text` has characters the codec cannot encode.
+QByteArray encodeWithCodec(const QByteArray &codecName, const QString &text, bool *ok);
+QString dominantEol(const QString &text);
+QString withEol(const QString &s, const QString &eol);
 
 } // namespace AiTools
 

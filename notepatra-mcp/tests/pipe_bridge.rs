@@ -157,7 +157,10 @@ fn greeting_then_round_trips_with_sequential_ids() {
     assert_eq!(info["edition"], "Full");
     // Second call reuses the same pipe connection with the next id, proving
     // the reader thread survives between round-trips.
-    let index = ed.open_file("/tmp/x.txt").expect("open_file round-trip");
+    let index = ed
+        .open_file("/tmp/x.txt")
+        .expect("open_file round-trip")
+        .index;
     assert_eq!(index, 4);
     finish(bridge, "greeting_then_round_trips_with_sequential_ids");
 }

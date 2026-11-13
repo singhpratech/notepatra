@@ -7,23 +7,28 @@
 
 use serde_json::Value;
 
-use crate::tools::{ACT_TOOLS, READ_TOOLS, WRITE_TOOLS};
+use crate::tools::{ACT_TOOLS, EXTERNAL_WRITE_TOOLS, READ_TOOLS, WRITE_TOOLS};
 
-/// A tool's capability tier, ordered Read < Act < Write.
+/// A tool's capability tier, ordered Read < Act < Write < WriteExternal.
+/// WriteExternal (v0.1.133) is a write that leaves the editor: a database
+/// mutation, an HTTP request or a git remote operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tier {
     Read,
     Act,
     Write,
+    WriteExternal,
 }
 
 /// A connection's granted scope. Each scope admits its tier and every lower
-/// one: read_only ⊂ read_act ⊂ write_request.
+/// one: read_only ⊂ read_act ⊂ write_request ⊂ write_external. write_external
+/// is never a default: both `serve --max-scope` and `pair --scope` must name it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Scope {
     ReadOnly,
     ReadAct,
     WriteRequest,
+    WriteExternal,
 }
 
 impl Scope {
@@ -33,6 +38,7 @@ impl Scope {
             Scope::ReadOnly => "read_only",
             Scope::ReadAct => "read_act",
             Scope::WriteRequest => "write_request",
+            Scope::WriteExternal => "write_external",
         }
     }
 
@@ -41,6 +47,7 @@ impl Scope {
             "read_only" => Some(Scope::ReadOnly),
             "read_act" => Some(Scope::ReadAct),
             "write_request" => Some(Scope::WriteRequest),
+            "write_external" => Some(Scope::WriteExternal),
             _ => None,
         }
     }
@@ -51,6 +58,7 @@ impl Scope {
             Scope::ReadOnly => Tier::Read,
             Scope::ReadAct => Tier::Act,
             Scope::WriteRequest => Tier::Write,
+            Scope::WriteExternal => Tier::WriteExternal,
         }
     }
 
@@ -67,6 +75,8 @@ pub fn tier_of(name: &str) -> Option<Tier> {
         Some(Tier::Read)
     } else if ACT_TOOLS.contains(&name) {
         Some(Tier::Act)
+    } else if EXTERNAL_WRITE_TOOLS.contains(&name) {
+        Some(Tier::WriteExternal)
     } else if WRITE_TOOLS.contains(&name) {
         Some(Tier::Write)
     } else {
@@ -118,22 +128,44 @@ mod tests {
         assert!(Scope::ReadAct.allows(Tier::Read));
         assert!(Scope::ReadAct.allows(Tier::Act));
         assert!(!Scope::ReadAct.allows(Tier::Write));
-        // write_request: everything.
+        // write_request: every write that stays in the editor.
         assert!(Scope::WriteRequest.allows(Tier::Read));
         assert!(Scope::WriteRequest.allows(Tier::Act));
         assert!(Scope::WriteRequest.allows(Tier::Write));
+        assert!(!Scope::WriteRequest.allows(Tier::WriteExternal));
+        // write_external: everything.
+        assert!(Scope::WriteExternal.allows(Tier::WriteExternal));
+    }
+
+    #[test]
+    fn external_writes_need_the_highest_scope() {
+        for t in EXTERNAL_WRITE_TOOLS {
+            assert!(WRITE_TOOLS.contains(t), "{t} must also be a write tool");
+            assert_eq!(tier_of(t), Some(Tier::WriteExternal), "{t}");
+            assert!(!Scope::WriteRequest.allows(tier_of(t).unwrap()), "{t}");
+        }
+        for t in [
+            "execute_sql",
+            "rest_request",
+            "git_push",
+            "git_pull",
+            "git_fetch",
+        ] {
+            assert!(EXTERNAL_WRITE_TOOLS.contains(&t), "{t}");
+        }
     }
 
     #[test]
     fn filter_sizes_are_cumulative() {
         let full = serde_json::json!({ "result": { "tools": definitions() } });
         let total = definitions().as_array().unwrap().len();
-        assert_eq!(total, 49);
+        assert_eq!(total, 119);
 
         for (scope, want) in [
             (Scope::ReadOnly, READ_TOOLS.len()),
             (Scope::ReadAct, READ_TOOLS.len() + ACT_TOOLS.len()),
-            (Scope::WriteRequest, total),
+            (Scope::WriteRequest, total - EXTERNAL_WRITE_TOOLS.len()),
+            (Scope::WriteExternal, total),
         ] {
             let mut r = full.clone();
             filter_tools_list(scope, &mut r);
@@ -145,14 +177,20 @@ mod tests {
                 scope.as_str()
             );
         }
-        // Concretely: 24 / 38 / 49.
-        assert_eq!(READ_TOOLS.len(), 24);
-        assert_eq!(READ_TOOLS.len() + ACT_TOOLS.len(), 38);
+        // Concretely: 46 / 68 / 114 / 119.
+        assert_eq!(READ_TOOLS.len(), 46);
+        assert_eq!(READ_TOOLS.len() + ACT_TOOLS.len(), 68);
+        assert_eq!(EXTERNAL_WRITE_TOOLS.len(), 5);
     }
 
     #[test]
     fn scope_roundtrip() {
-        for s in [Scope::ReadOnly, Scope::ReadAct, Scope::WriteRequest] {
+        for s in [
+            Scope::ReadOnly,
+            Scope::ReadAct,
+            Scope::WriteRequest,
+            Scope::WriteExternal,
+        ] {
             assert_eq!(Scope::parse(s.as_str()), Some(s));
         }
         assert_eq!(Scope::parse("bogus"), None);

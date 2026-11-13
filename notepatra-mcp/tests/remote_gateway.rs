@@ -152,7 +152,7 @@ fn no_token_is_read_only_and_write_is_denied() {
     let _wd = Watchdog::new(SUITE, "no_token_is_read_only_and_write_is_denied");
     let h = start(default_pairing());
 
-    // tools/list is filtered to the read tier (24 tools).
+    // tools/list is filtered to exactly the read tier (derived, not a literal).
     let (s, resp) = rpc(
         &h.base,
         None,
@@ -162,7 +162,7 @@ fn no_token_is_read_only_and_write_is_denied() {
     let tools = resp["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        24,
+        notepatra_mcp::tools::READ_TOOLS.len(),
         "read_only should see exactly the read tier"
     );
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();

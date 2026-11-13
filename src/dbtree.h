@@ -10,6 +10,27 @@
 
 class QTreeWidget;
 class QTreeWidgetItem;
+
+namespace DbConnections { struct Record; }
+
+// v0.1.133 — the schema browser's introspection as a function (the MCP
+// describe_table tool reads it). primaryKey is known only where the catalog
+// query the browser already runs reports it (SQLite).
+namespace DbSchema {
+struct Column {
+    QString name;
+    QString type;
+    bool primaryKey = false;
+};
+struct Table {
+    QString schema;
+    QString name;
+    QString type;
+    QVector<Column> columns;
+    bool keysKnown = false;
+};
+QVector<Table> introspect(const DbConnections::Record &r, QString *outError);
+} // namespace DbSchema
 class QPushButton;
 class QLineEdit;
 class QLabel;

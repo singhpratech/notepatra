@@ -133,6 +133,11 @@ public:
     //   <ts>-renamed-by-user.html       → "renamed by user"
     static QString prettyTitleFromFilename(const QString &absPath);
 
+    // "" when root is absent (never used, not an error), empty, or listable.
+    // Otherwise the user-facing "system blocked access" text (permission
+    // denied / macOS privacy control on opening the directory).
+    static QString accessBlockedMessage(const QString &root);
+
     // List all .html files under root recursively, sorted by mtime desc.
     // Skip files ending in .bak1..bak<depth>, .draft, .tmp — plus .lock,
     // a legacy sidecar from builds that still shipped the (now removed)

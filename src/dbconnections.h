@@ -92,6 +92,14 @@ bool findByName(const QString &name, Record *out);
 bool open(const Record &r, QString *outConnectionName, QString *outError,
           bool readOnly = true, QString *outReadOnlyWarning = nullptr);
 
+// The QODBC connection string open() passes to SQLDriverConnect: the Options
+// text as typed, then SERVER / DATABASE / UID / PWD from the fields. A field
+// value holding ';', '{' or '}' is brace-quoted with '}' doubled (ODBC rules),
+// so `x;Encrypt=no` stays one DATABASE value instead of adding keywords; any
+// other value is passed exactly as before. Returns an empty string and sets
+// *outError when a field holds a control character (or the password a NUL).
+QString odbcConnectionString(const Record &r, QString *outError = nullptr);
+
 // ── SQL read-only / mutation classifier ─────────────────────────────────
 // Replaces the old leading-keyword prefix allowlist. Strips comments and
 // string/identifier literals, tokenizes, and enforces a SINGLE statement
@@ -106,6 +114,12 @@ struct SqlVerdict {
     bool mutation = false;         // authoritative "this changes data/state"
                                    // verdict for the human-approval gate
     QString reason;                // why it was rejected (empty if readOnly)
+    // v0.1.133: refusals no approval may override (statement stacking, an
+    // ambiguous comment or U& escape, a file/URL read, a side-effecting or
+    // command-running function or procedure). The MCP execute_sql gate.
+    bool hardFail = false;
+    QString hardReason;
+    int statementCount = 0;        // most statements any engine's lexing sees
 };
 // `restrictFilesystem` (default false) additionally rejects call-form use of
 // DuckDB filesystem-reading table functions (read_text/read_csv_auto/
@@ -114,12 +128,30 @@ struct SqlVerdict {
 // The desktop data-analyst leaves it false so a power user can still type
 // read_csv_auto('x.csv') directly. Legit CSV ingestion (Client::registerCsv)
 // never goes through classifySql, so this only affects user-typed SQL.
-// `strictBatch` (QODBC): a bare T-SQL verb anywhere is a mutation (SELECT 1 DROP TABLE x).
+// `strictBatch` (QODBC): a bare T-SQL verb anywhere is a mutation (SELECT 1 DROP TABLE x),
+// including one glued to a number's tail (1DROP, 2.DELETE, 0xUPDATE, 1. DROP); an ODBC
+// {call ...} escape is a hard refusal; USE HINT is exempt only inside OPTION ( ... ).
 SqlVerdict classifySql(const QString &sql, bool restrictFilesystem = false,
                        bool strictBatch = false);
 
 // True for drivers whose server executes a whole batch without ';' separators.
 bool driverRunsUnterminatedBatches(const QString &driver);
+
+// v0.1.133: the gate for a write a human approves over MCP (execute_sql).
+// classifySql with the filesystem restriction and the driver's batch rules,
+// plus hardFail for statements that reach files, the network, code or session
+// state (COPY, ATTACH, LOAD/INSTALL, CALL/EXECUTE, SET, transaction control,
+// CREATE FUNCTION/EXTENSION/..., ALTER SYSTEM): no approval card runs those.
+// On a driver that runs unterminated batches (QODBC), ONE ordinary write keeps
+// its own keywords in their grammatical slots: the leading verb (after an
+// optional WITH ctes) of INSERT / UPDATE / DELETE / MERGE, CREATE TABLE|INDEX|
+// VIEW, ALTER TABLE, DROP TABLE|INDEX|VIEW, TRUNCATE TABLE; UPDATE's SET; MERGE's
+// WHEN ... THEN UPDATE SET / DELETE / INSERT; ALTER TABLE's ALTER COLUMN / DROP
+// COLUMN|CONSTRAINT; REFERENCES ... ON DELETE|UPDATE actions; DROP ... IF EXISTS.
+// SELECT ... INTO stays approvable as one statement. Every other statement word
+// (a second verb, SET as a statement, EXEC, DECLARE, IF, GO, a second SELECT,
+// a parenthesised query, an ODBC {call}, ...) is a hard refusal.
+SqlVerdict classifyApprovedWrite(const QString &sql, const QString &driver);
 
 // Convenience wrappers over classifySql.
 //   isReadOnlyQuery: safe to run in the default (no-approval) path.

@@ -6,7 +6,7 @@
     <strong>C++ + Rust</strong> · <strong>~13 MB bare native executable</strong> · <strong>Zero Electron</strong> · <strong>238 file types</strong> · <strong>82 language lexers</strong> · <strong>Local AI formatters</strong> · <strong>MCP server</strong>
   </p>
   <p align="center">
-    <strong>MCP:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> now ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 49 tools (Git, read-only SQL, saved-connection queries, charts, Noter notes); every write human-approved in-window; nothing leaves your machine.
+    <strong>MCP:</strong> <a href="https://notepatra.org/mcp.html"><code>notepatra-mcp</code></a> now ships a prebuilt signed Windows sidecar and a one-click Claude Desktop bundle — connect Claude Desktop, Claude Code, OpenAI Codex, and any MCP client to the running editor. 119 tools (editing, tabs, Git, SQL, Noter, REST); every write human-approved in-window; local by default: the server itself opens no network connections, and only tools that use a saved database connection, or REST and git network writes you approve, reach beyond your machine.
   </p>
   <p align="center">
     <a href="https://notepatra.org">Website</a> ·
@@ -51,7 +51,7 @@ Not a port. Not a wrapper. Something new — **for everyone**.
 
 I asked: **what would a small native code editor look like if it was built today, in 2026, when AI is part of every developer's workflow, and ran natively on Linux + macOS + Windows from one codebase?**
 
-The answer: a tiny native executable — ~13 MB bare (~13.6 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.132 downloads: 4.8 MB Linux x64 (tarball, Qt from the system), 28.3 MB on macOS (DMG with bundled Qt), 32.8–44.1 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
+The answer: a tiny native executable — ~13 MB bare (~13.6 MB on Linux x64) on every platform — with a Rust-powered core, Scintilla editing engine, and local-first AI integration (cloud backends optional). v0.1.133 downloads: 4.8 MB Linux x64 (tarball, Qt from the system), 28.3 MB on macOS (DMG with bundled Qt), 32.8–44.1 MB on Windows (MSI/zip/setup.exe with bundled Qt DLLs). An editor that can fix your broken JSON with regex in milliseconds — and when regex isn't enough, it asks your AI to figure it out — local by default, six cloud backends one click away when you want a frontier model. No telemetry. No subscription. No mandatory API key.
 
 Notepatra started on Linux — because that's where the gap was. But great tools shouldn't have borders. **Notepatra runs on Linux, Windows, and macOS.** Same codebase. Same features. No one gets left behind.
 
@@ -94,25 +94,25 @@ Every plugin opens in its own tab. Real UI, not just a menu click.
 #### JSON Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Format** | Pretty-print with preserved key order |
-| **Minify** | Compact to one line |
-| **Fix + Format** | Rust-powered auto-repair: fixes missing braces, trailing commas, single quotes, unquoted keys, missing `{` after `[` — shows detailed report of every fix |
+| **Format** | Pretty-print changing whitespace only: key order, duplicate keys, number text (`1.0`, `-0`, 30-digit integers) and escapes are kept byte for byte. Invalid JSON is left untouched and the error says where (`line 3, column 7: expected ',' or ']' ...`) |
+| **Minify** | Compact to one line (whitespace between tokens only; never inside strings) |
+| **Fix + Format** | Rust-powered repair of unambiguous faults — trailing commas, `//` / `/* */` comments, single or curly quotes, unquoted keys, Python `True`/`False`/`None`, raw line breaks in strings, a missing `:` or a missing `,` at a line end. The output is only the repaired JSON; the status banner summarises the changes and its tooltip lists every one with its line and column. When the right repair would be a guess (unclosed brackets at the end: missing closer or truncated file?, `NaN`, a stray `]`) it changes nothing and says exactly where |
 | **AI Fix (Ollama)** | Sends truly broken JSON to your local AI — fixes what regex can't |
 
 #### HTML Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Format (2/4 spaces)** | Proper HTML indentation |
-| **Minify** | Strip all whitespace |
-| **Fix + Format** | Auto-close unclosed tags, detect missing closers, report issues |
+| **Format (2/4 spaces)** | Re-indent changing only whitespace a browser does not render (`<pre>`, `<textarea>`, scripts and spaces between inline elements are kept). A document it cannot follow exactly (mis-nested or stray tags, server-side code, ...) is left unchanged and the banner says what and where (line, column) |
+| **Minify** | Remove only unrendered whitespace, same rules |
+| **Check + Format** | The same check, then 2-space re-indent; it never adds or rewrites tags |
 | **AI Fix (Ollama)** | AI repairs broken nesting, malformed tags, missing attributes |
 
 #### Bracket Tools (inbuilt)
 | Button | What it does |
 |---|---|
-| **Check** | Detailed report: line numbers of every mismatched `()` `[]` `{}`, keyword mismatches (`begin`/`end`, `if`/`fi`) |
-| **Auto-Fix** | Adds missing closers in correct nesting order |
-| **AI Fix (Ollama)** | AI understands your code structure and fixes all bracket issues |
+| **Check** | Line and column of every unmatched `()` `[]` `{}` (brackets in strings, comments, templates, regexes and heredocs are skipped); shell `if`/`fi`, `case`/`esac`, `do`/`done` mismatches. Reported in the status banner (hover for the full list); the text is not changed |
+| **Auto-Fix** | Inserts missing closers and removes stray ones — nothing else — and lists each change with its line and column. Balanced code is never touched |
+| **AI Fix (Ollama)** | Sends the code to your local AI with a prompt to fix only bracket, paren, brace and keyword-pair mismatches; check the result with Show Diff |
 
 #### SQL Formatter (inbuilt)
 - Format with **UPPERCASE** or **lowercase** keywords
@@ -150,16 +150,10 @@ Backend dropdown ships **6 entries** — **Ollama** (local default · `localhost
 #### AI Assistant — side-dock (`Ctrl+Shift+A`)
 The AI chat lives in a **persistent right-side dock**, not an editor tab. One conversation, preserved across tab switches. Tick **Coding Mode** to open the 3-column coding layout (file tree · editor · AI chat) 3-pane layout.
 
-**Workspace awareness.** Every prompt carries:
-- the selection (or full file if no selection is active)
-- the full text of the current file
-- excerpts of every other open editor tab
-- a flat listing of all files under the workspace root (`.git`, `node_modules`, `target`, `dist`, etc. filtered out)
-
-So the model can reason about files you haven't opened yet — "import from utils.py" works even when utils.py isn't in a tab. Budget-capped so small local models (3B, 4K–8K context) don't overflow.
+**What the model sees.** Text you have selected is added to every message you type. In Coding mode, **Auto-attach open file** (off by default) tells the model which file is open; the model then reads and searches workspace files itself with its tools, inside the workspace and the secrets deny-list. Files you attach or name with `@file` are sent too. Other open tabs and the workspace listing are not attached automatically.
 
 **One-click actions** (hidden by default, click "▸ Quick actions" to reveal):
-Explain · Find Bugs · Refactor · Write Tests · Add Comments · Generate Docs · Optimize · Translate. Or type a custom prompt. Responses stream in, each has a **Copy** link, and the last response can be inserted at the cursor or replace the selection with one click.
+Explain · Find Bugs · Refactor · Write Tests · Add Comments · Generate Docs · Optimize · Translate. They work on your selection; with nothing selected they use the whole file only in Coding mode with Auto-attach on, and otherwise ask you to select code first. Or type a custom prompt. Responses stream in, each has a **Copy** link, and the last response can be inserted at the cursor or replace the selection with one click.
 
 **Speech-to-text** — optional mic button, uses local `arecord` + `whisper` CLI when installed. No audio ever leaves the machine.
 
@@ -207,7 +201,7 @@ A first-class diagramming surface that **renders in the default binary on every 
 | Feature | Shortcut |
 |---|---|
 | **Built-in Terminal** | `Ctrl+`` — opens as a tab, runs real commands |
-| **REST Client** | `Ctrl+Shift+R` — send HTTP requests, see responses with pretty JSON |
+| **REST Client** | `Ctrl+Shift+R` — send HTTP requests, see responses with pretty JSON. Runs `.http` / `.rest` files (`Ctrl+Alt+R` on a request) with `{{variables}}` and environments, imports and copies cURL. History keeps the last 50 requests; secret header values and password/token-style body fields are saved as `<redacted>`, the rest of a body as sent |
 | **Preview pane** | `Ctrl+Shift+V` — Markdown/HTML live, `.ipynb` viewer, SQL cells with `-- %%` |
 | **Hex Editor** | View > Hex Editor — color-coded hex dump of any binary file |
 | **Markdown Converter** | Features > Markdown — convert selection to table, list, code block, bold, link, heading, or strip HTML to markdown |
@@ -253,15 +247,15 @@ A first-class diagramming surface that **renders in the default binary on every 
 
 ### AI assistants (MCP) — new in v0.1.118
 
-From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. Nothing leaves your machine: stdio to the client, local socket to the editor, no network connections.
+From v0.1.118, Notepatra ships **`notepatra-mcp`** — a stdio JSON-RPC 2.0 [Model Context Protocol](https://modelcontextprotocol.io) server that connects external AI assistants (Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client) to the running editor over a local socket. **Local by default.** The server opens no network connections of its own: stdio to the client, a local socket to the editor. Tools that use a saved database connection talk to that database with the credentials you stored: `run_query`, `list_tables`, `describe_table` (read) and `test_connection` (act) do so without a card, `export_query_results` and `execute_sql` only after you approve. The REST and git network tools (`rest_request`, `git_fetch`, `git_pull`, `git_push`) run only after you approve them.
 
-**49 tools in three tiers**:
+**119 tools in three tiers**:
 
 | Tier | Tools | Gate |
 |---|---|---|
-| **Read** (24) | tabs, selection, status, recent files, in-tab + project search, Noter notes, reminders, read-only Git (status / diff / log / show / branch), `.npd` validation, read-only SQL (`run_sql`), language list (`list_languages`), capability probe (`get_capabilities`), `.npd` source read (`get_diagram_source`), saved connections (`list_connections` / `run_query` / `list_tables`) | None — observation only |
-| **Act** (13) | open file, new tab, go to line, set language, compare tabs, format JSON/SQL/HTML, open note, create diagram, open Noter, open Data Analyst (`open_data_analyst`), render chart (`render_chart`) | None — visible, non-destructive |
-| **Write** (11) | insert text, replace selection, find-and-replace, save, create note, append note, set reminder, export diagram, set diagram source, export query results (`export_query_results`), export chart (`export_chart`) | **Approve/Deny card inside the editor** — 120 s auto-deny, FIFO one card at a time, no headless bypass |
+| **Read** (46) | tabs and editor: `list_open_tabs`, `read_tab`, `get_selection`, `get_status`, `app_info`, `list_recent_files`, `list_languages`, `get_capabilities`, `get_preferences`, `list_symbols`; search: `find_in_tab`, `search_project`; Noter: `list_notes`, `read_note`, `list_reminders`, `search_notes`; Git: `git_status`, `git_diff`, `git_log`, `git_show`, `git_branch`, `list_hunks`, `list_conflicts`; diagrams: `validate_npd`, `get_diagram_source`, `mermaid_to_npd`; SQL and saved connections: `run_sql`, `list_connections`, `run_query`, `list_tables`, `describe_table`; pure text tools: `format_json`, `format_sql`, `format_html`, `check_brackets`, `fix_brackets`, `repair_json`, `hash_text`, `encode_text`, `diff_text`, `markdown_convert`, `generate_password`, `hex_dump`; REST helpers: `parse_http_file`, `curl_to_request`, `request_to_curl` | No card. Observation only, but the tools that use a saved connection (`run_query`, `list_tables`, `describe_table`) query that database with its stored credentials |
+| **Act** (22) | tabs and navigation: `open_file`, `new_tab`, `activate_tab`, `goto_line`, `select_range`, `set_language`, `set_read_only`, `bookmarks`, `fold`; view: `set_view`, `set_theme`, `set_preview`, `compare_tabs`, `compare_with_file`; Noter and diagrams: `open_note`, `open_noter`, `create_diagram`; data: `open_data_analyst`, `render_chart`, `open_connections_dialog`, `open_schema_browser`, `test_connection` | No card. Visible, non-destructive editor actions; view and theme changes are saved as preferences; `test_connection` opens a saved connection to report whether it works |
+| **Write** (51) | editing: `insert_text`, `replace_selection`, `apply_edit`, `undo`, `redo`, `transform_lines`, `convert_case`, `comment_lines`, `line_edit`, `set_eol`, `set_encoding`; tabs and files: `save_tab`, `save_all`, `close_tab`, `reload_tab`, `rename_file`, `set_workspace_folder`, `set_preference`, `clear_recent_files`; Noter: `create_note`, `append_note`, `set_reminder`, `rename_note`, `trash_note`, `restore_note`, `delete_note_permanently`, `delete_reminder`, `snooze_reminder`, `dismiss_reminder`, `export_note`; diagrams and exports: `set_diagram_source`, `export_diagram`, `export_query_results`, `export_chart`; Git: `git_stage`, `git_unstage`, `git_commit`, `git_branch_create`, `git_checkout`, `git_stash`, `git_discard`, `git_hunk`, `resolve_conflict`, `git_fetch`, `git_pull`, `git_push`; data and REST: `execute_sql`, `add_connection`, `update_connection`, `delete_connection`, `rest_request` | **Approve/Deny card inside the editor**: 120 s auto-deny, FIFO one card at a time, no headless bypass (`close_tab` / `reload_tab` skip the card only when nothing unsaved would be lost) |
 
 `find_in_tab` and `search_project` also take an optional `regex` flag. `run_sql` is **SELECT-only** (rejected by the SQL classifier otherwise) and, on the Full/DuckDB edition, runs in an engine sandbox — the target file is materialized into an in-memory table, then DuckDB's external filesystem access is disabled (`enable_external_access=false`) before the untrusted query runs, so it cannot read host files. Since v0.1.119 the sidecar also supports Windows over a named pipe.
 
@@ -303,7 +297,7 @@ Full tool reference, Claude Desktop / Agents SDK snippets, security model, and h
 **Why this hybrid?**
 - **C++** because Qt and QScintilla are C++ — zero friction for UI
 - **Rust** because file I/O, text processing, and parsing must never crash — Rust's ownership system guarantees memory safety
-- **Result**: the speed of C++, the safety of Rust. The bare executable is **~13 MB** on every platform (~13.6 MB Linux x64, similar on macOS / Windows). Latest v0.1.132 download sizes: **4.8 MB** Linux x64 tar.gz · **4.5 MB** Linux ARM64 tar.gz · **28.3 MB** macOS DMG (with bundled Qt) · **44.1 MB** Windows MSI · **33.1 MB** Windows NSIS · **37.8 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
+- **Result**: the speed of C++, the safety of Rust. The bare executable is **~13 MB** on every platform (~13.6 MB Linux x64, similar on macOS / Windows). Latest v0.1.133 download sizes: **4.8 MB** Linux x64 tar.gz · **4.5 MB** Linux ARM64 tar.gz · **28.3 MB** macOS DMG (with bundled Qt) · **44.1 MB** Windows MSI · **33.1 MB** Windows NSIS · **37.8 MB** Windows portable zip. _Installed footprint on Windows is ~75-85 MB after the MSI extracts bundled Qt + QScintilla DLLs — normal for any Qt-based installer._
 
 ---
 
@@ -323,7 +317,7 @@ irm https://notepatra.org/install.ps1 | iex
 
 That's it. Auto-detects your OS, downloads the right binary, installs it, adds to PATH, creates shortcuts.
 
-### Or download manually — [Latest release: v0.1.132](https://github.com/singhpratech/notepatra/releases/latest)
+### Or download manually — [Latest release: v0.1.133](https://github.com/singhpratech/notepatra/releases/latest)
 
 | Platform | Download | Size | What's inside |
 |---|---|---|---|
@@ -348,11 +342,11 @@ For one-time-install-then-every-user-sees-it on a shared machine, or silent push
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.132.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
+| 🪟 **Windows** | [`notepatra-x.x.x.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-0.1.133.msi /quiet` — installs to `C:\Program Files\Notepatra\`, adds system PATH, registers HKCR file associations, all-users Start Menu. WiX-built, MajorUpgrade-aware, SCCM-friendly. |
 | 🍎 **macOS** | [`Notepatra.dmg`](https://github.com/singhpratech/notepatra/releases/latest) | Mount + `sudo cp -R "/Volumes/Notepatra/Notepatra.app" /Applications/` from a deployment script. Or open the DMG manually and drag to `/Applications` (admin password). Notarised + stapled. |
-| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.132_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.132_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
-| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.132-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.132-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
-| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.132-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.132-x86_64.AppImage && sudo cp Notepatra-0.1.132-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
+| 🐧 **Debian / Ubuntu / Mint / Pop!_OS** (x64 + ARM64) | [`notepatra_0.1.133_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra_0.1.133_amd64.deb` — installs to `/opt/notepatra/` + symlink at `/usr/bin/notepatra`, hicolor icons, `.desktop` registration. ARM64: replace `amd64` → `arm64`. |
+| 🐧 **Fedora / RHEL / CentOS Stream / Rocky / Alma** (x64 + ARM64) | [`notepatra-0.1.133-1.x86_64.rpm`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo dnf install ./notepatra-0.1.133-1.x86_64.rpm` — same layout as the .deb. ARM64: replace `x86_64` → `aarch64`. Bundles QScintilla 2.14.1 alongside the binary because Fedora ships an incompatible packaging. |
+| 🐧 **Arch / openSUSE Tumbleweed / Manjaro / EndeavourOS / other glibc 2.38+** | [`Notepatra-0.1.133-x86_64.AppImage`](https://github.com/singhpratech/notepatra/releases/latest) | `chmod +x Notepatra-0.1.133-x86_64.AppImage && sudo cp Notepatra-0.1.133-x86_64.AppImage /opt/notepatra.AppImage && sudo ln -s /opt/notepatra.AppImage /usr/local/bin/notepatra`. Requires glibc 2.38+ (Ubuntu 24.04+, Fedora 40+, Arch, Tumbleweed). Older distros: use the .deb / .rpm. |
 
 > All artefacts ship with cosign `.sig` + `.pem` for keyless Sigstore verification and SLSA build provenance. See **[Verify your download](#verify-your-download)** below.
 
@@ -362,9 +356,9 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 | OS | Artefact | Silent admin install |
 |---|---|---|
-| 🪟 **Windows** | [`notepatra-local-ai-0.1.132.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.132.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
-| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.132_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.132_amd64.deb` |
-| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.132_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.132_arm64.deb` |
+| 🪟 **Windows** | [`notepatra-local-ai-0.1.133.msi`](https://github.com/singhpratech/notepatra/releases/latest) | `msiexec /i notepatra-local-ai-0.1.133.msi /quiet` — installs to `C:\Program Files\Notepatra Local AI\`, distinct UpgradeCode so SCCM treats it as its own product. Add/Remove Programs shows "Notepatra Local AI". |
+| 🐧 **Debian/Ubuntu x64** | [`notepatra-local-ai_0.1.133_amd64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.133_amd64.deb` |
+| 🐧 **Debian/Ubuntu ARM64** | [`notepatra-local-ai_0.1.133_arm64.deb`](https://github.com/singhpratech/notepatra/releases/latest) | `sudo apt install ./notepatra-local-ai_0.1.133_arm64.deb` |
 
 **The binary physically cannot reach `api.openai.com`, `api.anthropic.com`, `openrouter.ai`, `api.mistral.ai`, `generativelanguage.googleapis.com`, or any other public LLM endpoint.** Every `QNetworkAccessManager` request goes through an allowlist that only accepts:
 
@@ -376,7 +370,7 @@ For teams that **can't or won't send code to public LLM endpoints** — regulate
 
 Local Ollama, local llama.cpp, self-hosted Ollama on the LAN, and any other OpenAI-compatible server you have installed locally or on your private network — **all continue to work** in the cloud-free build. Only public-cloud LLM endpoints are blocked. The cloud-URL paste box is stripped from the UI as well, so users can't even type a public host. Auditors can confirm by running `strings notepatra | grep -c openai.com` — zero hits.
 
-On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.132_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build by name — only the bare lite build carries an edition suffix: `Notepatra Lite v0.1.132` for the lite build and `Notepatra v0.1.132` for the full build (DuckDB bundled), plus `Notepatra Local AI Lite v0.1.132` / `Notepatra Local AI v0.1.132` for the cloud-free (local-ai) builds; the same name shows in the window title bar and the About dialog.
+On Linux the two flavors share the same `notepatra` binary name on disk; `apt` Conflicts ensures only one of `notepatra` / `notepatra-local-ai` is installed at a time, swap transactionally with `sudo apt install ./notepatra-local-ai_0.1.133_amd64.deb`. On Windows the two MSIs are independent products (different UpgradeCode + ProductName + install dir) so they can coexist if needed; admins typically push one or the other based on policy. `notepatra --version` self-identifies the build by name — only the bare lite build carries an edition suffix: `Notepatra Lite v0.1.133` for the lite build and `Notepatra v0.1.133` for the full build (DuckDB bundled), plus `Notepatra Local AI Lite v0.1.133` / `Notepatra Local AI v0.1.133` for the cloud-free (local-ai) builds; the same name shows in the window title bar and the About dialog.
 
 ### Verify your download
 
@@ -640,6 +634,7 @@ Notepatra follows [Keep a Changelog](https://keepachangelog.com/) and [Semantic 
 
 | Version | Date | Highlights |
 |---|---|---|
+| [**v0.1.133**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.133) | 2026-11-12 | **Text tools that never change meaning, an AI assistant that stops losing work, MCP from 49 to 119 tools, and `.http` files in the REST client.** JSON Format and Minify change only whitespace (numbers, duplicate keys and escapes are copied exactly) and leave invalid JSON untouched with a line and column; **Fix + Format** repairs only unambiguous faults, lists every change, and declines a truncated file. HTML Format and Minify change only whitespace a browser does not render; HTML "Fix + Format" is now **Check + Format**. Bracket Auto-Fix never touches balanced code. **AI:** a quick action with no model no longer wipes the chat, a reply interrupted by Send is kept, quick actions honour Auto-attach, agent writes never reload over unsaved edits and keep the file's encoding, BOM and line endings; CSV loading follows RFC 4180 with money, percentages and unambiguous dates typed. **Security:** six read-only SQL check bypasses closed; `git_show` / `git_diff` keep deny-listed files out; `config.json` and `db-connections.json` owner-only. **MCP: 119 tools** (Read 46 / Act 22 / Write 51): editing, tabs, view and settings, pure text tools, Git writes, Noter management, data and REST; every write behind the Approve card; the five writes that reach outside the editor need the remote gateway's `write_external` scope. **REST client:** `.http` / `.rest` files, environments, cURL import and copy, history with secret header values and password/token-style body fields redacted. Every Linux and Windows package is now launched in CI. |
 | [**v0.1.132**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.132) | 2026-11-12 | **macOS hotfix: the v0.1.131 DMGs did not start.** The app bundle was missing `libbrotlicommon.1.dylib` (needed via the Qt cocoa plugin → freetype → brotli), so both macOS DMGs (standard and Full) exited at launch. A Homebrew library on the build machine gained that dependency between the v0.1.130 and v0.1.131 builds and packaging did not copy it; no source change caused it. Also fixed on macOS: WebP and TIFF images did not load (their libraries' own dependencies, such as `libsharpyuv`, were not bundled), and the bundled libssl pointed at a build-machine path for libcrypto. New build gates: every library the macOS app needs must be inside the bundle or the build fails (`scripts/macos-bundle-closure.sh`), and the macOS build now launches the packaged app and fails if it cannot open (`scripts/macos-launch-smoke.sh`). Linux and Windows builds are functionally identical to v0.1.131. |
 | [**v0.1.131**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.131) | 2026-11-06 | **Safer saves, a tighter AI SQL gate, a Preview pane that keeps its promises, macOS that opens files from Finder.** Saves (Noter notes, AI `apply_diff`, saved DB connections, chat history) **never delete the old copy before the new one is in place**, and **Rename refuses to overwrite an existing file** (it used to save over it). **AI SQL gate:** unapproved `query_sql` on DuckDB runs with the filesystem locked, so `read_text(...)` / `FROM 'file.csv'` no longer return file contents; SQL Server batches without `;`, escaped strings, MySQL comment forms and a CR inside a `--` comment can no longer hide a write; read-only SQLite opens read-only in the driver; "Approve all queries" covers writes only. **Preview pane:** Stop and the 120 s timeout work on every driver; the HTML preview truly loads nothing remote (v0.1.130 did); results survive tab switches and edits; the pane is remembered; `Ctrl+Shift+Return` runs and advances; plain `.sql` files run the statement under the cursor; `Ctrl+C` copies results as TSV; NULL shown the same on every driver. **macOS:** Finder double-click / Open With / Dock drop open the file, ⌘Q quits (AI moves to ⇧⌘A), Replace leaves ⌘H, DMG gets an Applications link, first-launch note for the un-notarized app. Welcome tab and Feature Guide now cover Preview, Data analyst, Diagram and MCP; Help gains Documentation and Show Welcome Tab. Five new suites, each red against the old code — **86** suites on Full, **83** on Lite, offscreen ctest green on both. |
 | [**v0.1.130**](https://github.com/singhpratech/notepatra/releases/tag/v0.1.130) | 2026-10-20 | **A Preview pane beside the editor.** `View > Preview Pane`, `Ctrl+Shift+V`, or the new **Preview** eye-icon button at the end of the built-in tools row opens a pane to the right of the editor tabs (draggable splitter, 55/45 by default; follows the current tab; not saved in the session). **Markdown** renders live with Qt's GitHub-dialect parser (tables, task lists, fenced code), re-rendering 250 ms after you stop typing, theme-aware in Light / Dark / Monokai, relative images resolved against the file. **HTML** renders through Qt's rich-text engine in Lite and through real **Chromium** in Full — **JavaScript off, no remote resources, the page cannot navigate the pane** (meta-refresh, forms, iframes blocked); over ~1.5 MB it falls back to the built-in engine. **Jupyter `.ipynb`** shows as a read-only notebook (markdown cells, `In [n]:` code cells, stream / text / HTML-table / PNG outputs, ANSI-stripped tracebacks; nbformat 4 only, `<script>` removed) while the file still opens as JSON. **SQL cells**: a `.sql` file with `-- %%` separators becomes a notebook — `-- %% [markdown]` notes, a **Run** button and result table per cell, **Run All** (stops at first error), **Stop**, and `Ctrl+Return` to run the cell under the cursor. Connections: **Scratch (SQLite, temporary)** (state persists across cells), **Scratch (DuckDB, temporary)** in Full, and every saved connection — **read-only by default, tick Allow writes** to change data. Results capped at 500 rows, queries run off the GUI thread, 120 s ceiling; Stop is immediate for DuckDB only, and the Qt SQLite driver runs only the first statement of a multi-statement cell. Website layout fixes (FAQ headings, phone overflow on cards, docs tables and inline code, top-bar wrapping), verified at desktop and 390 px. No new dependency, no network; session handling, the Markdown Converter, AI tools and the MCP bridge are unchanged. Suites: `test_notebook_render` 49 · `test_preview_pane` 60+ — **81** suites on Full, **78** on Lite, offscreen ctest green on both. |
