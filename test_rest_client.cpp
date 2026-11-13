@@ -144,6 +144,8 @@ private:
             QByteArray png("\x89PNG\r\n\x1a\n\0\0\0\rIHDR", 16);
             png += QByteArray(1000, '\x01');
             reply(s, "200 OK", "image/png", png);
+        } else if (path.startsWith("/empty")) {
+            reply(s, "204 No Content", "text/plain", QByteArray());
         } else if (path.startsWith("/big")) {
             QByteArray big;
             big.reserve(3 * 1024 * 1024);
@@ -308,6 +310,8 @@ int main(int argc, char *argv[]) {
 
     // ── S1 ──
     std::printf("-- S1: undefined variable blocks the send --\n");
+    EXPECT("S1: before any response the Body pane shows the how-to hint",
+           TA::respBody(rest).isEmpty() && TA::respBodyHint(rest).startsWith("Set a method and URL"));
     rest->sendHttpRequest(QString::fromUtf8(httpText), 2, httpPath);
     QTest::qWait(300);
     EXPECT("S1: badge names the undefined variable", TA::badge(rest).contains("{{base}}") &&
@@ -430,11 +434,21 @@ int main(int argc, char *argv[]) {
     EXPECT("S6: binary finished", waitFinished(finished, before));
     EXPECT("S6: binary note instead of bytes", TA::note(rest).contains("Binary response, ") && TA::note(rest).contains(" bytes (image/png)") &&
                                                    TA::respBody(rest).isEmpty());
+    std::printf("     body pane hint after binary: %s\n", TA::respBodyHint(rest).toUtf8().constData());
+    EXPECT("S6: empty Body pane no longer shows the before-any-response hint",
+           !TA::respBodyHint(rest).contains("Set a method"));
+    EXPECT("S6: ...it says the response is binary", TA::respBodyHint(rest).contains("Binary response"));
     EXPECT("S6: Save enabled, Open in tab disabled", TA::saveBtn(rest)->isEnabled() && !TA::openTabBtn(rest)->isEnabled());
     const QString saved = work.filePath("out.png");
     EXPECT("S6: Save writes the raw bytes", TA::saveTo(rest, saved) && readFile(saved).size() == 1016 &&
                                                 readFile(saved).startsWith("\x89PNG"));
     EXPECT("S6: suggested name from URL + type", RestClient::suggestedFileName(server.base() + "/binary", "image/png") == "binary.png");
+    TA::url(rest)->setText(server.base() + "/empty");
+    before = finished.count();
+    rest->send();
+    EXPECT("S6: empty 204 finished", waitFinished(finished, before) && TA::badge(rest).startsWith("204"));
+    EXPECT("S6: an empty body says so, not the before-any-response hint",
+           TA::respBody(rest).isEmpty() && TA::respBodyHint(rest) == "The response has no body.");
     TA::url(rest)->setText(server.base() + "/big");
     before = finished.count();
     rest->send();

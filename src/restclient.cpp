@@ -1002,6 +1002,11 @@ QString RestClient::suggestedFileName(const QString &url, const QString &content
 
 void RestClient::renderResponse() {
     m_respBinary = isBinaryResponse(m_respContentType, m_respBytes);
+    // The "Set a method and URL" hint is for before the first response; an
+    // empty pane after one says why it is empty.
+    m_respBody->setPlaceholderText(m_respBinary
+                                       ? tr("Binary response: not shown as text. Use Save… to keep it.")
+                                       : tr("The response has no body."));
     if (m_respBinary) {
         m_respBody->setPlainText(QString());
         return;
