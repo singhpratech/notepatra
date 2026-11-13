@@ -4,6 +4,7 @@
 
 #include "editor.h"
 #include "http_file.h"
+#include "shortcut_hints.h"
 #include "theme_detect.h"
 
 #include <QAction>
@@ -95,7 +96,7 @@ void HttpEditorSupport::onContextMenu(QMenu *menu, const QPoint &pos) {
 
     const bool onRequest = HttpFile::parse(m_ed->text()).requestAtLine(line) >= 0;
     auto *act = new QAction(tr("Send Request"), menu);
-    act->setShortcut(QKeySequence(QStringLiteral("Ctrl+Alt+R")));
+    act->setShortcut(Shortcuts::sendHttpRequest());
     act->setEnabled(onRequest);
     act->setObjectName(QStringLiteral("ctxSendHttpRequest"));
     connect(act, &QAction::triggered, this, [this, line]() { emit sendRequested(m_ed, line); });

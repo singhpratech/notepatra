@@ -5,6 +5,7 @@
 #include "curl_convert.h"
 #include "fonts.h"
 #include "rest_history.h"
+#include "shortcut_hints.h"
 #include "theme_detect.h"
 
 #include <QApplication>
@@ -226,9 +227,10 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_respBody = new QPlainTextEdit;
     m_respBody->setReadOnly(true);
     m_respBody->setFont(mono);
-    m_respBody->setPlaceholderText(tr("Set a method and URL, or press Send Request (Ctrl+Alt+R) "
+    m_respBody->setPlaceholderText(tr("Set a method and URL, or press Send Request (%1) "
                                       "in a .http file. The response body shows here; JSON is "
-                                      "pretty-printed."));
+                                      "pretty-printed.")
+                                       .arg(Shortcuts::nativeText(Shortcuts::sendHttpRequest())));
     m_respHeaders = new QPlainTextEdit;
     m_respHeaders->setReadOnly(true);
     m_respHeaders->setFont(mono);

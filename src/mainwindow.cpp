@@ -994,7 +994,7 @@ ul { margin-top: 4px; }
 
 <h3>REST and Git</h3>
 <ul>
-<li><b>REST Client:</b> in a <code>.http</code> / <code>.rest</code> file, <code>Ctrl+Alt+R</code> (Tools &gt; Send Request) sends the request under the caret; <code>{{variables}}</code>, environments from <code>http-client.env.json</code>, Import cURL / Copy as cURL and a request history.</li>
+<li><b>REST Client:</b> in a <code>.http</code> / <code>.rest</code> file, <code>%9</code> (Tools &gt; Send Request) sends the request under the caret; <code>{{variables}}</code>, environments from <code>http-client.env.json</code>, Import cURL / Copy as cURL and a request history.</li>
 <li><b>Git Integration:</b> inspect repository status, changed files, and work with repository context without leaving the editor.</li>
 <li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
 </ul>
@@ -1071,7 +1071,7 @@ ul { margin-top: 4px; }
 <ul>
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
 <li><code>Ctrl+F</code> find, <code>%4</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
-<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Alt+R</code> Send Request (.http), <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>%9</code> Send Request (.http), <code>Ctrl+Shift+E</code> Workspace</li>
 <li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
 <li><code>%6</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
@@ -1086,7 +1086,8 @@ ul { margin-top: 4px; }
                 Shortcuts::nativeText(Shortcuts::terminal()).toHtmlEscaped(),
                 Shortcuts::nativeText(Shortcuts::fullScreen()).toHtmlEscaped(),
                 Shortcuts::nativeText(QKeySequence("Ctrl+Shift+V")).toHtmlEscaped(),
-                Shortcuts::nativeText(QKeySequence(Qt::CTRL | Qt::Key_Return)).toHtmlEscaped());
+                Shortcuts::nativeText(QKeySequence(Qt::CTRL | Qt::Key_Return)).toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::sendHttpRequest()).toHtmlEscaped());
 }
 
 static void showRichHelpDialog(QWidget *parent, const QString &title, const QString &html) {
@@ -4931,7 +4932,7 @@ void MainWindow::buildMenus() {
     // so Ctrl+Alt+R is never taken from anything else.
     auto *sendHttpAct = feat->addAction("Send Request");
     sendHttpAct->setObjectName(QStringLiteral("actSendHttpRequest"));
-    sendHttpAct->setShortcut(QKeySequence("Ctrl+Alt+R"));
+    sendHttpAct->setShortcut(Shortcuts::sendHttpRequest());
     sendHttpAct->setStatusTip("Send the request under the caret in a .http or .rest file to the REST Client.");
     sendHttpAct->setEnabled(false);
     auto sendHttpAt = [this, newRestTab](Editor *ed, int line) {
@@ -5110,7 +5111,7 @@ void MainWindow::buildMenus() {
     });
 
     feat->addAction("How REST Client Works...", this, [this]() {
-        QMessageBox::information(this, "REST Client — How It Works",
+        QMessageBox::information(this, "REST Client — How It Works", QString(
             "REST CLIENT (.http files)\n\n"
             "Write HTTP requests in your editor:\n\n"
             "  GET https://api.github.com/users/octocat\n"
@@ -5121,12 +5122,13 @@ void MainWindow::buildMenus() {
             "  {\"name\": \"test\", \"value\": 42}\n\n"
             "Usage:\n"
             "  1. Save the file as .http or .rest\n"
-            "  2. Put the caret in a request and press Ctrl+Alt+R\n"
+            "  2. Put the caret in a request and press %1\n"
             "     (or click the green marker, or right-click > Send Request)\n"
             "  3. The REST Client tab shows status, body and headers\n\n"
             "Variables: @name = value lines, {{name}} anywhere, and\n"
             "environments from http-client.env.json next to the file.\n"
-            "### separates multiple requests in one file");
+            "### separates multiple requests in one file")
+            .arg(Shortcuts::nativeText(Shortcuts::sendHttpRequest())));
     });
 
     // ═══ ENCODING ═══
@@ -6546,7 +6548,7 @@ void MainWindow::buildMenus() {
             "  %3Terminal\n"
             "  %4AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
-            "  Ctrl+Alt+R      Send Request (.http)\n"
+            "  %5Send Request (.http)\n"
             "  Ctrl+Shift+E    File Explorer\n"
             "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
             "TABS\n"
@@ -6556,7 +6558,8 @@ void MainWindow::buildMenus() {
             "  Double-click    New Tab (on empty area)")
             .arg(col(Shortcuts::replace()), col(Shortcuts::fullScreen()),
                  col(Shortcuts::terminal()),
-                 Shortcuts::aiAssistantHint().leftJustified(15) + QLatin1Char(' ')));
+                 Shortcuts::aiAssistantHint().leftJustified(15) + QLatin1Char(' '),
+                 col(Shortcuts::sendHttpRequest())));
     });
 
     help->addSeparator();

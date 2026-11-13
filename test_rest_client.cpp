@@ -68,6 +68,7 @@ public:
     static QTabBar *respTabs(RestClient *r) { return r->m_respTabs; }
     static QTabBar *reqTabs(RestClient *r) { return r->m_reqTabs->tabBar(); }
     static QString respBody(RestClient *r) { return r->m_respBody->toPlainText(); }
+    static QString respBodyHint(RestClient *r) { return r->m_respBody->placeholderText(); }
     static QString respHeaders(RestClient *r) { return r->m_respHeaders->toPlainText(); }
     static QTreeWidget *history(RestClient *r) { return r->m_history; }
     static QPushButton *sendBtn(RestClient *r) { return r->m_sendBtn; }
@@ -543,6 +544,19 @@ int main(int argc, char *argv[]) {
         QAction *sendAct = mw.findChild<QAction *>("actSendHttpRequest");
         EXPECT("S9: Send Request action exists with Ctrl+Alt+R",
                sendAct && sendAct->text() == "Send Request" && sendAct->shortcut() == QKeySequence("Ctrl+Alt+R"));
+        // The panel's hint names the keys the action really has, in the
+        // platform's notation (Cmd+Option+R symbols on macOS).
+        {
+            RestClient hintPanel;
+            const QString keys = sendAct ? sendAct->shortcut().toString(QKeySequence::NativeText) : QString();
+            const QString hint = TA::respBodyHint(&hintPanel);
+            std::printf("     empty-state hint: %s\n", hint.toUtf8().constData());
+            EXPECT("S9: empty-state hint shows the Send Request keys in native text",
+                   !keys.isEmpty() && hint.contains(QStringLiteral("Send Request (%1)").arg(keys)));
+#ifndef Q_OS_MACOS
+            EXPECT("S9: ...which read Ctrl+Alt+R off macOS", hint.contains("(Ctrl+Alt+R)"));
+#endif
+        }
         const QString txtPath = work.filePath("notes.txt");
         writeFile(txtPath, "GET http://127.0.0.1:1/\n");
         mw.openFile(txtPath);
