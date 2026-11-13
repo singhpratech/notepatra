@@ -4041,8 +4041,16 @@ void MainWindow::updateDocStats() {
 }
 
 void MainWindow::updateStatusBar() {
+    if (!m_statusBar) return;
     auto *e = currentEditor();
-    if (!e) return;
+    if (!e) {
+        // Welcome, REST Client, Noter, Terminal, a diagram, ...: no editor
+        // fields (they described the last editor), just the tab's name.
+        const int i = m_tabs->currentIndex();
+        m_statusBar->showNonEditor(i >= 0 ? m_tabs->tabText(i) : QString());
+        return;
+    }
+    m_statusBar->showEditor();
     int line, col;
     e->getCursorPosition(&line, &col);
     int pos = static_cast<int>(e->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
@@ -7386,8 +7394,8 @@ void MainWindow::runStartupNow() {
     // never touch it — it belongs to the primary / the live owner.
     if (markerIsOurs) QFile::remove(marker);
 
-    if (currentEditor()) updateStatusBar();
-    else m_statusBar->updateLanguage(tr("Normal text"));
+    // Also replaces "Restoring session..." when a tool tab is current.
+    updateStatusBar();
     updateTitle();
 }
 

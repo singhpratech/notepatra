@@ -67,6 +67,52 @@ NppStatusBar::NppStatusBar(QWidget *parent) : QWidget(parent) {
 
     m_ins = makeLabel("INS", 36, true);
     lay->addWidget(m_ins);
+
+    m_lang->setObjectName("statusLang");
+    m_size->setObjectName("statusSize");
+    m_pos->setObjectName("statusPos");
+    m_changes->setObjectName("statusChanges");
+    m_eol->setObjectName("statusEol");
+    m_enc->setObjectName("statusEnc");
+    m_ins->setObjectName("statusIns");
+
+    // Hidden on tool tabs; they keep their space so the bar does not shift.
+    m_editorOnly = {m_size, m_pos, m_eol, m_enc, m_ins};
+    for (QLabel *sep : findChildren<QLabel *>(QStringLiteral("statusSep"))) m_editorOnly << sep;
+    for (QWidget *w : m_editorOnly) {
+        QSizePolicy sp = w->sizePolicy();
+        sp.setRetainSizeWhenHidden(true);
+        w->setSizePolicy(sp);
+    }
+}
+
+static void setRetainSize(QWidget *w, bool retain) {
+    QSizePolicy sp = w->sizePolicy();
+    sp.setRetainSizeWhenHidden(retain);
+    w->setSizePolicy(sp);
+}
+
+void NppStatusBar::showNonEditor(const QString &tabName) {
+    if (m_editorMode) {
+        // A visible change counter keeps its space too; a hidden one has none.
+        setRetainSize(m_changes, m_changes->isVisible());
+        m_editorMode = false;
+    }
+    for (QWidget *w : m_editorOnly) w->setVisible(false);
+    m_changes->setVisible(false);
+    m_lang->setText(" " + tabName);
+    m_lang->setCursor(Qt::ArrowCursor);
+    m_lang->setToolTip(QString());
+}
+
+void NppStatusBar::showEditor() {
+    if (m_editorMode) return;
+    m_editorMode = true;
+    for (QWidget *w : m_editorOnly) w->setVisible(true);
+    m_changes->setVisible(!m_changes->text().isEmpty());
+    setRetainSize(m_changes, false);
+    m_lang->setCursor(Qt::PointingHandCursor);
+    m_lang->setToolTip("Click to change language");
 }
 
 void NppStatusBar::updatePosition(int line, int col, int pos) {
@@ -110,7 +156,7 @@ void NppStatusBar::updateChangeHistory(int modified, int saved) {
         m_changes->setVisible(false);
         return;
     }
-    m_changes->setVisible(true);
+    m_changes->setVisible(m_editorMode);  // a tool tab keeps it hidden
     m_changes->setText(QString("%1 modified  ·  %2 saved").arg(modified).arg(saved));
 }
 
@@ -120,7 +166,8 @@ void NppStatusBar::updateEol(const QString &eol) { m_eol->setText(eol); }
 void NppStatusBar::updateInsertMode(bool ovr) { m_ins->setText(ovr ? "OVR" : "INS"); }
 
 void NppStatusBar::mousePressEvent(QMouseEvent *event) {
-    if (event->button() != Qt::LeftButton) { QWidget::mousePressEvent(event); return; }
+    // Tool tab: the language slot is the tab's name, nothing to change.
+    if (event->button() != Qt::LeftButton || !m_editorMode) { QWidget::mousePressEvent(event); return; }
     QWidget *target = childAt(event->pos());
     const QPoint g = event->globalPos();
     if (target == m_lang)      { emit languageClicked(g); event->accept(); return; }

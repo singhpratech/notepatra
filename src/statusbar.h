@@ -25,6 +25,13 @@ public:
     // lines that have been edited at some point during the session and
     // already persisted to disk.
     void updateChangeHistory(int modified, int saved);
+    // A tool tab (Welcome, REST Client, Noter, ...) is current: the editor
+    // fields and the click-to-change menus are hidden and the language slot
+    // shows the tab's name. Hidden slots keep their space, so switching
+    // tabs does not shift the bar. showEditor() brings the fields back.
+    void showNonEditor(const QString &tabName);
+    void showEditor();
+    bool showsEditor() const { return m_editorMode; }
     void applyColors(const QString &bg, const QString &fg, const QString &sep);
 
 signals:
@@ -41,6 +48,8 @@ protected:
 
 private:
     QLabel *m_lang, *m_size, *m_pos, *m_changes, *m_eol, *m_enc, *m_ins;
+    QList<QWidget *> m_editorOnly;  // shown only for an editor tab (not m_changes)
+    bool m_editorMode = true;
 };
 
 #endif
