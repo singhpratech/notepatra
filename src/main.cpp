@@ -484,6 +484,13 @@ int main(int argc, char *argv[]) {
     // --new and the hung-primary fallback never read/write session state.
     MainWindow window(newWindow || standaloneFallback);
     if (server) server->setParent(&window);
+    // A quit that never closes the window (SIGTERM/SIGINT -> quit() above;
+    // Qt 5 sends no close event) would otherwise keep only the last autosave
+    // tick, losing up to autoSaveIntervalSec of edits. After a normal close
+    // this is a no-op (nothing changed since closeEvent saved), and it no-ops
+    // in session-less windows like every saveSession().
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &window,
+                     [&window]() { window.saveSession(); });
 
     // D1 — CLI files + --line are applied by the deferred startup slot,
     // after the window is visible.
