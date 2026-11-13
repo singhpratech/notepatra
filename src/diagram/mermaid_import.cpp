@@ -64,10 +64,81 @@ bool parseNodeToken(const QString &tokIn, QString &id, QString &npdShape) {
     return false;
 }
 
+// The diagram-type keyword Mermaid reads from the first meaningful line, or ""
+// when that line is already flowchart content (an edge or a node), which the
+// importer accepts without a header. Skips blank lines, %% comments,
+// %%{init}%% directives and a leading `---` front-matter block.
+QString headerKeyword(const QString &mermaid) {
+    const QStringList lines = mermaid.split(QLatin1Char('\n'));
+    int i = 0;
+    while (i < lines.size() && lines.at(i).trimmed().isEmpty()) ++i;
+    if (i < lines.size() && lines.at(i).trimmed() == QLatin1String("---")) {
+        for (++i; i < lines.size(); ++i)
+            if (lines.at(i).trimmed() == QLatin1String("---")) { ++i; break; }
+    }
+    for (; i < lines.size(); ++i) {
+        const QString t = lines.at(i).trimmed();
+        if (t.isEmpty() || t.startsWith(QLatin1String("%%"))) continue;
+        // `A --> B`, `A[x]`, `A -.-> B`: content, not a header.
+        if (t.contains(QLatin1String("--")) || t.contains(QLatin1String("==")) ||
+            t.contains(QLatin1String("-.")) || t.contains(QLatin1Char('[')) ||
+            t.contains(QLatin1Char('(')) || t.contains(QLatin1Char('{')))
+            return QString();
+        int k = 0;
+        while (k < t.size() && (t.at(k).isLetterOrNumber() || t.at(k) == QLatin1Char('-') ||
+                                t.at(k) == QLatin1Char('_')))
+            ++k;
+        return t.left(k);
+    }
+    return QString();
+}
+
+// A header keyword that names a Mermaid diagram type other than a flowchart.
+bool isOtherMermaidType(const QString &kw) {
+    static const QStringList types = {
+        QStringLiteral("sequenceDiagram"), QStringLiteral("classDiagram"),
+        QStringLiteral("classDiagram-v2"), QStringLiteral("stateDiagram"),
+        QStringLiteral("stateDiagram-v2"), QStringLiteral("erDiagram"),
+        QStringLiteral("journey"), QStringLiteral("gantt"), QStringLiteral("pie"),
+        QStringLiteral("quadrantChart"), QStringLiteral("requirementDiagram"),
+        QStringLiteral("gitGraph"), QStringLiteral("C4Context"),
+        QStringLiteral("C4Container"), QStringLiteral("C4Component"),
+        QStringLiteral("C4Dynamic"), QStringLiteral("C4Deployment"),
+        QStringLiteral("mindmap"), QStringLiteral("timeline"), QStringLiteral("zenuml"),
+        QStringLiteral("sankey"), QStringLiteral("sankey-beta"), QStringLiteral("xychart"),
+        QStringLiteral("xychart-beta"), QStringLiteral("block"), QStringLiteral("block-beta"),
+        QStringLiteral("packet"), QStringLiteral("packet-beta"), QStringLiteral("kanban"),
+        QStringLiteral("architecture"), QStringLiteral("architecture-beta"),
+        QStringLiteral("radar"), QStringLiteral("radar-beta"), QStringLiteral("treemap"),
+        QStringLiteral("treemap-beta")};
+    if (kw.isEmpty()) return false;
+    for (const QString &t : types)
+        if (kw.compare(t, Qt::CaseInsensitive) == 0) return true;
+    // Types Mermaid adds later follow the same naming.
+    return kw.endsWith(QLatin1String("Diagram"), Qt::CaseInsensitive) ||
+           kw.endsWith(QLatin1String("-beta"), Qt::CaseInsensitive);
+}
+
 }  // namespace
 
-QString mermaidToNpd(const QString &mermaid) {
-    if (mermaid.trimmed().isEmpty()) return QString();
+QString mermaidSupportedTypes() {
+    return QStringLiteral("Supported: Mermaid flowcharts, i.e. text that starts with "
+                          "\"flowchart\" or \"graph\" (TD, TB, BT, LR or RL).");
+}
+
+QString mermaidToNpd(const QString &mermaid, QString *error) {
+    auto fail = [error](const QString &msg) {
+        if (error) *error = msg;
+        return QString();
+    };
+    if (error) error->clear();
+    if (mermaid.trimmed().isEmpty()) return fail(QStringLiteral("there is no Mermaid text to import"));
+    const QString kw = headerKeyword(mermaid);
+    const bool flowHeader = kw.compare(QLatin1String("graph"), Qt::CaseInsensitive) == 0 ||
+                            kw.compare(QLatin1String("flowchart"), Qt::CaseInsensitive) == 0;
+    if (isOtherMermaidType(kw))
+        return fail(QStringLiteral("Mermaid \"%1\" diagrams cannot be imported. %2")
+                        .arg(kw, mermaidSupportedTypes()));
 
     QStringList nodeDecls;             // ordered "node <id> <shape>"
     QHash<QString, int> declIndex;     // id → index in nodeDecls
@@ -197,7 +268,10 @@ QString mermaidToNpd(const QString &mermaid) {
     }
 
     if (nodeDecls.isEmpty() && edgeLines.isEmpty())
-        return QStringLiteral("# (Mermaid import found no nodes or edges)\ndiagram flow\n");
+        return fail(flowHeader
+                        ? QStringLiteral("the Mermaid flowchart has no nodes or edges to import")
+                        : QStringLiteral("found no Mermaid flowchart nodes or edges to import. %1")
+                              .arg(mermaidSupportedTypes()));
 
     QStringList out;
     out << "# imported from Mermaid";

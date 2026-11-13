@@ -605,7 +605,7 @@ pub(super) fn definitions() -> Vec<Value> {
         ),
         tool(
             "mermaid_to_npd",
-            "Translate Mermaid diagram text (or a tab holding it) to Notepatra Diagram (.npd) source with the Diagram tab's own importer. Returns {source}; pass it to create_diagram or validate_npd.".into(),
+            "Translate a Mermaid flowchart (text starting with flowchart or graph, or a tab holding it) to Notepatra Diagram (.npd) source with the Diagram tab's own importer. Returns {source}; pass it to create_diagram or validate_npd. Other Mermaid types (sequenceDiagram, classDiagram, ...) and text with no nodes or edges return an error naming the type and what is supported.".into(),
             text_or_tab_props(),
             &[],
         ),

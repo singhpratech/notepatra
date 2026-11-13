@@ -273,19 +273,37 @@ void DiagramEditor::importMermaid() {
                              "  B -->|yes| C[Done]\n"
                              "  B -->|no| A");
     lay->addWidget(edit, 1);
+    // Why the text could not be imported (another Mermaid type, nothing
+    // found). Shown in the dialog, which stays open so the text can be fixed;
+    // the diagram is left untouched rather than replaced by an empty one.
+    auto *error = new QLabel(&dlg);
+    error->setObjectName(QStringLiteral("mermaidImportError"));
+    error->setWordWrap(true);
+    error->setTextFormat(Qt::PlainText);
+    error->setStyleSheet("color:#b35900;");
+    error->hide();
+    lay->addWidget(error);
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Cancel, &dlg);
     bb->addButton("Import", QDialogButtonBox::AcceptRole);
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    lay->addWidget(bb);
-    if (dlg.exec() == QDialog::Accepted) {
-        const QString npd = Npd::mermaidToNpd(edit->toPlainText());
-        if (!npd.trimmed().isEmpty()) {
-            setNpdText(npd);
-            m_path.clear();
-            m_dirty = true;
-            emitTitle();
+    QString npd;
+    connect(bb, &QDialogButtonBox::accepted, &dlg, [&] {
+        QString why;
+        npd = Npd::mermaidToNpd(edit->toPlainText(), &why);
+        if (npd.trimmed().isEmpty()) {
+            error->setText(why.isEmpty() ? QStringLiteral("Nothing to import.") : why);
+            error->show();
+            return;
         }
+        dlg.accept();
+    });
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(edit, &QPlainTextEdit::textChanged, error, &QLabel::hide);
+    lay->addWidget(bb);
+    if (dlg.exec() == QDialog::Accepted && !npd.trimmed().isEmpty()) {
+        setNpdText(npd);
+        m_path.clear();
+        m_dirty = true;
+        emitTitle();
     }
 }
 

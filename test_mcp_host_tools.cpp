@@ -267,6 +267,44 @@ int main(int argc, char *argv[]) {
                res(r).value("report").toString().startsWith("Fixed") &&
                res(r).value("report").toString().contains("inserted ')'") &&
                res(r).value("report").toString().contains("line "));
+    // ── three reports from v0.1.134, through the REAL host ──
+    // mermaid_to_npd on a sequenceDiagram was isError=false with an empty diagram.
+    r = call("mermaid_to_npd", {{"text", "sequenceDiagram\n  Alice->>Bob: Hi\n"}});
+    EXPECT("mermaid_to_npd sequenceDiagram is an error naming the type and what is supported",
+           !ok(r) && errOf(r).startsWith("Mermaid \"sequenceDiagram\" diagrams cannot be imported.") &&
+               errOf(r).contains("\"flowchart\"") && !res(r).contains("source"));
+    r = call("mermaid_to_npd", {{"text", "flowchart TD\n  A --> B\n"}});
+    EXPECT("mermaid_to_npd flowchart still imports",
+           ok(r) && res(r).value("source").toString().contains("A -> B"));
+    // validate_npd on an unclosed bracket was valid:true.
+    r = call("validate_npd", {{"source", "diagram flow\n(a) -> [b"}});
+    {
+        const QJsonArray errs = res(r).value("errors").toArray();
+        EXPECT("validate_npd reports the unclosed '[' with line and column",
+               ok(r) && !res(r).value("valid").toBool() && errs.size() == 1 &&
+                   errs.at(0).toObject().value("line").toInt() == 2 &&
+                   errs.at(0).toObject().value("column").toInt() == 8);
+    }
+    // render_chart and get_capabilities agree with the build's edition.
+    r = call("get_capabilities");
+    {
+        const bool charts = res(r).value("features").toObject().value("charts").toBool();
+#ifdef NOTEPATRA_WITH_WEBENGINE
+        EXPECT("get_capabilities: charts available in a WebEngine build",
+               charts && !res(r).contains("charts_unavailable_reason"));
+#else
+        EXPECT("get_capabilities: charts unavailable without WebEngine, with the reason",
+               !charts && res(r).value("charts_unavailable_reason").toString() ==
+                              McpBridge::chartsUnavailableReasonForThisBuild());
+        const QString edition = res(r).value("edition").toString();
+        r = call("render_chart", {{"spec", QJsonObject{{"mark", "bar"}}}});
+        EXPECT("render_chart without WebEngine answers this build's reason",
+               !ok(r) && errOf(r) == McpBridge::chartsUnavailableReasonForThisBuild());
+        EXPECT("render_chart never tells a Full build to get the Full edition",
+               edition != QLatin1String("Full") || !errOf(r).contains("require"));
+#endif
+    }
+
     r = call("generate_password", {{"length", 16}, {"count", 2}});
     const QJsonArray pw = res(r).value("passwords").toArray();
     EXPECT("generate_password", pw.size() == 2 && pw.at(0).toString().size() == 16);

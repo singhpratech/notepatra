@@ -176,6 +176,60 @@ int main(int argc, char **argv) {
         check("Auth is a decision", nodeById(d, "Auth").shape == Shape::Decision);
     }
 
+    // ── unsupported types and empty results are errors, never an empty diagram ──
+    // Reported from v0.1.134: a sequenceDiagram came back as success with
+    // "# (Mermaid import found no nodes or edges)\ndiagram flow\n".
+    {
+        const QString supported = mermaidSupportedTypes();
+        check("supported-types sentence names flowchart and graph",
+              supported.startsWith("Supported: ") && supported.contains("\"flowchart\"") &&
+                  supported.contains("\"graph\""), supported);
+
+        QString err = "stale";
+        QString out = mermaidToNpd("sequenceDiagram\n  Alice->>Bob: Hi\n  Bob-->>Alice: Hello\n", &err);
+        check("sequenceDiagram → no source", out.isEmpty(), out);
+        check("sequenceDiagram → error names the type and what is supported",
+              err == "Mermaid \"sequenceDiagram\" diagrams cannot be imported. " + supported, err);
+
+        // Every other Mermaid type, after front matter / directives / comments.
+        const char *types[] = {"classDiagram", "stateDiagram-v2", "erDiagram", "gantt",
+                               "pie title Pets", "journey", "gitGraph:", "mindmap",
+                               "timeline", "C4Context", "quadrantChart", "sankey-beta",
+                               "xychart-beta", "requirementDiagram", "block-beta",
+                               "futureThingDiagram"};
+        for (const char *t : types) {
+            err.clear();
+            const QString src = QStringLiteral("---\ntitle: x\n---\n%%{init: {}}%%\n%% c\n%1\n  A --> B\n")
+                                    .arg(QLatin1String(t));
+            out = mermaidToNpd(src, &err);
+            const QString kw = QString::fromLatin1(t).section(' ', 0, 0).remove(':');
+            check(qPrintable(QStringLiteral("%1 → error naming it").arg(kw)),
+                  out.isEmpty() && err.startsWith("Mermaid \"" + kw + "\" diagrams cannot be imported."),
+                  err);
+        }
+
+        err.clear();
+        out = mermaidToNpd("flowchart TD\n%% nothing here\nclassDef x fill:#f00\n", &err);
+        check("flowchart with no nodes → error, no source",
+              out.isEmpty() && err == "the Mermaid flowchart has no nodes or edges to import", err);
+        err.clear();
+        out = mermaidToNpd("hello world\n", &err);
+        check("text that is not Mermaid → error listing what is supported",
+              out.isEmpty() && err == "found no Mermaid flowchart nodes or edges to import. " + supported,
+              err);
+        err.clear();
+        out = mermaidToNpd("   \n", &err);
+        check("blank input → error", out.isEmpty() && !err.isEmpty(), err);
+
+        // Supported input still imports, and clears a stale error.
+        err = "stale";
+        out = mermaidToNpd("flowchart LR\nA --> B\n", &err);
+        check("flowchart imports with no error", !out.isEmpty() && err.isEmpty(), err);
+        check("headerless edges still import", !mermaidToNpd("A --> B\n", &err).isEmpty() && err.isEmpty());
+        check("a node id that is also a type word is not a header",
+              !mermaidToNpd("graph TD\npie --> gantt\n", &err).isEmpty() && err.isEmpty(), err);
+    }
+
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

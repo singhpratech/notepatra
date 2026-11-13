@@ -3351,7 +3351,16 @@ MainWindow::MainWindow(bool standaloneNoSession)
                 if (out.isNull()) *err = QStringLiteral("nothing to convert");
                 r[QStringLiteral("text")] = out;
             } else if (op == QLatin1String("mermaid_to_npd")) {
-                r[QStringLiteral("source")] = Npd::mermaidToNpd(text);
+                // Another Mermaid type (sequenceDiagram, ...) or nothing to
+                // import is an error naming what is supported, not an empty
+                // diagram reported as success.
+                QString why;
+                const QString npd = Npd::mermaidToNpd(text, &why);
+                if (npd.isEmpty()) {
+                    *err = why.isEmpty() ? QStringLiteral("nothing to import") : why;
+                    return r;
+                }
+                r[QStringLiteral("source")] = npd;
             } else if (op == QLatin1String("list_symbols")) {
                 const QString lang = a.value(QLatin1String("language")).toString();
                 QJsonArray syms;
