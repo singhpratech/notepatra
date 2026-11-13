@@ -248,6 +248,9 @@ private:
 
     int m_newCount = 0;
     QMenu *m_recentMenu = nullptr;
+    // Top-level menus, or under Format in the compact (macOS) menu bar.
+    QMenu *m_encodingMenu = nullptr;
+    QMenu *m_languageMenu = nullptr;
     PluginManager m_pluginManager;
     QTimer *m_autoSaveTimer = nullptr;
     QTimer *m_wordCountTimer = nullptr;

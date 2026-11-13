@@ -1942,6 +1942,55 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_shortcuts_discover
     message(STATUS "Regression test enabled — target: test_shortcuts_discoverability")
 endif()
 
+# Compact (macOS) menu bar vs the full one: titles, nesting, same actions.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_menubar_layout.cpp")
+    set(MENUBAR_LAYOUT_SOURCES ${SOURCES})
+    list(FILTER MENUBAR_LAYOUT_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_menubar_layout
+        test_menubar_layout.cpp
+        ${MENUBAR_LAYOUT_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_menubar_layout rust_core)
+    target_compile_definitions(test_menubar_layout PRIVATE NOTEPATRA_VERSION="${PROJECT_VERSION}")
+    target_include_directories(test_menubar_layout PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_menubar_layout PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_menubar_layout PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_menubar_layout PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_menubar_layout PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_menubar_layout PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_menubar_layout PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_menubar_layout PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_menubar_layout PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_menubar_layout PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_menubar_layout PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_menubar_layout COMMAND $<TARGET_FILE:test_menubar_layout>)
+    set_tests_properties(test_menubar_layout PROPERTIES
+        LABELS "integration;mainwindow;macos;menus"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120)
+    message(STATUS "Regression test enabled — target: test_menubar_layout")
+endif()
+
 # D3 (win-open-ghost) — status-bar word count: cached + debounced + capped.
 # Sections 6/7 are QElapsedTimer ceilings that fail on the old regex path.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_statusbar_wordcount_perf.cpp")

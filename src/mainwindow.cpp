@@ -319,6 +319,22 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <Qsci/qsciscintilla.h>
 #include "shortcut_hints.h"
 
+// macOS truncates the titles of 14 top-level menus, so there the menu bar
+// is File | Edit | Search | View | Tools | Format | Settings | Window | Help:
+// Encoding and Language move under Format, and Utilities, Plugins, Macro
+// and Run under Tools. Each menu is built the same way in both layouts;
+// only its parent differs. NOTEPATRA_TEST_COMPACT_MENUBAR=1/0 picks a
+// layout on any platform for tests.
+static bool compactMenuBar() {
+    const QByteArray forced = qgetenv("NOTEPATRA_TEST_COMPACT_MENUBAR");
+    if (!forced.isEmpty()) return forced != "0";
+#ifdef Q_OS_MACOS
+    return true;
+#else
+    return false;
+#endif
+}
+
 static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
     for (QAction *action : root->findChildren<QAction *>()) {
         if (action && action->text().startsWith(prefix)) return action;
@@ -1719,21 +1735,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
     // Atom. findActionByPrefix-lookup resolves the existing menu
     // items so we don't have to duplicate the action logic here.
     connect(m_statusBar, &NppStatusBar::languageClicked, this, [this](const QPoint &g) {
-        // Find the top-level "Language" menu via the menu bar
-        for (QAction *act : menuBar()->actions()) {
-            if (act->text().contains("Language", Qt::CaseInsensitive) && act->menu()) {
-                act->menu()->popup(g);
-                return;
-            }
-        }
+        // Held by pointer: in the compact menu bar it sits under Format.
+        if (m_languageMenu) m_languageMenu->popup(g);
     });
     connect(m_statusBar, &NppStatusBar::encodingClicked, this, [this](const QPoint &g) {
-        for (QAction *act : menuBar()->actions()) {
-            if (act->text().contains("Encoding", Qt::CaseInsensitive) && act->menu()) {
-                act->menu()->popup(g);
-                return;
-            }
-        }
+        if (m_encodingMenu) m_encodingMenu->popup(g);
     });
     connect(m_statusBar, &NppStatusBar::eolClicked, this, [this](const QPoint &g) {
         // EOL Conversion is a submenu inside Edit; look it up by name
@@ -4144,6 +4150,15 @@ void MainWindow::updateTabTitle(int index) {
 
 void MainWindow::buildMenus() {
     auto *mb = menuBar();
+    const bool compact = compactMenuBar();
+    // Compact layout: these go under Tools, after its own items (see WINDOW).
+    QList<QMenu *> toolsSubmenus;
+    auto toolsSubmenu = [&](const QString &title) {
+        if (!compact) return mb->addMenu(title);
+        auto *m = new QMenu(title, mb);
+        toolsSubmenus << m;
+        return m;
+    };
     auto E = [this]() -> Editor* { return currentEditor(); };
     auto FD = [this]() -> FindReplaceDialog* {
         if (!m_findDialog) m_findDialog = new FindReplaceDialog(this);
@@ -5137,7 +5152,9 @@ void MainWindow::buildMenus() {
     // For unmodified files: re-reads bytes from disk via QTextCodec.
     // For modified files: prompts before discarding edits, or just
     // updates the save-encoding label if the user cancels.
-    auto *enc = mb->addMenu("E&ncoding");
+    QMenu *formatMenu = compact ? mb->addMenu("F&ormat") : nullptr;
+    auto *enc = compact ? formatMenu->addMenu("E&ncoding") : mb->addMenu("E&ncoding");
+    m_encodingMenu = enc;
 
     // Section 1 — "Reinterpret as ..." (re-decode from disk)
     auto *encReinterpretMenu = enc->addMenu("Reinterpret bytes as");
@@ -5199,7 +5216,8 @@ void MainWindow::buildMenus() {
     // + SQL Dialects + More Languages submenu) the user is used to. The
     // 31 newly-added languages are folded into "More Languages" in one
     // alphabetical sweep so the top-level Language menu doesn't bloat.
-    auto *lang = mb->addMenu("&Language");
+    auto *lang = compact ? formatMenu->addMenu("&Language") : mb->addMenu("&Language");
+    m_languageMenu = lang;
     lang->addAction("Normal Text", this, [this, E]() {
         if (auto *e = E()) { e->setLanguage("Plain Text"); m_statusBar->updateLanguage("Plain Text"); }
     });
@@ -5337,7 +5355,7 @@ void MainWindow::buildMenus() {
     // "Tools" above and this menu clearly hosts the smaller specialised
     // helpers. Users looking for "Tools" no longer have to guess which of
     // two nearly-identically-named menus to open.
-    auto *tools = mb->addMenu("Util&ities");
+    auto *tools = toolsSubmenu("Util&ities");
     auto *measureMenu = tools->addMenu("Measurement");
     auto *rulersAct = measureMenu->addAction("Document Rulers", this, [this](bool checked) {
         Config::instance().showDocumentRulers = checked;
@@ -6240,7 +6258,7 @@ void MainWindow::buildMenus() {
     // from ~/.config/notepatra/plugins plus the helpers for installing /
     // writing them. The built-in plugin equivalents live under Tools
     // above (see the comment near pluginsMenu = feat).
-    auto *userPluginsMenu = mb->addMenu("Pl&ugins");
+    auto *userPluginsMenu = toolsSubmenu("Pl&ugins");
 
     if (m_pluginManager.plugins().isEmpty()) {
         auto *emptyAct = userPluginsMenu->addAction("(no user plugins installed)");
@@ -6290,7 +6308,7 @@ void MainWindow::buildMenus() {
     });
 
     // ═══ MACRO ═══
-    auto *macro = mb->addMenu("&Macro");
+    auto *macro = toolsSubmenu("&Macro");
 
     m_macroStartAct = macro->addAction("Start &Recording", this, [this, E]() {
         auto *ed = E();
@@ -6403,7 +6421,7 @@ void MainWindow::buildMenus() {
     m_macroSaveAct->setEnabled(false);
 
     // ═══ RUN ═══
-    auto *run = mb->addMenu("&Run");
+    auto *run = toolsSubmenu("&Run");
     run->addAction("Run...", this, [this, E]() {
         bool ok; QString cmd = QInputDialog::getText(this, "Run", "Command:", QLineEdit::Normal, "", &ok);
         if (ok && !cmd.isEmpty()) {
@@ -6432,6 +6450,11 @@ void MainWindow::buildMenus() {
 #endif
         }
     });
+
+    if (compact) {
+        feat->addSeparator();
+        for (QMenu *m : toolsSubmenus) feat->addMenu(m);
+    }
 
     // ═══ WINDOW ═══
     auto *window = mb->addMenu("&Window");
