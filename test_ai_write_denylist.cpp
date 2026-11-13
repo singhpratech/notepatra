@@ -184,10 +184,15 @@ int main(int argc, char *argv[]) {
                            "/plugins/evil.so"));
     check("not secret: a sibling directory sharing the prefix",
           !isSecretPath(cfgDir + "-backup/config.json"));
-#ifndef Q_OS_WIN
+#if !defined(Q_OS_WIN) && !defined(Q_OS_MAC)
     {
         // ~/.config as a symlink (dotfile managers): the canonical spelling a
-        // caller passes after resolving must match too.
+        // caller passes after resolving must match too. Linux only: there the
+        // config dir is $XDG_CONFIG_HOME/notepatra. On macOS it is
+        // ~/Library/Application Support/Notepatra whatever XDG_CONFIG_HOME
+        // says (Config::appConfigDirPath), so a path under XDG_CONFIG_HOME
+        // is not the app's settings there; the symlinked-HOME block below
+        // is the macOS form of this check.
         QDir().mkpath(h + "/dotfiles/cfg/notepatra");
         const bool linked =
             QFile::link(h + "/dotfiles/cfg", h + "/cfglink") && QFileInfo(h + "/cfglink").isSymLink();
@@ -199,6 +204,34 @@ int main(int argc, char *argv[]) {
         check("secret: spelled path through the symlink",
               isSecretPath(h + "/cfglink/notepatra/config.json"));
         qputenv("XDG_CONFIG_HOME", saved);
+    }
+#endif
+#ifndef Q_OS_WIN
+    {
+        // HOME itself behind a symlink: the config dir hangs off it on macOS
+        // (~/Library/Application Support/Notepatra) and on Linux when
+        // XDG_CONFIG_HOME is unset (~/.config/notepatra). Both the spelled
+        // path through the link and the resolved path must be secret.
+        const QByteArray savedHome = qgetenv("HOME");
+        const QByteArray savedXdg = qgetenv("XDG_CONFIG_HOME");
+        qunsetenv("XDG_CONFIG_HOME");
+        QDir().mkpath(h + "/realhome");
+        const bool linked = QFile::link(h + "/realhome", h + "/homelink") &&
+                            QFileInfo(h + "/homelink").isSymLink();
+        qputenv("HOME", (h + "/homelink").toUtf8());
+        const QString spelled = QDir::cleanPath(Config::appConfigDirPath());
+        const QString rel = QDir(h + "/homelink").relativeFilePath(spelled);
+        const QString real = h + "/realhome/" + rel;
+        QDir().mkpath(real);
+        check("vacuity: the config dir hangs off the symlinked HOME",
+              linked && spelled.startsWith(h + "/homelink/") &&
+                  QFileInfo(spelled).canonicalFilePath() == real);
+        check("secret: canonical path behind a symlinked HOME",
+              isSecretPath(real + "/config.json"));
+        check("secret: spelled path through the symlinked HOME",
+              isSecretPath(spelled + "/config.json"));
+        qputenv("HOME", savedHome);
+        qputenv("XDG_CONFIG_HOME", savedXdg);
     }
 #endif
 
