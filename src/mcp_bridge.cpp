@@ -46,14 +46,18 @@
 //   git_log    {limit?(=20,cap 100)}        → {output}            (v0.1.119)
 //   git_show   {ref}                        → {output}            (v0.1.119)
 //   git_branch {}                           → {output}            (v0.1.119)
-//   validate_npd {tab_index|source}         → {valid,errors:[{line,message}]}
+//   validate_npd {tab_index|source}         → {valid,errors:[{line,column,
+//                                              message}]} (column 0 = n/a)
 //                                                                  (v0.1.119)
 //   run_sql    {sql,csv_path?}              → {columns:[...],rows:[[...]],
 //                                              truncated,engine}   (v0.1.119)
 //   list_languages {}                       → {languages:[...]}    (p0a)
 //   get_capabilities {}                     → {edition,platform,version,
 //                                              features:{duckdb,webengine,
-//                                              noter}}              (p0a)
+//                                              noter,charts},
+//                                              charts_unavailable_reason?}
+//                                             (p0a; charts + reason: a
+//                                              Full edition may lack charts)
 //                                             (the Rust sidecar augments the
 //                                              tool result with tool_count
 //                                              and tiers — derived there)
@@ -84,7 +88,8 @@
 //   open_noter  {}                          → {opened}             (phase 1)
 //   open_data_analyst {}                    → {opened}             (phase 2)
 //   render_chart {spec,title?}              → {chart_id,rendered}   (phase 2,
-//                                              Full/WebEngine only)
+//                                              WebEngine builds only: not
+//                                              Lite, not macOS)
 //
 // WRITE tier — held behind the in-window human-approval card; a mutation
 // runs ONLY on Approve (Deny / timeout / disconnect ⇒ nothing happened).
@@ -104,7 +109,7 @@
 //                         max_rows?(=10000,cap 100000)} → {ok,path,rows} (phase 2)
 //   export_chart {spec,path,format("png"|"svg"|"html"|"spec"),scale?(=2,1..4)}
 //                                           → {path}                 (phase 2,
-//                                              Full/WebEngine only)
+//                                              WebEngine builds only)
 //
 // v0.1.133 — tab selector everywhere: tab_id | tab_index (title for reads).
 // Results that name a tab carry tab_index AND tab_id. find_in_tab and
@@ -278,6 +283,17 @@ const char *platformName() {
     return "linux";
 #else
     return "other";
+#endif
+}
+
+// Charts render through QtWebEngine, a build axis of its own: macOS Full has
+// DuckDB (edition "Full") but no WebEngine, so "requires the Full edition"
+// was false there.
+bool buildHasWebEngine() {
+#ifdef NOTEPATRA_WITH_WEBENGINE
+    return true;
+#else
+    return false;
 #endif
 }
 
@@ -2639,18 +2655,23 @@ void McpBridge::verbGit(QLocalSocket *client, int id, const QJsonObject &args,
 // set_diagram_source.
 static QJsonObject npdValidationJson(const QString &source) {
     const Npd::Diagram d = Npd::parse(source);
-    static const QRegularExpression rx(QStringLiteral("^line (\\d+): (.*)$"));
+    // "line N: msg", or "line N, column M: msg" when the parser can point at
+    // the character (unclosed brackets / quotes). column 0 = not pinpointed.
+    static const QRegularExpression rx(
+        QStringLiteral("^line (\\d+)(?:, column (\\d+))?: (.*)$"));
     QJsonArray errors;
     for (const QString &e : d.errors) {
-        int line = 0;
+        int line = 0, column = 0;
         QString message = e;
         const QRegularExpressionMatch m = rx.match(e);
         if (m.hasMatch()) {
             line = m.captured(1).toInt();
-            message = m.captured(2);
+            column = m.captured(2).toInt();   // "" → 0
+            message = m.captured(3);
         }
         QJsonObject o;
         o[QStringLiteral("line")] = line;
+        o[QStringLiteral("column")] = column;
         o[QStringLiteral("message")] = message;
         errors.append(o);
     }
@@ -2735,6 +2756,15 @@ void McpBridge::verbListLanguages(QLocalSocket *client, int id) {
     sendResult(client, id, result);
 }
 
+// The answer render_chart / export_chart give when the host has no chart
+// renderer: the reason for THIS build (Lite, macOS, Full without WebEngine).
+// A WebEngine build whose host left the field unset says so instead.
+static QString chartsGateMessage(const char *verb) {
+    const QString why = McpBridge::chartsUnavailableReasonForThisBuild();
+    return why.isEmpty() ? QStringLiteral("%1 not supported by host").arg(QLatin1String(verb))
+                         : why;
+}
+
 // Edition/platform/version/features from THIS binary's build state; the
 // Rust sidecar adds tool_count and tiers (it owns the tool surface).
 void McpBridge::verbGetCapabilities(QLocalSocket *client, int id) {
@@ -2750,11 +2780,19 @@ void McpBridge::verbGetCapabilities(QLocalSocket *client, int id) {
     features[QStringLiteral("webengine")] = false;
 #endif
     features[QStringLiteral("noter")] = static_cast<bool>(m_host.notesRoot);
+    // render_chart / export_chart work exactly when the host wired a chart
+    // renderer, which only WebEngine builds do. edition "Full" does NOT imply
+    // charts (macOS Full), so this is reported on its own, with the reason.
+    const bool charts = static_cast<bool>(m_host.renderChart);
+    features[QStringLiteral("charts")] = charts;
     QJsonObject result;
     result[QStringLiteral("edition")] = QLatin1String(editionName());
     result[QStringLiteral("platform")] = QLatin1String(platformName());
     result[QStringLiteral("version")] = QStringLiteral(NOTEPATRA_VERSION);
     result[QStringLiteral("features")] = features;
+    if (!charts)
+        result[QStringLiteral("charts_unavailable_reason")] =
+            chartsGateMessage("render_chart");
     // v0.1.133: what export_diagram accepts in THIS build, asked at runtime.
     result[QStringLiteral("diagram_export_formats")] =
         QJsonArray::fromStringList(
@@ -3263,13 +3301,12 @@ void McpBridge::verbOpenDataAnalyst(QLocalSocket *client, int id) {
 }
 
 // ACT (no card): insert an inline chart card into the Data transcript. The
-// unset-field message IS the friendly Full/WebEngine gate (Lite leaves the
-// field unset), so gating is answered immediately with no card.
+// unset-field message IS the gate (only WebEngine builds set the field), so
+// gating is answered immediately with no card.
 void McpBridge::verbRenderChart(QLocalSocket *client, int id,
                                 const QJsonObject &args) {
     if (!m_host.renderChart) {
-        sendError(client, id,
-                  QStringLiteral("charts require the Full edition (WebEngine)"));
+        sendError(client, id, chartsGateMessage("render_chart"));
         return;
     }
     const QJsonValue specV = args.value(QLatin1String("spec"));
@@ -3406,13 +3443,12 @@ void McpBridge::verbExportQueryResults(QLocalSocket *client, int id,
     });
 }
 
-// WRITE (card): off-screen render + async export → file. Full/WebEngine only;
-// the unset-field message IS the friendly gate, so Lite fails fast pre-card.
+// WRITE (card): off-screen render + async export → file. WebEngine builds
+// only; the unset-field message IS the gate, so it fails fast pre-card.
 void McpBridge::verbExportChart(QLocalSocket *client, int id,
                                 const QJsonObject &args) {
     if (!m_host.exportChart) {
-        sendError(client, id,
-                  QStringLiteral("charts require the Full edition (WebEngine)"));
+        sendError(client, id, chartsGateMessage("export_chart"));
         return;
     }
     const QJsonValue specV = args.value(QLatin1String("spec"));
@@ -5326,6 +5362,29 @@ void McpBridge::verbNoter(QLocalSocket *client, int id, const QJsonObject &args,
         return;
     }
     sendError(client, id, QStringLiteral("unknown verb: %1").arg(verb));
+}
+
+QString McpBridge::chartsUnavailableReason(bool fullEdition, bool webEngine,
+                                           const QString &platform) {
+    if (webEngine) return QString();
+    // No macOS build has WebEngine, Lite or Full, so "get the Full edition"
+    // would be wrong advice there.
+    if (platform == QLatin1String("macos"))
+        return QStringLiteral(
+            "chart rendering is not available in the macOS build of Notepatra "
+            "(it has no WebEngine, which charts need); run_sql and run_query "
+            "still return the data");
+    if (!fullEdition)
+        return QStringLiteral(
+            "charts require the Full edition (Linux or Windows); this build is Lite");
+    return QStringLiteral(
+        "chart rendering is not available in this build: it is the Full "
+        "edition but was built without WebEngine, which charts need");
+}
+
+QString McpBridge::chartsUnavailableReasonForThisBuild() {
+    return chartsUnavailableReason(NOTEPATRA_BUILD_IS_FULL != 0, buildHasWebEngine(),
+                                   QLatin1String(platformName()));
 }
 
 // The ONE allow-list of preferences MCP may read or write. Editor and view

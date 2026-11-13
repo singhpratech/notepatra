@@ -365,10 +365,10 @@
       <tr><td><code>git_log</code></td><td>Read-only <code>git log</code> (recent commits; default 20, capped at 100).</td></tr>
       <tr><td><code>git_show</code></td><td>Read-only <code>git show</code> for a commit or ref.</td></tr>
       <tr><td><code>git_branch</code></td><td>Read-only list of branches in the workspace repository.</td></tr>
-      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers.</td></tr>
+      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers, and the column of an unclosed bracket or quote.</td></tr>
       <tr><td><code>run_sql</code></td><td>Run a read-only <code>SELECT</code> and return columns + rows — over a file in your open workspace folder (<code>csv_path</code>, as table <code>data</code>: CSV / Parquet / JSON in Full, CSV in Lite), or, with no <code>csv_path</code>, an empty in-memory SQLite scratch database. SELECT-only and sandboxed — see the note below.</td></tr>
       <tr><td><code>list_languages</code></td><td>List the canonical language names <code>set_language</code> accepts (as shown in the Language menu).</td></tr>
-      <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter).</td></tr>
+      <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter, charts — with the reason when charts are unavailable, since macOS Full has none).</td></tr>
       <tr><td><code>get_diagram_source</code></td><td>Read the <code>.npd</code> source of an open Diagram tab, by <code>tab_id</code> or <code>tab_index</code>.</td></tr>
       <tr><td><code>list_connections</code></td><td>List your saved database connections (name, driver, database) — never passwords.</td></tr>
       <tr><td><code>run_query</code></td><td>Run a read-only <code>SELECT</code> against a saved named connection (PostgreSQL / MySQL / SQL Server / SQLite / DuckDB) — what <code>run_sql</code> cannot reach; mutations rejected. Full edition (DuckDB) for DuckDB-driver connections.</td></tr>
@@ -383,7 +383,7 @@
       <tr><td><code>diff_text</code></td><td>Line diff of two texts or tabs with the Compare view's engine; returns hunks with 1-based line numbers.</td></tr>
       <tr><td><code>repair_json</code></td><td>Explicit, opt-in JSON repair (JSON Tools &gt; Fix): <code>{fixed, repaired, report}</code>. Repairs only unambiguous faults; anything ambiguous, such as a truncated document, is declined with a positioned report and <code>repaired:false</code>. <code>format_json</code> still refuses invalid JSON.</td></tr>
       <tr><td><code>markdown_convert</code></td><td>Tools &gt; Markdown Converter as data: table, list, code block, bold, italic, link, heading, HTML to Markdown.</td></tr>
-      <tr><td><code>mermaid_to_npd</code></td><td>Translate Mermaid diagram text to Notepatra Diagram (<code>.npd</code>) source with the Diagram tab's importer.</td></tr>
+      <tr><td><code>mermaid_to_npd</code></td><td>Translate Mermaid diagram text to Notepatra Diagram (<code>.npd</code>) source with the Diagram tab's importer. Flowcharts only: other Mermaid types return an error naming the type.</td></tr>
       <tr><td><code>list_symbols</code></td><td>Classes and functions in a tab, from the Function List parser: <code>{name, kind, line}</code>.</td></tr>
       <tr><td><code>list_hunks</code></td><td>The changed hunks of one file versus <code>HEAD</code> (the change gutter), numbered for <code>git_hunk</code>. Credential files refused.</td></tr>
       <tr><td><code>list_conflicts</code></td><td>Conflicted files, or one file's <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> regions with both sides, numbered for <code>resolve_conflict</code>.</td></tr>

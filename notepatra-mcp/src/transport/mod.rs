@@ -265,7 +265,8 @@ impl std::error::Error for TransportError {}
 /// * `run_sql` (args `{sql,csv_path?}`, SELECT-only — the editor rejects any
 ///   non-read statement) → `{columns:[str],rows:[[…]],truncated:bool,engine:str}`
 /// * `list_languages` → `{languages:[str]}` (canonical Language-menu tokens)   (p0a)
-/// * `get_capabilities` → `{edition,platform,version,features:{duckdb,webengine,noter}}`
+/// * `get_capabilities` → `{edition,platform,version,features:{duckdb,webengine,noter,charts},
+///   charts_unavailable_reason?}` (`charts` is separate from the edition: macOS Full has none)
 ///   (p0a; the TOOL layer augments the result with `tool_count` and `tiers`
 ///   before it reaches the client — the sidecar owns the tool surface)
 ///
@@ -302,13 +303,14 @@ impl std::error::Error for TransportError {}
 /// Act tier:
 /// * `open_data_analyst` → `{opened:true}`
 /// * `render_chart` (args `{spec,title?}`) → `{chart_id:str,rendered:bool}`;
-///   Lite editions error with `"charts require the Full edition (WebEngine)"`
+///   builds without WebEngine (Lite, every macOS build) error with the reason,
+///   e.g. `"charts require the Full edition (Linux or Windows); this build is Lite"`
 ///
 /// Write tier (same human-approval card + verbatim deny/timeout errors):
 /// * `export_query_results` (args `{connection_name,sql,path,format,max_rows?}`)
 ///   → `{ok:true,path:str,rows:int}`
 /// * `export_chart` (args `{spec,path,format,scale?}`) → `{path:str}`;
-///   Full/WebEngine only (same gate error as render_chart)
+///   WebEngine builds only (same gate error as render_chart)
 pub trait EditorTransport {
     /// True when this transport FABRICATES its answers instead of talking to a
     /// running editor (v0.1.126, NP-06).

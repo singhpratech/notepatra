@@ -472,8 +472,15 @@ void VegaChartRenderer::buildLiteStubCard() {
     cardLay->setContentsMargins(14, 12, 14, 12);
     cardLay->setSpacing(8);
 
+#if defined(Q_OS_MACOS)
+    // macOS Full is still "Full" (DuckDB): telling it to get the Full build
+    // would be wrong. No macOS build has WebEngine.
+    auto *title = new QLabel(
+        QStringLiteral("Inline Vega-Lite charts aren't available in the macOS build"), card);
+#else
     auto *title = new QLabel(
         QStringLiteral("Inline Vega-Lite charts need the Full build (Linux / Windows)"), card);
+#endif
     title->setStyleSheet(QString("color: %1; font-size: 13px; font-weight: 600;")
                              .arg(text.name()));
     title->setWordWrap(true);

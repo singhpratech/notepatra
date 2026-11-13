@@ -272,6 +272,14 @@ public:
     static QString workspaceFolderRefusal(const QString &dir, QString *canon = nullptr);
     // The set_preference allow-list: [{key,type,min?,max?,values?}].
     static QJsonArray preferenceSchema();
+    // Why render_chart / export_chart cannot run in a build with these
+    // properties, or "" when charts can render (webEngine). platform is
+    // platformName()'s token ("macos", "linux", "windows"). Pure, so a test on
+    // any OS covers every edition x platform pair, macOS Full included.
+    static QString chartsUnavailableReason(bool fullEdition, bool webEngine,
+                                           const QString &platform);
+    // chartsUnavailableReason for THIS binary's compile-time flavor.
+    static QString chartsUnavailableReasonForThisBuild();
 
 protected:
     // Repositions the approval card when its host widget resizes.

@@ -6162,8 +6162,14 @@ void AIPanel::handleToolCall(const QString &id, const QString &name,
         const QString chartId = body.value("chart_id").toString();
         const QString title   = body.value("title").toString();
         VegaChartRenderer *renderer = addChartCard(spec, title);
+#if defined(Q_OS_MACOS)
+        // No macOS build (Lite or Full) has WebEngine: no pack would help.
+        const QString stubSummary = QStringLiteral("not available in the macOS build (id=");
+#else
+        const QString stubSummary = QStringLiteral("charts pack required (id=");
+#endif
         resultSummary = renderer->isLiteStub()
-                            ? QStringLiteral("charts pack required (id=") + chartId + ")"
+                            ? stubSummary + chartId + ")"
                             : QStringLiteral("rendered (id=") + chartId + ")";
     }
 

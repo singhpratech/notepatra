@@ -96,6 +96,86 @@ QString takeTrailingColor(QString &spec) {
     return QString();
 }
 
+// ── unclosed-delimiter checks ──
+// These only ADD errors; they never change what is parsed, so every diagram
+// renders exactly as before. Each one fires only where a closer is missing
+// outright (a closer somewhere later, even in an odd place, is accepted), so a
+// document that was valid stays valid unless a bracket or quote is genuinely
+// left open. Offsets returned are into the string passed in; -1 = fine.
+
+// First non-space index of s at or after `from` (s.size() if none).
+int skipSpace(const QString &s, int from) {
+    while (from < s.size() && s.at(from).isSpace()) ++from;
+    return from;
+}
+
+// A value written as a quoted string ("...") whose closing quote is missing.
+// Mirrors unquote(): a value that does not START with '"' is free text, and a
+// value with any later '"' is closed (the grammar has no escapes).
+int unterminatedQuote(const QString &v) {
+    return (v.startsWith(QLatin1Char('"')) && v.indexOf(QLatin1Char('"'), 1) < 0) ? 0 : -1;
+}
+
+// For an atomic token (an edge endpoint or a node id): the offset of the
+// earliest '(' / '[' / '{' that no later closer of the same kind matches.
+// Kinds are matched independently and a stray closer is ignored, so only a
+// missing closer counts.
+int firstUnclosedBracket(const QString &tok) {
+    static const QString openers = QStringLiteral("([{"), closers = QStringLiteral(")]}");
+    QVector<int> open[3];
+    for (int i = 0; i < tok.size(); ++i) {
+        const int o = openers.indexOf(tok.at(i));
+        if (o >= 0) { open[o].append(i); continue; }
+        const int c = closers.indexOf(tok.at(i));
+        if (c >= 0 && !open[c].isEmpty()) open[c].removeLast();
+    }
+    int first = -1;
+    for (const QVector<int> &v : open)
+        if (!v.isEmpty() && (first < 0 || v.first() < first)) first = v.first();
+    return first;
+}
+
+// For a node's shape spec ("[Label]", "(Label)", "{Label}", "([Label])"):
+// whether the shape's OPENING delimiter is left unclosed. Only the opener
+// matters (the label inside is free text), and it counts as closed when its
+// closer appears anywhere after it. *msg gets the explanation.
+int unclosedShape(const QString &spec, QString *msg) {
+    if (spec.startsWith(QLatin1String("(["))) {
+        if (spec.indexOf(QLatin1Char(']'), 2) < 0 || spec.indexOf(QLatin1Char(')'), 1) < 0) {
+            *msg = QStringLiteral("unclosed '([': a database shape ends with '])'");
+            return 0;
+        }
+        return -1;
+    }
+    static const QString openers = QStringLiteral("([{"), closers = QStringLiteral(")]}");
+    const int o = spec.isEmpty() ? -1 : openers.indexOf(spec.at(0));
+    if (o >= 0 && spec.indexOf(closers.at(o), 1) < 0) {
+        *msg = QStringLiteral("unclosed '%1': add the matching '%2'")
+                   .arg(openers.at(o)).arg(closers.at(o));
+        return 0;
+    }
+    if (unterminatedQuote(spec) == 0) {
+        *msg = QStringLiteral("unterminated quote: add the closing '\"'");
+        return 0;
+    }
+    return -1;
+}
+
+// Explanation for an atomic token, or "" when it has nothing left open.
+QString tokenProblem(const QString &tok, int *at) {
+    if (unterminatedQuote(tok) == 0) {
+        *at = 0;
+        return QStringLiteral("unterminated quote: add the closing '\"'");
+    }
+    const int b = firstUnclosedBracket(tok);
+    if (b < 0) return QString();
+    *at = b;
+    static const QString openers = QStringLiteral("([{"), closers = QStringLiteral(")]}");
+    const int k = openers.indexOf(tok.at(b));
+    return QStringLiteral("unclosed '%1': add the matching '%2'")
+        .arg(openers.at(k)).arg(closers.at(k));
+}
+
 } // namespace
 
 QString shapeName(Shape s) {
@@ -134,6 +214,39 @@ Diagram parse(const QString &src) {
         QString line = lines.at(i).trimmed();
         if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) continue;
 
+        // "line N, column M: msg" for a problem at offset `pos` of `line`.
+        // The column is 1-based in the RAW source line (leading indentation
+        // counts) and counts characters, so a surrogate pair is one column.
+        const QString &raw = lines.at(i);
+        auto errAt = [&](int pos, const QString &msg) {
+            const int rawPos = skipSpace(raw, 0) + pos;
+            int col = 1;
+            for (int k = 0; k < rawPos && k < raw.size(); ++k) {
+                if (raw.at(k).isHighSurrogate() && k + 1 < raw.size() &&
+                    raw.at(k + 1).isLowSurrogate())
+                    ++k;
+                ++col;
+            }
+            d.errors.append(QStringLiteral("line %1, column %2: %3").arg(lineNo).arg(col).arg(msg));
+        };
+        // Offset in `line` of `piece`, a trimmed substring known to start at
+        // or after `from` with only whitespace before it; -1 when empty.
+        auto offsetOf = [&](const QString &piece, int from) {
+            return piece.isEmpty() ? -1 : line.indexOf(piece, from);
+        };
+        // A quoted value ("...") left without its closing quote.
+        auto checkQuoted = [&](const QString &value, int from) {
+            const int at = offsetOf(value, from);
+            if (at >= 0 && unterminatedQuote(value) == 0)
+                errAt(at, QStringLiteral("unterminated quote: add the closing '\"'"));
+        };
+        // An atomic token (node id / edge endpoint) left with an open bracket or quote.
+        auto checkToken = [&](const QString &tok, int at) {
+            int rel = 0;
+            const QString why = tokenProblem(tok, &rel);
+            if (!why.isEmpty() && at >= 0) errAt(at + rel, why);
+        };
+
         // First token decides the statement kind. A leading keyword always wins,
         // so a `node`/`title`/`textbox`/`icon` line whose LABEL happens to contain
         // "->" (e.g. `node x [Maps A -> B]`) is NOT mistaken for an edge.
@@ -161,46 +274,57 @@ Diagram parse(const QString &src) {
         if (!isKeyword && line.contains(QLatin1String("->"))) {
             const int firstArrow = line.indexOf(QLatin1String("->"));  // ≥0 by the guard above
             QString chain = line, edgeLabel;
+            int labelFrom = -1;       // offset in `line` where the label text may start
             for (int i = qMax(firstArrow, 1); i < line.size(); ++i) {
                 if (line.at(i) == QLatin1Char(':') && line.at(i - 1).isSpace()) {
                     const int skip = (i + 1 < line.size() && line.at(i + 1) == QLatin1Char(':')) ? 2 : 1;
                     edgeLabel = line.mid(i + skip).trimmed();
                     chain     = line.left(i);
+                    labelFrom = i + skip;
                     break;
                 }
             }
 
             QStringList nodes;        // node refs, in source order
+            QVector<int> starts;      // starts[k] — offset of nodes[k] in `line`
             QVector<bool> bidirOps;   // bidirOps[k] joins nodes[k] → nodes[k+1]
             QVector<bool> dashOps;    // dashOps[k]  — that hop is drawn dashed
             int pos = 0, last = 0;
+            auto takeNode = [&](int end) {
+                nodes.append(chain.mid(last, end - last).trimmed());
+                starts.append(skipSpace(chain, last));
+            };
             while (pos < chain.size()) {
                 // 4-char dotted operators first, so "-.->" is not read as "->".
                 if (chain.mid(pos, 4) == QLatin1String("<.->")) {
-                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    takeNode(pos);
                     bidirOps.append(true); dashOps.append(true);
                     pos += 4; last = pos;
                 } else if (chain.mid(pos, 4) == QLatin1String("-.->")) {
-                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    takeNode(pos);
                     bidirOps.append(false); dashOps.append(true);
                     pos += 4; last = pos;
                 } else if (chain.mid(pos, 3) == QLatin1String("<->")) {
-                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    takeNode(pos);
                     bidirOps.append(true); dashOps.append(false);
                     pos += 3; last = pos;
                 } else if (chain.mid(pos, 2) == QLatin1String("->")) {
-                    nodes.append(chain.mid(last, pos - last).trimmed());
+                    takeNode(pos);
                     bidirOps.append(false); dashOps.append(false);
                     pos += 2; last = pos;
                 } else {
                     ++pos;
                 }
             }
-            nodes.append(chain.mid(last).trimmed());
+            takeNode(chain.size());
 
             bool valid = nodes.size() >= 2;
             for (const QString &n : nodes) if (n.isEmpty()) valid = false;
             if (!valid) { err(lineNo, QStringLiteral("edge needs both endpoints")); continue; }
+
+            // `(a) -> [b` used to pass as two boxes named "(a)" and "[b".
+            for (int k = 0; k < nodes.size(); ++k) checkToken(nodes.at(k), starts.at(k));
+            if (labelFrom >= 0) checkQuoted(edgeLabel, labelFrom);
 
             for (const QString &n : nodes) nodeRef(n);
             for (int k = 1; k < nodes.size(); ++k) {
@@ -224,6 +348,7 @@ Diagram parse(const QString &src) {
                 err(lineNo, QStringLiteral("unknown diagram type '%1' (expected flow|er|system)").arg(t));
         } else if (kw == QLatin1String("title")) {
             d.title = unquote(rest);
+            checkQuoted(rest, kw.size());
         } else if (kw == QLatin1String("palette")) {
             QString p; splitFirstToken(rest, p, rest);
             if (!p.isEmpty()) d.palette = p;
@@ -260,6 +385,7 @@ Diagram parse(const QString &src) {
             if (id.isEmpty()) { err(lineNo, QStringLiteral("note needs a node id")); continue; }
             const QString text = unquote(rest);
             if (text.isEmpty()) { err(lineNo, QStringLiteral("note needs some text")); continue; }
+            checkQuoted(rest, offsetOf(id, kw.size()) + id.size());
             Note nt; nt.target = id; nt.text = text;
             noteLines.append(lineNo);
             d.notes.append(nt);
@@ -273,9 +399,11 @@ Diagram parse(const QString &src) {
             }
             LegendItem li; li.swatch = isHexColor(sw) ? sw : sw.toLower(); li.text = text;
             d.legend.append(li);
+            checkQuoted(rest, offsetOf(sw, kw.size()) + sw.size());
         } else if (kw == QLatin1String("textbox")) {
             const QString t = unquote(rest);
             if (!t.isEmpty()) d.textboxes.append(t);
+            checkQuoted(rest, kw.size());
         } else if (kw == QLatin1String("node")) {
             QString id; splitFirstToken(rest, id, rest);
             if (id.isEmpty()) { err(lineNo, QStringLiteral("node needs an id")); continue; }
@@ -290,12 +418,32 @@ Diagram parse(const QString &src) {
             if (!label.isEmpty()) n.label = label;
             n.hover = hover;
             if (!color.isEmpty()) n.color = color;
+
+            // `node b [Label` used to pass as a box labelled "[Label".
+            const int idAt = offsetOf(id, kw.size());
+            checkToken(id, idAt);
+            const int restAt = offsetOf(rest, idAt + id.size());
+            QString why;
+            const int bad = unclosedShape(spec, &why);
+            if (bad >= 0 && restAt >= 0) {
+                // `[Foo::Bar]`: the '::' starts the hover, cutting the label.
+                if (hv >= 0 && !why.startsWith(QLatin1String("unterminated")))
+                    why += QStringLiteral(" (the '::' in it starts the hover text)");
+                errAt(restAt + bad, why);
+            }
+            if (hv >= 0 && restAt >= 0)
+                checkQuoted(rest.mid(hv + 2).trimmed(), restAt + hv + 2);
         } else if (kw == QLatin1String("icon")) {
             // icon <id> :name "Label"  [:: "hover"]
             QString id; splitFirstToken(rest, id, rest);
             if (id.isEmpty()) { err(lineNo, QStringLiteral("icon needs an id")); continue; }
+            const int idAt = offsetOf(id, kw.size());
+            const int restAt = offsetOf(rest, idAt + id.size());
+            checkToken(id, idAt);
             QString hover;
             const int hv = rest.indexOf(QLatin1String("::"));
+            if (hv >= 0 && restAt >= 0)
+                checkQuoted(rest.mid(hv + 2).trimmed(), restAt + hv + 2);
             if (hv >= 0) { hover = unquote(rest.mid(hv + 2)); rest = rest.left(hv).trimmed(); }
             if (!rest.startsWith(QLatin1Char(':'))) { err(lineNo, QStringLiteral("icon needs ':name' before the label")); continue; }
             QString iconName; QString after;
@@ -309,6 +457,8 @@ Diagram parse(const QString &src) {
             if (!label.isEmpty()) n.label = label;
             n.hover = hover;
             if (!color.isEmpty()) n.color = color;
+            if (restAt >= 0)
+                checkQuoted(after, offsetOf(iconName, restAt + 1) + iconName.size());
         } else {
             err(lineNo, QStringLiteral("unrecognized statement '%1'").arg(kw));
         }

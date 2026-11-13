@@ -685,7 +685,7 @@ fn base_definitions() -> Value {
         },
         {
             "name": "get_capabilities",
-            "description": "Get the editor's capability profile: edition (Lite/Full), platform, version, tool count, tool tiers, and feature flags (duckdb, webengine, noter). Use to self-diagnose what this Notepatra build supports before relying on edition-specific tools like run_sql over CSV.",
+            "description": "Get the editor's capability profile: edition (Lite/Full), platform, version, tool count, tool tiers, and feature flags (duckdb, webengine, noter, charts). charts says whether render_chart/export_chart work in this build, with charts_unavailable_reason when they do not: the edition alone does not tell (macOS Full has no charts). Use to self-diagnose what this Notepatra build supports before relying on edition-specific tools like run_sql over CSV.",
             "inputSchema": no_args_schema()
         },
         // ── phase 1: diagram control + Noter panel ─────────────────────
@@ -779,7 +779,7 @@ fn base_definitions() -> Value {
         },
         {
             "name": "render_chart",
-            "description": "Render a chart inline in the Data Analyst transcript and return its id. The spec may be a Vega-Lite v5 spec, or the simplified {type,x,y,data} form the editor translates. Requires the Full edition (WebEngine); the Lite edition returns an error.",
+            "description": "Render a chart inline in the Data Analyst transcript and return its id. The spec may be a Vega-Lite v5 spec, or the simplified {type,x,y,data} form the editor translates. Needs a build with WebEngine: the Full edition on Linux or Windows. The Lite edition and every macOS build (Full included) return an error saying why; get_capabilities features.charts tells in advance.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -815,8 +815,9 @@ fn base_definitions() -> Value {
             "description": format!(
                 "Render a chart off-screen and export it to a file on disk as PNG, SVG, \
                  self-contained HTML, or the Vega-Lite spec JSON. The spec may be a \
-                 Vega-Lite v5 spec or the simplified {{type,x,y,data}} form. Requires the \
-                 Full edition (WebEngine). {APPROVAL_NOTE}"
+                 Vega-Lite v5 spec or the simplified {{type,x,y,data}} form. Needs a build \
+                 with WebEngine (the Full edition on Linux or Windows; not Lite, not \
+                 macOS): see get_capabilities features.charts. {APPROVAL_NOTE}"
             ),
             "inputSchema": {
                 "type": "object",

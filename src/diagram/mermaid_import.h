@@ -33,7 +33,8 @@
 //   subgraph Name … end → group "Name" : <ids seen inside>
 //
 // Anything else unrecognized (classDef, style, click, %% comments) is dropped,
-// so the result always parses.
+// so the result always parses. Only flowcharts are translated: a document
+// whose header names another Mermaid type is refused with an error.
 // ═══════════════════════════════════════════════════════════════════════
 
 #ifndef NOTEPATRA_MERMAID_IMPORT_H
@@ -43,9 +44,17 @@
 
 namespace Npd {
 
-// Translate a Mermaid flowchart into .npd source. Returns "" only for empty
-// input; otherwise always returns parseable .npd (best effort).
-QString mermaidToNpd(const QString &mermaid);
+// Translate a Mermaid flowchart into .npd source (best effort; the result
+// always parses). Returns "" and sets *error (when given) instead of an empty
+// diagram when there is nothing to import:
+//   - empty input,
+//   - another Mermaid diagram type (sequenceDiagram, classDiagram, ...): the
+//     message names the type and what is supported,
+//   - text that yields no nodes or edges.
+QString mermaidToNpd(const QString &mermaid, QString *error = nullptr);
+
+// "Supported: ..." sentence the errors above end with.
+QString mermaidSupportedTypes();
 
 }  // namespace Npd
 
