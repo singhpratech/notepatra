@@ -179,9 +179,20 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     std::printf("=== test_mcp_host_control ===\n");
 
+    // Noter lives under QStandardPaths::DocumentsLocation. On Linux that
+    // follows the temp HOME; on macOS (NSFileManager) and Windows (known
+    // folder) it is the real account's Documents whatever HOME says, so it
+    // may already hold a Noter DB left by another test in the same job. A
+    // profile older than the noterInUse flag (-1) probes that DB at startup
+    // and would mark Noter in use, so there the fixture states "never used"
+    // (0) and the checks that need an empty Documents are skipped.
+    const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    const bool docsIsolated =
+        QDir::cleanPath(docs).startsWith(QDir::cleanPath(home.path()) + QLatin1Char('/'));
     QDir().mkpath(Config::appConfigDir());
     writeFile(Config::appConfigDir() + "/config.json",
-              "{\"showWelcomeOnStartup\": false, \"autoSaveIntervalSec\": 300}\n");
+              QByteArray("{\"showWelcomeOnStartup\": false, \"autoSaveIntervalSec\": 300") +
+                  (docsIsolated ? "}\n" : ", \"noterInUse\": 0}\n"));
     QTemporaryDir work;
     g_repo = QFileInfo(work.path()).canonicalFilePath() + "/repo";
     const QString bare = QFileInfo(work.path()).canonicalFilePath() + "/remote.git";
@@ -206,22 +217,35 @@ int main(int argc, char *argv[]) {
     QJsonObject r;
     // ── R13: a reminder lookup never starts Noter for someone who never used it ──
     pump(1700); // past the 1.5 s startup probe
-    EXPECT("fixture: Noter not in use, no reminder DB",
-           Config::instance().noterInUse != 1 && !QFileInfo::exists(NotesPanel::todosDbPath()));
+    if (docsIsolated) {
+        EXPECT("fixture: Noter not in use, no reminder DB",
+               Config::instance().noterInUse != 1 && !QFileInfo::exists(NotesPanel::todosDbPath()));
+    } else {
+        EXPECT("fixture: Noter never used (Documents is shared, so no probe)",
+               Config::instance().noterInUse == 0);
+    }
     r = call("delete_reminder", {{"id", "bogus-id"}});
     EXPECT("R13: delete_reminder with a bogus id is refused as unknown",
            !ok(r) && errOf(r).contains("no reminder"));
     r = call("snooze_reminder", {{"id", "bogus-id"}, {"minutes", 5}});
-    EXPECT("R13: ...and creates no Noter DB and does not mark Noter in use",
-           !ok(r) && !QFileInfo::exists(NotesPanel::todosDbPath()) &&
-               Config::instance().noterInUse != 1);
-    r = call("search_notes", {{"query", "anything"}});
-    EXPECT("R13: search_notes before Noter exists finds nothing and creates no folder",
-           ok(r) && res(r).value("results").toArray().isEmpty() &&
-               !QFileInfo::exists(NotesPanel::defaultNotesFolder()));
-    EXPECT("R14: a negative first-launch probe is not saved as 'Noter unused'",
-           Config::instance().noterInUse == -1 &&
-               !readFile(Config::appConfigDir() + "/config.json").contains("\"noterInUse\": 0"));
+    if (docsIsolated) {
+        EXPECT("R13: ...and creates no Noter DB and does not mark Noter in use",
+               !ok(r) && !QFileInfo::exists(NotesPanel::todosDbPath()) &&
+                   Config::instance().noterInUse != 1);
+        r = call("search_notes", {{"query", "anything"}});
+        EXPECT("R13: search_notes before Noter exists finds nothing and creates no folder",
+               ok(r) && res(r).value("results").toArray().isEmpty() &&
+                   !QFileInfo::exists(NotesPanel::defaultNotesFolder()));
+        EXPECT("R14: a negative first-launch probe is not saved as 'Noter unused'",
+               Config::instance().noterInUse == -1 &&
+                   !readFile(Config::appConfigDir() + "/config.json").contains("\"noterInUse\": 0"));
+    } else {
+        EXPECT("R13: ...and does not mark Noter in use",
+               !ok(r) && errOf(r).contains("no reminder") && Config::instance().noterInUse == 0);
+        std::printf("  [SKIP] R13 no-DB/no-folder and R14 probe checks: Documents (%s) is "
+                    "outside the temp HOME\n",
+                    qPrintable(QDir::toNativeSeparators(docs)));
+    }
 
     // ── workspace folder ──
     // QDir::homePath(), not `home`: on Windows Qt takes the profile folder from
