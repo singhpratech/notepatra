@@ -342,6 +342,10 @@ static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
     return nullptr;
 }
 
+// Widget property holding a tab's MCP tab_id (stamped lazily by host.tabId).
+// A tab whose widget is rebuilt in place must carry it to the new widget.
+static const char kMcpTabIdProp[] = "npMcpTabId";
+
 // v0.1.119 — inject plain text as escaped <p> paragraphs into a Noter note's
 // HTML body (used by the MCP create_note / append_note verbs). Insertion is
 // before </main> (the notes-body region), else before </body>. Text is
@@ -1937,11 +1941,10 @@ MainWindow::MainWindow(bool standaloneNoSession)
                          int i) -> qint64 {
             QWidget *w = m_tabs->widget(i);
             if (!w) return -1;
-            static const char kProp[] = "npMcpTabId";
-            const QVariant existing = w->property(kProp);
+            const QVariant existing = w->property(kMcpTabIdProp);
             if (existing.isValid()) return existing.toLongLong();
             const qint64 assigned = (*nextTabId)++;
-            w->setProperty(kProp, assigned);
+            w->setProperty(kMcpTabIdProp, assigned);
             return assigned;
         };
         host.openFile = [this](const QString &p) {
@@ -7772,9 +7775,13 @@ void MainWindow::applyThemeToAll(const Theme &t) {
                 const QString label = m_tabs->tabText(i);
                 const bool wasCurrent = (m_tabs->currentIndex() == i);
                 auto *old = m_tabs->widget(i);
+                // Same tab to an MCP client: keep its tab_id (it is stamped on
+                // the widget, so the rebuilt one would otherwise get a new id).
+                const QVariant mcpTabId = old->property(kMcpTabIdProp);
                 m_tabs->removeTab(i);
                 delete old;
                 auto *fresh = new WelcomeWidget;
+                if (mcpTabId.isValid()) fresh->setProperty(kMcpTabIdProp, mcpTabId);
                 // Rewire signals to the same slots we connect in
                 // showWelcomeTab() so the feature cards still work.
                 connect(fresh, &WelcomeWidget::actionNewFile, this, [this]() { newFile(); });
