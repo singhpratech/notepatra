@@ -319,6 +319,22 @@ static QString tolerantPrettyJson(const QString &input, int indentSize = 4) {
 #include <Qsci/qsciscintilla.h>
 #include "shortcut_hints.h"
 
+// macOS truncates the titles of 14 top-level menus, so there the menu bar
+// is File | Edit | Search | View | Tools | Format | Settings | Window | Help:
+// Encoding and Language move under Format, and Utilities, Plugins, Macro
+// and Run under Tools. Each menu is built the same way in both layouts;
+// only its parent differs. NOTEPATRA_TEST_COMPACT_MENUBAR=1/0 picks a
+// layout on any platform for tests.
+static bool compactMenuBar() {
+    const QByteArray forced = qgetenv("NOTEPATRA_TEST_COMPACT_MENUBAR");
+    if (!forced.isEmpty()) return forced != "0";
+#ifdef Q_OS_MACOS
+    return true;
+#else
+    return false;
+#endif
+}
+
 static QAction *findActionByPrefix(QObject *root, const QString &prefix) {
     for (QAction *action : root->findChildren<QAction *>()) {
         if (action && action->text().startsWith(prefix)) return action;
@@ -946,7 +962,7 @@ ul { margin-top: 4px; }
 <li><b>Save and restore work:</b> Session restore and crash recovery are built in. Modified files are autosaved to recovery storage.</li>
 <li><b>Workspace navigation:</b> Open a folder as a workspace and browse files from the sidebar with <code>Ctrl+Shift+E</code>.</li>
 <li><b>Status bar:</b> The bottom bar shows line, column, language, encoding, EOL mode, line count, length, and word count.</li>
-<li><b>Where features live:</b> use the icon row for the main built-in tools, the <b>Features</b> menu for editing helpers, the <b>Tools</b> menu for utilities, and the <b>Plugins</b> menu for formatter-style panels.</li>
+<li><b>Where features live:</b> use the icon row for the main built-in tools, the <b>Tools</b> menu for the built-in tools and formatter panels, the <b>Utilities</b> menu for smaller helpers, and the <b>Plugins</b> menu for plugins you install. On macOS, Utilities and Plugins are at the end of the Tools menu.</li>
 </ul>
 
 <h2>Core Editing</h2>
@@ -994,7 +1010,7 @@ ul { margin-top: 4px; }
 
 <h3>REST and Git</h3>
 <ul>
-<li><b>REST Client:</b> in a <code>.http</code> / <code>.rest</code> file, <code>Ctrl+Alt+R</code> (Tools &gt; Send Request) sends the request under the caret; <code>{{variables}}</code>, environments from <code>http-client.env.json</code>, Import cURL / Copy as cURL and a request history.</li>
+<li><b>REST Client:</b> in a <code>.http</code> / <code>.rest</code> file, <code>%9</code> (Tools &gt; Send Request) sends the request under the caret; <code>{{variables}}</code>, environments from <code>http-client.env.json</code>, Import cURL / Copy as cURL and a request history.</li>
 <li><b>Git Integration:</b> inspect repository status, changed files, and work with repository context without leaving the editor.</li>
 <li><b>Git gutter:</b> modified files show changed-line markers directly in the editor margin.</li>
 </ul>
@@ -1057,7 +1073,7 @@ ul { margin-top: 4px; }
 <li><b>Measurement tools:</b> <b>Tools &gt; Measurement</b> lets you turn document rulers and a crosshair pixel measure on or off when you need them.</li>
 <li><b>Encoding tools:</b> UTF-8, BOM, UTF-16, legacy encodings, and EOL conversion are built into the menu bar workflow.</li>
 <li><b>Macros:</b> record and replay editor actions from the <b>Macro</b> menu.</li>
-<li><b>Plugins:</b> the Plugins menu also hosts the built-in formatter panels and any compatible user plugins you install.</li>
+<li><b>Plugins:</b> the built-in formatter panels are in the Tools menu; the Plugins menu lists any compatible plugins you install.</li>
 </ul>
 
 <h2>Language and Lexer Behavior</h2>
@@ -1071,13 +1087,13 @@ ul { margin-top: 4px; }
 <ul>
 <li><code>Ctrl+N</code> new file, <code>Ctrl+O</code> open, <code>Ctrl+S</code> save, <code>Ctrl+W</code> close tab</li>
 <li><code>Ctrl+F</code> find, <code>%4</code> replace, <code>Ctrl+Shift+F</code> find in files, <code>Ctrl+G</code> go to line</li>
-<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>Ctrl+Alt+R</code> Send Request (.http), <code>Ctrl+Shift+E</code> Workspace</li>
+<li><code>%3</code> AI Assistant, <code>%5</code> Terminal, <code>Ctrl+Shift+R</code> REST Client, <code>%9</code> Send Request (.http), <code>Ctrl+Shift+E</code> Workspace</li>
 <li><code>Ctrl+Alt+N</code> toggle Noter, <code>Ctrl+Alt+M</code> new note in Noter (full Noter shortcut list in the Noter section above)</li>
 <li><code>%6</code> full screen, <code>Ctrl+=</code> / <code>Ctrl+-</code> zoom, <code>Ctrl+0</code> reset zoom</li>
 </ul>
 
 <h2>Practical Tip</h2>
-<p>If you are unsure where a feature lives, first check the top <b>?</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Features</b>, <b>Tools</b>, and <b>Plugins</b> menus for the deeper editing and utility commands.</p>
+<p>If you are unsure where a feature lives, first check the <b>Help</b> menu for this guide and the shortcut list. Then use the icon row for the main workflows and the <b>Tools</b> and <b>Utilities</b> menus for the deeper editing and utility commands.</p>
 </body>
 </html>
 )HTML").arg(notepatraUiCssFamily(), notepatraCodeCssFamily(),
@@ -1086,7 +1102,8 @@ ul { margin-top: 4px; }
                 Shortcuts::nativeText(Shortcuts::terminal()).toHtmlEscaped(),
                 Shortcuts::nativeText(Shortcuts::fullScreen()).toHtmlEscaped(),
                 Shortcuts::nativeText(QKeySequence("Ctrl+Shift+V")).toHtmlEscaped(),
-                Shortcuts::nativeText(QKeySequence(Qt::CTRL | Qt::Key_Return)).toHtmlEscaped());
+                Shortcuts::nativeText(QKeySequence(Qt::CTRL | Qt::Key_Return)).toHtmlEscaped(),
+                Shortcuts::nativeText(Shortcuts::sendHttpRequest()).toHtmlEscaped());
 }
 
 static void showRichHelpDialog(QWidget *parent, const QString &title, const QString &html) {
@@ -1718,21 +1735,11 @@ MainWindow::MainWindow(bool standaloneNoSession)
     // Atom. findActionByPrefix-lookup resolves the existing menu
     // items so we don't have to duplicate the action logic here.
     connect(m_statusBar, &NppStatusBar::languageClicked, this, [this](const QPoint &g) {
-        // Find the top-level "Language" menu via the menu bar
-        for (QAction *act : menuBar()->actions()) {
-            if (act->text().contains("Language", Qt::CaseInsensitive) && act->menu()) {
-                act->menu()->popup(g);
-                return;
-            }
-        }
+        // Held by pointer: in the compact menu bar it sits under Format.
+        if (m_languageMenu) m_languageMenu->popup(g);
     });
     connect(m_statusBar, &NppStatusBar::encodingClicked, this, [this](const QPoint &g) {
-        for (QAction *act : menuBar()->actions()) {
-            if (act->text().contains("Encoding", Qt::CaseInsensitive) && act->menu()) {
-                act->menu()->popup(g);
-                return;
-            }
-        }
+        if (m_encodingMenu) m_encodingMenu->popup(g);
     });
     connect(m_statusBar, &NppStatusBar::eolClicked, this, [this](const QPoint &g) {
         // EOL Conversion is a submenu inside Edit; look it up by name
@@ -4034,8 +4041,16 @@ void MainWindow::updateDocStats() {
 }
 
 void MainWindow::updateStatusBar() {
+    if (!m_statusBar) return;
     auto *e = currentEditor();
-    if (!e) return;
+    if (!e) {
+        // Welcome, REST Client, Noter, Terminal, a diagram, ...: no editor
+        // fields (they described the last editor), just the tab's name.
+        const int i = m_tabs->currentIndex();
+        m_statusBar->showNonEditor(i >= 0 ? m_tabs->tabText(i) : QString());
+        return;
+    }
+    m_statusBar->showEditor();
     int line, col;
     e->getCursorPosition(&line, &col);
     int pos = static_cast<int>(e->SendScintilla(QsciScintilla::SCI_GETCURRENTPOS));
@@ -4143,6 +4158,15 @@ void MainWindow::updateTabTitle(int index) {
 
 void MainWindow::buildMenus() {
     auto *mb = menuBar();
+    const bool compact = compactMenuBar();
+    // Compact layout: these go under Tools, after its own items (see WINDOW).
+    QList<QMenu *> toolsSubmenus;
+    auto toolsSubmenu = [&](const QString &title) {
+        if (!compact) return mb->addMenu(title);
+        auto *m = new QMenu(title, mb);
+        toolsSubmenus << m;
+        return m;
+    };
     auto E = [this]() -> Editor* { return currentEditor(); };
     auto FD = [this]() -> FindReplaceDialog* {
         if (!m_findDialog) m_findDialog = new FindReplaceDialog(this);
@@ -4931,7 +4955,7 @@ void MainWindow::buildMenus() {
     // so Ctrl+Alt+R is never taken from anything else.
     auto *sendHttpAct = feat->addAction("Send Request");
     sendHttpAct->setObjectName(QStringLiteral("actSendHttpRequest"));
-    sendHttpAct->setShortcut(QKeySequence("Ctrl+Alt+R"));
+    sendHttpAct->setShortcut(Shortcuts::sendHttpRequest());
     sendHttpAct->setStatusTip("Send the request under the caret in a .http or .rest file to the REST Client.");
     sendHttpAct->setEnabled(false);
     auto sendHttpAt = [this, newRestTab](Editor *ed, int line) {
@@ -5110,7 +5134,7 @@ void MainWindow::buildMenus() {
     });
 
     feat->addAction("How REST Client Works...", this, [this]() {
-        QMessageBox::information(this, "REST Client — How It Works",
+        QMessageBox::information(this, "REST Client — How It Works", QString(
             "REST CLIENT (.http files)\n\n"
             "Write HTTP requests in your editor:\n\n"
             "  GET https://api.github.com/users/octocat\n"
@@ -5121,12 +5145,13 @@ void MainWindow::buildMenus() {
             "  {\"name\": \"test\", \"value\": 42}\n\n"
             "Usage:\n"
             "  1. Save the file as .http or .rest\n"
-            "  2. Put the caret in a request and press Ctrl+Alt+R\n"
+            "  2. Put the caret in a request and press %1\n"
             "     (or click the green marker, or right-click > Send Request)\n"
             "  3. The REST Client tab shows status, body and headers\n\n"
             "Variables: @name = value lines, {{name}} anywhere, and\n"
             "environments from http-client.env.json next to the file.\n"
-            "### separates multiple requests in one file");
+            "### separates multiple requests in one file")
+            .arg(Shortcuts::nativeText(Shortcuts::sendHttpRequest())));
     });
 
     // ═══ ENCODING ═══
@@ -5135,7 +5160,9 @@ void MainWindow::buildMenus() {
     // For unmodified files: re-reads bytes from disk via QTextCodec.
     // For modified files: prompts before discarding edits, or just
     // updates the save-encoding label if the user cancels.
-    auto *enc = mb->addMenu("E&ncoding");
+    QMenu *formatMenu = compact ? mb->addMenu("F&ormat") : nullptr;
+    auto *enc = compact ? formatMenu->addMenu("E&ncoding") : mb->addMenu("E&ncoding");
+    m_encodingMenu = enc;
 
     // Section 1 — "Reinterpret as ..." (re-decode from disk)
     auto *encReinterpretMenu = enc->addMenu("Reinterpret bytes as");
@@ -5197,7 +5224,8 @@ void MainWindow::buildMenus() {
     // + SQL Dialects + More Languages submenu) the user is used to. The
     // 31 newly-added languages are folded into "More Languages" in one
     // alphabetical sweep so the top-level Language menu doesn't bloat.
-    auto *lang = mb->addMenu("&Language");
+    auto *lang = compact ? formatMenu->addMenu("&Language") : mb->addMenu("&Language");
+    m_languageMenu = lang;
     lang->addAction("Normal Text", this, [this, E]() {
         if (auto *e = E()) { e->setLanguage("Plain Text"); m_statusBar->updateLanguage("Plain Text"); }
     });
@@ -5335,7 +5363,7 @@ void MainWindow::buildMenus() {
     // "Tools" above and this menu clearly hosts the smaller specialised
     // helpers. Users looking for "Tools" no longer have to guess which of
     // two nearly-identically-named menus to open.
-    auto *tools = mb->addMenu("Util&ities");
+    auto *tools = toolsSubmenu("Util&ities");
     auto *measureMenu = tools->addMenu("Measurement");
     auto *rulersAct = measureMenu->addAction("Document Rulers", this, [this](bool checked) {
         Config::instance().showDocumentRulers = checked;
@@ -6238,7 +6266,7 @@ void MainWindow::buildMenus() {
     // from ~/.config/notepatra/plugins plus the helpers for installing /
     // writing them. The built-in plugin equivalents live under Tools
     // above (see the comment near pluginsMenu = feat).
-    auto *userPluginsMenu = mb->addMenu("Pl&ugins");
+    auto *userPluginsMenu = toolsSubmenu("Pl&ugins");
 
     if (m_pluginManager.plugins().isEmpty()) {
         auto *emptyAct = userPluginsMenu->addAction("(no user plugins installed)");
@@ -6288,7 +6316,7 @@ void MainWindow::buildMenus() {
     });
 
     // ═══ MACRO ═══
-    auto *macro = mb->addMenu("&Macro");
+    auto *macro = toolsSubmenu("&Macro");
 
     m_macroStartAct = macro->addAction("Start &Recording", this, [this, E]() {
         auto *ed = E();
@@ -6401,7 +6429,7 @@ void MainWindow::buildMenus() {
     m_macroSaveAct->setEnabled(false);
 
     // ═══ RUN ═══
-    auto *run = mb->addMenu("&Run");
+    auto *run = toolsSubmenu("&Run");
     run->addAction("Run...", this, [this, E]() {
         bool ok; QString cmd = QInputDialog::getText(this, "Run", "Command:", QLineEdit::Normal, "", &ok);
         if (ok && !cmd.isEmpty()) {
@@ -6430,6 +6458,11 @@ void MainWindow::buildMenus() {
 #endif
         }
     });
+
+    if (compact) {
+        feat->addSeparator();
+        for (QMenu *m : toolsSubmenus) feat->addMenu(m);
+    }
 
     // ═══ WINDOW ═══
     auto *window = mb->addMenu("&Window");
@@ -6546,7 +6579,7 @@ void MainWindow::buildMenus() {
             "  %3Terminal\n"
             "  %4AI Assistant\n"
             "  Ctrl+Shift+R    REST Client\n"
-            "  Ctrl+Alt+R      Send Request (.http)\n"
+            "  %5Send Request (.http)\n"
             "  Ctrl+Shift+E    File Explorer\n"
             "  Ctrl+Shift+M    Record Macro (Macro menu)\n\n"
             "TABS\n"
@@ -6556,7 +6589,8 @@ void MainWindow::buildMenus() {
             "  Double-click    New Tab (on empty area)")
             .arg(col(Shortcuts::replace()), col(Shortcuts::fullScreen()),
                  col(Shortcuts::terminal()),
-                 Shortcuts::aiAssistantHint().leftJustified(15) + QLatin1Char(' ')));
+                 Shortcuts::aiAssistantHint().leftJustified(15) + QLatin1Char(' '),
+                 col(Shortcuts::sendHttpRequest())));
     });
 
     help->addSeparator();
@@ -7360,8 +7394,8 @@ void MainWindow::runStartupNow() {
     // never touch it — it belongs to the primary / the live owner.
     if (markerIsOurs) QFile::remove(marker);
 
-    if (currentEditor()) updateStatusBar();
-    else m_statusBar->updateLanguage(tr("Normal text"));
+    // Also replaces "Restoring session..." when a tool tab is current.
+    updateStatusBar();
     updateTitle();
 }
 

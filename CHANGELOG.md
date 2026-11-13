@@ -13,6 +13,27 @@ _Nothing yet._
 
 ---
 
+## [0.1.134] — 2026-11-13
+
+**macOS fixes for the REST Client and the menu bar, and a status bar that describes the tab you are on.**
+
+### Changed
+- **macOS menu bar: 9 top-level menus instead of 14** (macOS truncated the titles): File, Edit, Search, View, Tools, Format, Settings, Window, Help. Encoding and Language are under the new Format menu; Utilities, Plugins, Macro and Run are at the end of Tools. Items and shortcuts are unchanged. Linux and Windows keep the 14 menus.
+- REST Client: Open in tab has no icon (the system's blank-page icon vanished on macOS when disabled).
+- Tool tabs (Welcome, REST Client, Noter, Terminal, diagrams, Compare, formatter panels) show their name in the status bar instead of editor fields.
+
+### Fixed
+- REST Client: the Headers / Body tab labels were clipped on both sides on macOS. The tabs were sized with the 10 px app font while the labels were painted at 12 px; the 12 px size is now set on the tab bars, so one font measures and paints them. On Linux and Windows the tabs are a few pixels narrower.
+- REST Client: Send Request hints show the platform's keys (`⌥⌘R` on macOS, `Ctrl+Alt+R` elsewhere) in the Body pane, the Feature Guide, the Keyboard Shortcuts list and "How REST Client Works".
+- REST Client: after a binary or empty response the Body pane no longer shows the "Set a method and URL" hint.
+- Status bar: on a tool tab it kept the last editor's length, position, line endings, encoding and INS. Clicking the encoding in the status bar did nothing on any platform; it now opens the Encoding menu.
+- Feature and Tool Guide: no longer mentions a "Features" menu or a "?" menu, and says the formatter panels are in Tools.
+
+### Not verified
+- The macOS fixes are tested on Linux with the Mac conditions reproduced and checked in Linux screenshots; as of writing they have not been run on a real Mac (including the macOS app menu and the Window / Help system items with the new menu bar).
+
+---
+
 ## [0.1.133] — 2026-11-12
 
 **The tools that change your text can no longer change what it means, the AI assistant stops losing work, MCP goes from 49 to 119 tools, and the REST client runs `.http` files.** Several old behaviours changed because they could lose or alter data; see "Changed" below.

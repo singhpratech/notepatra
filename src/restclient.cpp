@@ -5,6 +5,7 @@
 #include "curl_convert.h"
 #include "fonts.h"
 #include "rest_history.h"
+#include "shortcut_hints.h"
 #include "theme_detect.h"
 
 #include <QApplication>
@@ -75,6 +76,16 @@ const QStringList &standardMethods() {
     return m;
 }
 
+// QTabBar sizes each tab with its widget font, while a font-size in a
+// QTabBar::tab rule reaches only the painter. The label size therefore goes
+// on the bar itself, so one font both measures and paints. (macOS: the 10pt
+// app font is 10px at 72 dpi, and 12px labels were clipped on both sides.)
+void setTabLabelFont(QTabBar *bar) {
+    QFont f = bar->font();
+    f.setPixelSize(12);
+    bar->setFont(f);
+}
+
 }  // namespace
 
 RestClient::RestClient(QWidget *parent) : QWidget(parent) {
@@ -139,6 +150,7 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     // ─── Headers / Body tabs with the cURL buttons in the corner ──────
     m_reqTabs = new QTabWidget;
     m_reqTabs->setFixedHeight(170);
+    setTabLabelFont(m_reqTabs->tabBar());
 
     m_headersInput = new QPlainTextEdit;
     m_headersInput->setFont(mono);
@@ -189,6 +201,7 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_respTabs->addTab(tr("Headers"));
     m_respTabs->setDrawBase(false);
     m_respTabs->setExpanding(false);
+    setTabLabelFont(m_respTabs);
     respBar->addWidget(m_respTabs);
     respBar->addStretch();
     m_openTabBtn = new QPushButton(tr("Open in tab"));
@@ -197,9 +210,10 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_saveBtn->setToolTip(tr("Save the raw response bytes to a file"));
     m_copyBtn = new QPushButton(tr("Copy"));
     m_copyBtn->setToolTip(tr("Copy the text shown below"));
-    const QStyle *st = style();
-    m_openTabBtn->setIcon(st->standardIcon(QStyle::SP_FileIcon));
-    m_saveBtn->setIcon(st->standardIcon(QStyle::SP_DialogSaveButton));
+    // Open in tab stays text-only, like Copy: SP_FileIcon is the platform's
+    // generic-document picture (a white page on macOS), which vanished on
+    // the light bar when the button was disabled.
+    m_saveBtn->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
     for (QPushButton *b : {m_openTabBtn, m_saveBtn, m_copyBtn}) {
         b->setEnabled(false);
         respBar->addWidget(b);
@@ -214,9 +228,10 @@ RestClient::RestClient(QWidget *parent) : QWidget(parent) {
     m_respBody = new QPlainTextEdit;
     m_respBody->setReadOnly(true);
     m_respBody->setFont(mono);
-    m_respBody->setPlaceholderText(tr("Set a method and URL, or press Send Request (Ctrl+Alt+R) "
+    m_respBody->setPlaceholderText(tr("Set a method and URL, or press Send Request (%1) "
                                       "in a .http file. The response body shows here; JSON is "
-                                      "pretty-printed."));
+                                      "pretty-printed.")
+                                       .arg(Shortcuts::nativeText(Shortcuts::sendHttpRequest())));
     m_respHeaders = new QPlainTextEdit;
     m_respHeaders->setReadOnly(true);
     m_respHeaders->setFont(mono);
@@ -342,8 +357,9 @@ void RestClient::applyPalette() {
         .arg(pal.bg, pal.text, pal.selectionBg, pal.selectionFg, pal.border) + menuQss;
     const QString tabBarQss = QString(
         "QTabBar { background: %1; }"
+        // No font-size here: setTabLabelFont() sizes the label on the bar.
         "QTabBar::tab { background: transparent; color: %2; padding: 6px 16px; border: none; "
-        "font-size: 12px; margin-right: 2px; }"
+        "margin-right: 2px; }"
         "QTabBar::tab:selected { color: %3; border-bottom: 2px solid %3; }"
         "QTabBar::tab:hover:!selected { color: %4; }")
         .arg(pal.chromeBg, pal.textMuted, pal.accent, pal.text);
@@ -388,7 +404,7 @@ void RestClient::applyPalette() {
         "QTabWidget::tab-bar { left: 4px; }"
         "QTabBar { background: %1; }"
         "QTabBar::tab { background: transparent; color: %3; padding: 6px 16px; border: none; "
-        "font-size: 12px; margin-right: 2px; }"
+        "margin-right: 2px; }"
         "QTabBar::tab:selected { color: %4; border-bottom: 2px solid %4; }"
         "QTabBar::tab:hover:!selected { color: %5; }")
         .arg(pal.bg, pal.border, pal.textMuted, pal.accent, pal.text));
@@ -987,6 +1003,11 @@ QString RestClient::suggestedFileName(const QString &url, const QString &content
 
 void RestClient::renderResponse() {
     m_respBinary = isBinaryResponse(m_respContentType, m_respBytes);
+    // The "Set a method and URL" hint is for before the first response; an
+    // empty pane after one says why it is empty.
+    m_respBody->setPlaceholderText(m_respBinary
+                                       ? tr("Binary response: not shown as text. Use Save… to keep it.")
+                                       : tr("The response has no body."));
     if (m_respBinary) {
         m_respBody->setPlainText(QString());
         return;

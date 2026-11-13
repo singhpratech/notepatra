@@ -2,6 +2,8 @@
 // driven offscreen against fake HTTP servers on 127.0.0.1 (never the real
 // network).
 //
+//   S0  Request/response tab labels are sized with the font that paints them
+//       (macOS-sized app font forced; labels were clipped on both sides).
 //   S1  Undefined {{variable}} blocks the send: no connection reaches the server.
 //   S2  .http request + environment: variables expanded on the wire, response
 //       body pretty-printed, Headers view shows status line + headers,
@@ -33,10 +35,14 @@
 #include <QHostAddress>
 #include <QLabel>
 #include <QMenu>
+#include <QPainter>
 #include <QPlainTextEdit>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QStyleFactory>
 #include <QTabBar>
+#include <QTabWidget>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
@@ -60,7 +66,9 @@ public:
     static QString badge(RestClient *r) { return r->m_statusBadge->text(); }
     static QString note(RestClient *r) { return r->m_note->isVisibleTo(r) ? r->m_note->text() : QString(); }
     static QTabBar *respTabs(RestClient *r) { return r->m_respTabs; }
+    static QTabBar *reqTabs(RestClient *r) { return r->m_reqTabs->tabBar(); }
     static QString respBody(RestClient *r) { return r->m_respBody->toPlainText(); }
+    static QString respBodyHint(RestClient *r) { return r->m_respBody->placeholderText(); }
     static QString respHeaders(RestClient *r) { return r->m_respHeaders->toPlainText(); }
     static QTreeWidget *history(RestClient *r) { return r->m_history; }
     static QPushButton *sendBtn(RestClient *r) { return r->m_sendBtn; }
@@ -136,6 +144,8 @@ private:
             QByteArray png("\x89PNG\r\n\x1a\n\0\0\0\rIHDR", 16);
             png += QByteArray(1000, '\x01');
             reply(s, "200 OK", "image/png", png);
+        } else if (path.startsWith("/empty")) {
+            reply(s, "204 No Content", "text/plain", QByteArray());
         } else if (path.startsWith("/big")) {
             QByteArray big;
             big.reserve(3 * 1024 * 1024);
@@ -149,6 +159,55 @@ private:
         }
     }
 };
+
+// Records the font and rect every label is painted with. QStyleSheetStyle
+// hands drawItemText to its base style, so a per-widget proxy sees the
+// font the ::tab rule actually painted with and the rect it is clipped to.
+class LabelProbeStyle : public QProxyStyle {
+public:
+    using QProxyStyle::QProxyStyle;
+    struct Hit {
+        QString text;
+        QFont font;
+        QRect rect;
+    };
+    mutable QList<Hit> hits;
+    void drawItemText(QPainter *p, const QRect &r, int flags, const QPalette &pal, bool enabled,
+                      const QString &text, QPalette::ColorRole role) const override {
+        hits.append({text, p->font(), r});
+        QProxyStyle::drawItemText(p, r, flags, pal, enabled, text, role);
+    }
+};
+
+// Every tab label of `bar` is painted whole: the painted font is the bar's
+// own font (so tabSizeHint measured with it), and the label fits the rect
+// drawText clips to. `when` names the pass in the output.
+static void expectTabLabelsFit(QTabBar *bar, LabelProbeStyle *probe, const char *name,
+                               const char *when) {
+    probe->hits.clear();
+    (void)bar->grab();
+    for (int i = 0; i < bar->count(); ++i) {
+        const QString text = bar->tabText(i);
+        const LabelProbeStyle::Hit *hit = nullptr;
+        for (const LabelProbeStyle::Hit &h : probe->hits)
+            if (h.text == text) hit = &h;
+        const QByteArray tag = QStringLiteral("S0: %1 \"%2\" (%3)").arg(name, text, when).toUtf8();
+        EXPECT((tag + ": label painted unelided").constData(), hit != nullptr);
+        if (!hit) continue;
+        const int need = QFontMetrics(hit->font).horizontalAdvance(text);
+        std::printf("     %s: painted %dpx, bar font %s, text %dpx, text rect %dpx, tab %dpx\n",
+                    tag.constData(), hit->font.pixelSize(),
+                    bar->font().toString().toUtf8().constData(), need, hit->rect.width(),
+                    bar->tabRect(i).width());
+        EXPECT((tag + ": painted with the bar's own font, 12px").constData(),
+               hit->font.pixelSize() == 12 && bar->font().pixelSize() == 12);
+        EXPECT((tag + ": label fits the rect it is clipped to").constData(),
+               hit->rect.width() >= need);
+        // 16px side padding from the ::tab rule on both sides.
+        EXPECT((tag + ": tab is the label plus its padding").constData(),
+               bar->tabRect(i).width() >= need + 2 * 16);
+    }
+}
 
 static bool waitFinished(QSignalSpy &spy, int before, int ms = 10000) {
     return QTest::qWaitFor([&]() { return spy.count() > before; }, ms);
@@ -213,13 +272,48 @@ int main(int argc, char *argv[]) {
                   .arg(server.base()).toUtf8());
     writeFile(work.filePath("http-client.private.env.json"), R"({"local": {"token": "tok-fake-123"}})");
 
+    // ── S0 ──
+    // macOS: main() sets a 10pt app font, which is 10px at the Mac's 72 dpi,
+    // smaller than the 12px tab label, and the tabs were sized with it
+    // (labels clipped on both sides). Linux/Windows at 96 dpi get 13.3px and
+    // never showed it, so force the Mac-sized app font here.
+    std::printf("-- S0: tab labels are sized with the font that paints them --\n");
+    {
+        const QFont appFont = QApplication::font();
+        QFont small = appFont;
+        small.setPixelSize(10);
+        QApplication::setFont(small);
+        {
+            RestClient tabsPanel;
+            tabsPanel.resize(1000, 800);
+            tabsPanel.show();
+            QApplication::processEvents();
+            QStyle *baseStyle = QStyleFactory::create(QApplication::style()->objectName());
+            LabelProbeStyle probe(baseStyle ? baseStyle : QStyleFactory::create("Fusion"));
+            QTabBar *bars[] = {TA::reqTabs(&tabsPanel), TA::respTabs(&tabsPanel)};
+            const char *names[] = {"request tab", "response tab"};
+            for (QTabBar *b : bars) b->setStyle(&probe);
+            QApplication::processEvents();
+            for (int k = 0; k < 2; ++k) expectTabLabelsFit(bars[k], &probe, names[k], "built");
+            tabsPanel.onThemeChanged();
+            QApplication::processEvents();
+            for (int k = 0; k < 2; ++k) expectTabLabelsFit(bars[k], &probe, names[k], "theme re-applied");
+            for (QTabBar *b : bars) b->setStyle(nullptr);
+        }
+        QApplication::setFont(appFont);
+    }
+
     auto *rest = new RestClient;
     rest->resize(1000, 800);
     rest->show();
     QSignalSpy finished(rest, &RestClient::requestFinished);
 
     // ── S1 ──
+    EXPECT("S1: Open in tab has no platform file icon (blank on macOS when disabled)",
+           TA::openTabBtn(rest)->icon().isNull());
     std::printf("-- S1: undefined variable blocks the send --\n");
+    EXPECT("S1: before any response the Body pane shows the how-to hint",
+           TA::respBody(rest).isEmpty() && TA::respBodyHint(rest).startsWith("Set a method and URL"));
     rest->sendHttpRequest(QString::fromUtf8(httpText), 2, httpPath);
     QTest::qWait(300);
     EXPECT("S1: badge names the undefined variable", TA::badge(rest).contains("{{base}}") &&
@@ -342,11 +436,21 @@ int main(int argc, char *argv[]) {
     EXPECT("S6: binary finished", waitFinished(finished, before));
     EXPECT("S6: binary note instead of bytes", TA::note(rest).contains("Binary response, ") && TA::note(rest).contains(" bytes (image/png)") &&
                                                    TA::respBody(rest).isEmpty());
+    std::printf("     body pane hint after binary: %s\n", TA::respBodyHint(rest).toUtf8().constData());
+    EXPECT("S6: empty Body pane no longer shows the before-any-response hint",
+           !TA::respBodyHint(rest).contains("Set a method"));
+    EXPECT("S6: ...it says the response is binary", TA::respBodyHint(rest).contains("Binary response"));
     EXPECT("S6: Save enabled, Open in tab disabled", TA::saveBtn(rest)->isEnabled() && !TA::openTabBtn(rest)->isEnabled());
     const QString saved = work.filePath("out.png");
     EXPECT("S6: Save writes the raw bytes", TA::saveTo(rest, saved) && readFile(saved).size() == 1016 &&
                                                 readFile(saved).startsWith("\x89PNG"));
     EXPECT("S6: suggested name from URL + type", RestClient::suggestedFileName(server.base() + "/binary", "image/png") == "binary.png");
+    TA::url(rest)->setText(server.base() + "/empty");
+    before = finished.count();
+    rest->send();
+    EXPECT("S6: empty 204 finished", waitFinished(finished, before) && TA::badge(rest).startsWith("204"));
+    EXPECT("S6: an empty body says so, not the before-any-response hint",
+           TA::respBody(rest).isEmpty() && TA::respBodyHint(rest) == "The response has no body.");
     TA::url(rest)->setText(server.base() + "/big");
     before = finished.count();
     rest->send();
@@ -456,6 +560,19 @@ int main(int argc, char *argv[]) {
         QAction *sendAct = mw.findChild<QAction *>("actSendHttpRequest");
         EXPECT("S9: Send Request action exists with Ctrl+Alt+R",
                sendAct && sendAct->text() == "Send Request" && sendAct->shortcut() == QKeySequence("Ctrl+Alt+R"));
+        // The panel's hint names the keys the action really has, in the
+        // platform's notation (Cmd+Option+R symbols on macOS).
+        {
+            RestClient hintPanel;
+            const QString keys = sendAct ? sendAct->shortcut().toString(QKeySequence::NativeText) : QString();
+            const QString hint = TA::respBodyHint(&hintPanel);
+            std::printf("     empty-state hint: %s\n", hint.toUtf8().constData());
+            EXPECT("S9: empty-state hint shows the Send Request keys in native text",
+                   !keys.isEmpty() && hint.contains(QStringLiteral("Send Request (%1)").arg(keys)));
+#ifndef Q_OS_MACOS
+            EXPECT("S9: ...which read Ctrl+Alt+R off macOS", hint.contains("(Ctrl+Alt+R)"));
+#endif
+        }
         const QString txtPath = work.filePath("notes.txt");
         writeFile(txtPath, "GET http://127.0.0.1:1/\n");
         mw.openFile(txtPath);

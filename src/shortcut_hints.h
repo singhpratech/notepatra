@@ -57,6 +57,12 @@ inline QKeySequence terminal() {
 #endif
 }
 
+// Send Request in a .http/.rest file. Qt maps Ctrl to Cmd on macOS, so the
+// keys there are Cmd+Option+R; hints show it through nativeText().
+inline QKeySequence sendHttpRequest() {
+    return QKeySequence(QStringLiteral("Ctrl+Alt+R"));
+}
+
 inline QString nativeText(const QKeySequence &k) {
     return k.toString(QKeySequence::NativeText);
 }
