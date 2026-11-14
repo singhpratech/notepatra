@@ -17,6 +17,7 @@
 #include "src/diagram/npd_templates.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QString>
 
@@ -235,6 +236,95 @@ int main(int argc, char **argv) {
               g.errors.size() == 1 &&
                   g.errors.first() == QLatin1String("line 1: group label is missing a closing quote"),
               g.errors.join(QStringLiteral(" | ")));
+    }
+
+    // ── columns stay right when one line has several errors ──
+    // The column walk resumes from the previous error on the line instead of
+    // restarting at column 1; it must agree with a from-scratch count,
+    // including across surrogate pairs and when a later check points back.
+    std::printf("\n— columns, several errors per line ──────────────\n");
+    {
+        const Diagram d = parse(QString::fromUtf8("(\xF0\x9F\x98\x80 -> [\xF0\x9F\x98\x80 -> {b"));
+        check("three open endpoints after emoji: columns 1, 7, 13",
+              d.errors.size() == 3 &&
+                  d.errors.at(0).startsWith(QLatin1String("line 1, column 1: unclosed '('")) &&
+                  d.errors.at(1).startsWith(QLatin1String("line 1, column 7: unclosed '['")) &&
+                  d.errors.at(2).startsWith(QLatin1String("line 1, column 13: unclosed '{'")),
+              d.errors.join(QStringLiteral(" | ")));
+        const Diagram back = parse(QStringLiteral("icon db :database \"Users :: \"hover"));
+        check("icon: hover error, then the label error to its left",
+              back.errors.size() == 2 &&
+                  back.errors.at(0).startsWith(QLatin1String("line 1, column 29: unterminated")) &&
+                  back.errors.at(1).startsWith(QLatin1String("line 1, column 19: unterminated")),
+              back.errors.join(QStringLiteral(" | ")));
+    }
+
+    // ── error cap ──
+    // Reported on the v0.1.135 branch: every open endpoint added a message,
+    // so one pasted line could build tens of thousands of them.
+    std::printf("\n— error cap ─────────────────────────────────────\n");
+    {
+        auto lines = [](int n) {
+            QString s;
+            for (int i = 0; i < n; ++i) s += QStringLiteral("bogus%1\n").arg(i);
+            return s;
+        };
+        const Diagram exact = parse(lines(kMaxErrors));
+        check("exactly kMaxErrors errors: all listed, no summary entry",
+              exact.errors.size() == kMaxErrors &&
+                  exact.errors.last().startsWith(QLatin1String("line 100: unrecognized")),
+              exact.errors.isEmpty() ? QString() : exact.errors.last());
+        const Diagram one = parse(lines(kMaxErrors + 1));
+        check("one over: kMaxErrors listed + \"…and 1 more error\"",
+              one.errors.size() == kMaxErrors + 1 &&
+                  one.errors.last() == QStringLiteral("…and 1 more error (only the first 100 are listed)"),
+              one.errors.isEmpty() ? QString() : one.errors.last());
+        const Diagram many = parse(lines(500));
+        check("500 bad lines: 100 listed + \"…and 400 more errors\", still invalid",
+              !many.ok() && many.errors.size() == kMaxErrors + 1 &&
+                  many.errors.at(kMaxErrors - 1).startsWith(QLatin1String("line 100: ")) &&
+                  many.errors.last() == QStringLiteral("…and 400 more errors (only the first 100 are listed)"),
+              many.errors.isEmpty() ? QString() : many.errors.last());
+        const Diagram ref = parse(lines(500) + QStringLiteral("group \"G\" : ghost\n"));
+        check("cross-reference errors after the cap are counted too",
+              ref.errors.size() == kMaxErrors + 1 &&
+                  ref.errors.last().startsWith(QStringLiteral("…and 401 more errors")),
+              ref.errors.isEmpty() ? QString() : ref.errors.last());
+    }
+
+    // ── perf: one long line full of open endpoints ──
+    // Each error used to re-count columns from the start of the line: a
+    // 209 KB line of "[n0 -> [n1 -> ..." took 2.5 s and 1 MB took 71 s (the
+    // parser before the column check: 32 ms / ~200 ms), on the GUI thread per
+    // keystroke and from MCP validate_npd. The bound is loose for slow CI.
+    std::printf("\n— perf: 1 MB adversarial line ───────────────────\n");
+    {
+        const int kBytes = 1 << 20;
+        const struct { const char *name; const char *open; } shapes[] = {
+            {"\"[n -> [n -> ...\"", "["}, {"'\"n -> \"n -> ...'", "\""}};
+        for (const auto &sh : shapes) {
+            QString src;
+            src.reserve(kBytes + 64);
+            src += QStringLiteral("diagram flow\n");
+            for (int i = 0; src.size() < kBytes; ++i)
+                src += QLatin1String(sh.open) + QStringLiteral("n%1 -> ").arg(i);
+            src += QStringLiteral("end\n");
+            QElapsedTimer t;
+            t.start();
+            const Diagram d = parse(src);
+            const qint64 ms = t.elapsed();
+            std::printf("  [INFO] %s: %lld ms, %d errors kept\n", sh.name, (long long)ms,
+                        int(d.errors.size()));
+            check(qPrintable(QStringLiteral("1 MB %1 parses in under 3000 ms")
+                                 .arg(QLatin1String(sh.name))),
+                  ms < 3000, QStringLiteral("%1 ms").arg(ms));
+            check(qPrintable(QStringLiteral("1 MB %1 is capped and still invalid")
+                                 .arg(QLatin1String(sh.name))),
+                  !d.ok() && d.errors.size() == kMaxErrors + 1 &&
+                      d.errors.first().startsWith(QLatin1String("line 2, column 1: ")) &&
+                      d.errors.last().startsWith(QStringLiteral("…and ")),
+                  d.errors.isEmpty() ? QString() : d.errors.first());
+        }
     }
 
     std::printf("\n=== Summary: %d passed, %d failed ===\n", g_pass, g_fail);

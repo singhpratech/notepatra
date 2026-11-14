@@ -102,6 +102,9 @@ struct LegendItem {
     QString text;
 };
 
+// Errors kept per parse; the rest are counted in one final entry.
+constexpr int kMaxErrors = 100;
+
 struct Diagram {
     QString       type    = QStringLiteral("flow");     // flow | er | system
     QString       title;
@@ -117,6 +120,8 @@ struct Diagram {
     QStringList   textboxes;
     // "line N: message", or "line N, column M: message" when the parser can
     // point at the character (an unclosed '(' '[' '{' or '"'). Empty ⇒ clean.
+    // At most kMaxErrors of those, then one "…and N more errors" entry (no
+    // line number) when the parser found more.
     QStringList   errors;
     bool ok() const { return errors.isEmpty(); }
 };

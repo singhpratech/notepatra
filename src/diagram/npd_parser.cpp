@@ -204,8 +204,17 @@ Diagram parse(const QString &src) {
         d.nodes.append(n);
         return d.nodes.last();
     };
+    // At most kMaxErrors are kept (a final "...and N more" entry follows): a
+    // one-line paste of thousands of open brackets would otherwise build one
+    // message per endpoint, on the GUI thread, per keystroke.
+    int suppressed = 0;
+    auto room = [&]() {
+        if (d.errors.size() < kMaxErrors) return true;
+        ++suppressed;
+        return false;
+    };
     auto err = [&](int line, const QString &msg) {
-        d.errors.append(QStringLiteral("line %1: %2").arg(line).arg(msg));
+        if (room()) d.errors.append(QStringLiteral("line %1: %2").arg(line).arg(msg));
     };
 
     const QStringList lines = src.split(QLatin1Char('\n'));
@@ -217,17 +226,25 @@ Diagram parse(const QString &src) {
         // "line N, column M: msg" for a problem at offset `pos` of `line`.
         // The column is 1-based in the RAW source line (leading indentation
         // counts) and counts characters, so a surrogate pair is one column.
+        // The column walk resumes from the previous error's position on this
+        // line (errors arrive left to right), so a line costs O(length) in
+        // total however many errors it has; rescanning from column 1 per
+        // error made a long single line quadratic.
         const QString &raw = lines.at(i);
+        const int indent = skipSpace(raw, 0);
+        int colK = 0, colN = 1;   // raw offset reached so far, and its column
         auto errAt = [&](int pos, const QString &msg) {
-            const int rawPos = skipSpace(raw, 0) + pos;
-            int col = 1;
-            for (int k = 0; k < rawPos && k < raw.size(); ++k) {
-                if (raw.at(k).isHighSurrogate() && k + 1 < raw.size() &&
-                    raw.at(k + 1).isLowSurrogate())
-                    ++k;
-                ++col;
+            if (!room()) return;
+            const int rawPos = qMin(indent + pos, int(raw.size()));
+            if (rawPos < colK) { colK = 0; colN = 1; }
+            while (colK < rawPos) {
+                if (raw.at(colK).isHighSurrogate() && colK + 1 < raw.size() &&
+                    raw.at(colK + 1).isLowSurrogate())
+                    ++colK;
+                ++colK;
+                ++colN;
             }
-            d.errors.append(QStringLiteral("line %1, column %2: %3").arg(lineNo).arg(col).arg(msg));
+            d.errors.append(QStringLiteral("line %1, column %2: %3").arg(lineNo).arg(colN).arg(msg));
         };
         // Offset in `line` of `piece`, a trimmed substring known to start at
         // or after `from` with only whitespace before it; -1 when empty.
@@ -485,6 +502,9 @@ Diagram parse(const QString &src) {
             err(ni < noteLines.size() ? noteLines.at(ni) : 0,
                 QStringLiteral("note target '%1' is not a node").arg(d.notes.at(ni).target));
     }
+    if (suppressed > 0)
+        d.errors.append(QStringLiteral("…and %1 more error%2 (only the first %3 are listed)")
+                            .arg(suppressed).arg(suppressed == 1 ? "" : "s").arg(kMaxErrors));
     return d;
 }
 
