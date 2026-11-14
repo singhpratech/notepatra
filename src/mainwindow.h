@@ -114,6 +114,8 @@ public:
     // once; a function rather than an inline connect so a test can install
     // the same hook and prove a quit with no close event keeps the edits.
     void saveSessionOnAboutToQuit();
+    // Startup notices still queued (they are shown once the window is).
+    QStringList pendingStartupNotices() const { return m_startupNotices; }
 
     // Rename the file behind tab `idx` in place; never overwrites an existing file.
     enum class RenameResult { Renamed, Unchanged, NoFile, InvalidName, TargetExists,

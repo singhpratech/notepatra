@@ -38,6 +38,8 @@
 //   H. DiagramEditor::saveFile() returns false, keeps the tab modified and
 //      tells the user when the write fails; closing with Save then keeps the
 //      tab open.
+//   I. Features > Diagram stays checked after closing one of two diagrams.
+//   J. restore reports an existing but unreadable .npd as unreadable.
 //
 // D, G and H are skipped on offscreen Windows (any QMessageBox segfaults).
 
@@ -345,8 +347,14 @@ int main(int argc, char *argv[]) {
         if (rb)
             if (auto *pe = rb->findChild<QPlainTextEdit *>(QStringLiteral("diagramSource")))
                 pe->appendPlainText(QStringLiteral("u -> o : EDIT-BEFORE-CLOSE"));
-        const bool closed = w2->close();
-        EXPECT("B: a session window closes without prompting", closed);
+        bool closed = false;
+        {
+            // A prompt here is a failure, not a 180 s wait for the TIMEOUT:
+            // the watch cancels it at once and the check below fails.
+            ModalWatch noPrompt([](QMessageBox *mb) { clickOr(mb, QMessageBox::Cancel); });
+            closed = w2->close();
+            EXPECT("B: a session window closes without prompting", closed && noPrompt.seen == 0);
+        }
         delete w2;
         pump(20);
 
@@ -637,6 +645,79 @@ int main(int argc, char *argv[]) {
         pump(20);
     } else {
         std::printf("  [SKIP] H: modal-driven section (offscreen Windows)\n");
+    }
+
+    // ── I. Features > Diagram stays checked while a Diagram tab remains ──
+    std::printf("\n-- I: Diagram toggle with two diagram tabs --\n");
+    {
+        QFile::remove(sessionPath);
+        MainWindow *w = openWindow();
+        auto *tm = w->findChild<TabManager *>();
+        Client c;
+        EXPECT("I: connected to the window's MCP bridge", c.connectTo());
+        QAction *diagAct = diagramAction(w);
+        if (diagAct) diagAct->trigger();
+        DiagramEditor *first = diagrams(tm).value(0);
+        const QJsonObject r = c.call("create_diagram", {{"source", QString::fromUtf8(kSrcB)}});
+        EXPECT("I: two diagram tabs open, the toggle checked",
+               ok(r) && diagrams(tm).size() == 2 && diagAct && diagAct->isChecked() && first);
+        if (first) tm->setCurrentWidget(first);
+        // The first (pristine) diagram is current, so the toggle closes it
+        // without a prompt; the other diagram stays.
+        if (diagAct && first) diagAct->trigger();
+        EXPECT("I: the toggle closed one diagram tab", diagrams(tm).size() == 1);
+        EXPECT("I: the toggle is still checked with a diagram tab open",
+               diagAct && diagAct->isChecked());
+        c.close();
+        for (DiagramEditor *de : diagrams(tm)) de->setModified(false);
+        w->close();
+        delete w;
+        pump(20);
+    }
+
+    // ── J. restore: an existing but unreadable .npd says so ──
+    std::printf("\n-- J: restore notice for an unreadable diagram file --\n");
+    {
+        QTemporaryDir work;
+        const QString locked = work.path() + "/locked.npd";
+        const QString gone = work.path() + "/gone.npd";
+        writeFile(locked, "diagram flow\nnode l [LOCKED]\n");
+        QFile::setPermissions(locked, QFileDevice::WriteOwner);
+        QFile probe(locked);
+        const bool unreadable = !probe.open(QIODevice::ReadOnly);
+        probe.close();
+        if (!unreadable) {
+            // Windows has no unreadable-file permission bit, and root reads anyway.
+            std::printf("  [SKIP] J: cannot make a file unreadable here\n");
+        } else {
+            QJsonArray tabs;
+            for (const QString &p : {locked, gone}) {
+                QJsonObject t;
+                t["kind"] = "diagram";
+                t["path"] = p;
+                t["tabName"] = QFileInfo(p).fileName();
+                t["modified"] = false;
+                tabs.append(t);
+            }
+            QJsonObject s;
+            s["tabs"] = tabs;
+            writeFile(sessionPath, QJsonDocument(s).toJson());
+            MainWindow *w = openWindow();
+            const QString notices = w->pendingStartupNotices().join(QStringLiteral("\n"));
+            EXPECT("J: the unreadable file is reported as unreadable",
+                   notices.contains(QStringLiteral("file could not be read: ") +
+                                    QDir::toNativeSeparators(locked)));
+            EXPECT("J: ...not as a file that no longer exists",
+                   !notices.contains(QStringLiteral("no longer exists: ") +
+                                     QDir::toNativeSeparators(locked)));
+            EXPECT("J: a missing file is still reported as missing",
+                   notices.contains(QStringLiteral("file no longer exists: ") +
+                                    QDir::toNativeSeparators(gone)));
+            w->close();
+            delete w;
+            pump(20);
+        }
+        QFile::setPermissions(locked, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     }
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);

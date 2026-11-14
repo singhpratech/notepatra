@@ -690,7 +690,7 @@ async with MCPServerStdio(
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
   <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
   <h3>Does it work with the Lite build?</h3>
-  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running. On Lite, <code>run_sql</code> over a non-CSV file, DuckDB connections in <code>run_query</code>, PDF export of notes, and the chart tools (<code>render_chart</code>, <code>export_chart</code>) return an error saying they need the Full edition.</p>
+  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running. On Lite, <code>run_sql</code> over a non-CSV file, DuckDB connections in <code>run_query</code> and PDF export of notes return an error saying they need the Full edition. The chart tools (<code>render_chart</code>, <code>export_chart</code>) return an error on Lite for Linux and Windows saying they need the Full edition, and on macOS, where neither edition renders charts, saying charts are not available in the macOS build.</p>
   <h3>Which tab is index 0?</h3>
   <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices. Better still, use the <code>id</code> it returns: an index is positional and moves the moment a tab closes, while an id belongs to the document for as long as it is open.</p>
 

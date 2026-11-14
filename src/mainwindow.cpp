@@ -5084,9 +5084,13 @@ void MainWindow::buildMenus() {
         if (diag && existingIdx == m_tabs->currentIndex()) {
             // Through closeTab, so unsaved .npd edits get Save / Discard /
             // Cancel instead of being deleted silently.
-            QPointer<DiagramEditor> alive(diag);
+            // Checked while any Diagram tab is open (Cancel kept this one, or
+            // another one is still open).
             closeTab(existingIdx);
-            diagAct->setChecked(!alive.isNull());
+            bool anyDiagram = false;
+            for (int i = 0; i < m_tabs->count() && !anyDiagram; ++i)
+                anyDiagram = qobject_cast<DiagramEditor *>(m_tabs->widget(i)) != nullptr;
+            diagAct->setChecked(anyDiagram);
             return;
         }
         if (!diag) existingIdx = newDiagramTab(QString(), QString());
@@ -7323,9 +7327,12 @@ void MainWindow::restoreSession() {
                 QFile df(path);
                 if (!fileExists || !df.open(QIODevice::ReadOnly | QIODevice::Text)) {
                     if (!path.isEmpty())
-                        queueStartupNotice(tr("Session tab dropped — file no longer "
-                                              "exists: %1")
-                                               .arg(QDir::toNativeSeparators(path)));
+                        queueStartupNotice(
+                            (fileExists ? tr("Session tab dropped — file could not be "
+                                             "read: %1")
+                                        : tr("Session tab dropped — file no longer "
+                                             "exists: %1"))
+                                .arg(QDir::toNativeSeparators(path)));
                     continue;
                 }
                 text = QString::fromUtf8(df.readAll());
