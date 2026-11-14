@@ -54,6 +54,15 @@ public:
     // True when the .npd text has edits that are not on disk (the tab
     // title's bullet). Closing the tab would lose them.
     bool isModified() const { return m_dirty; }
+    // Session restore: text, on-disk path ("" = untitled) and modified flag
+    // in one step, then retitle.
+    void restoreDocument(const QString &text, const QString &path, bool modified);
+    // An approved MCP discard clears the flag so closing does not prompt.
+    void setModified(bool modified);
+    // Save to the current path, or ask for one. False on cancel/failure; a
+    // failed write shows a message, leaves the old file as it was and keeps
+    // the tab modified.
+    bool saveFile();
 
 signals:
     // Emitted when the document path or modified state changes, so the host
@@ -68,7 +77,6 @@ private slots:
     void renderNow();        // parse + push to the preview + update status
     void newFromTemplate();  // New ▾ menu
     void openFile();
-    bool saveFile();         // returns false on cancel/failure
     void exportAs();         // Export ▾ menu
     void generateWithAi();   // AI ▾ — NL prompt → review → insert
     void importMermaid();    // paste Mermaid → translate → load

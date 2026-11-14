@@ -13,6 +13,29 @@ _Nothing yet._
 
 ---
 
+## [0.1.135] — 2026-11-14
+
+**Unsaved diagrams survive quit, and clearer errors from the MCP diagram and chart tools.**
+
+### Fixed
+- **Unsaved Diagram tabs are saved in the session and restored.** Before, a modified Diagram tab was silently dropped on quit (autosave tick and normal close alike) on every platform, while unsaved editor tabs came back. An unmodified diagram from a `.npd` file is read again from disk, and the startup notice says when that file is gone or cannot be read.
+- **Closing a modified Diagram tab asks Save / Discard / Cancel** (tab close button, Close All, unchecking Tools > Diagram, closing a `--new` window). An approved MCP `close_tab` does not prompt.
+- **The session is saved when Notepatra is ended by SIGTERM or SIGINT** (Linux and macOS). The window was never closed, so edits made after the last autosave tick were lost, editor tabs included.
+- **A close prompt interrupted by a quit keeps the tab.** Only an explicit Discard discards (editor and Diagram tabs).
+- **A failed diagram save reports the error and keeps the old file.** Saves go through a temporary file; on failure the tab stays modified. Before, a full disk could truncate the `.npd` and the save still reported success.
+- MCP: the Welcome tab keeps its `tab_id` across `set_theme`.
+- MCP: `render_chart` / `export_chart` say why charts are unavailable in the running build. macOS Full was told to get the Full edition; no macOS build has charts. `get_capabilities` reports `features.charts` and `charts_unavailable_reason`. The in-app chart card and AI tool-call summary on macOS no longer suggest the Full build.
+- `.npd` validation reports unclosed brackets and unterminated quotes with line and column (`validate_npd` returned `valid: true` for `(a) -> [b`). `validate_npd`, `create_diagram` and `set_diagram_source` return a `column` field (0 when none applies). At most 100 errors are listed, then one "…and N more" entry. A long single line of open brackets no longer takes seconds to validate.
+- Mermaid import refuses diagram types other than flowcharts with a message naming the type and what is supported, instead of returning an empty diagram that replaced yours. `mermaid_to_npd` returns it as an error; the Import Mermaid dialog shows it and stays open.
+- Mermaid import: `::` in a label becomes "∷" (U+2237), since `::` starts hover text in `.npd`. Edge labels starting with a quote or `:` are quoted, an id that is an `.npd` keyword keeps its edge, and a headerless flowchart starting with a word like `Diagram` imports again.
+
+### Known limits
+- macOS builds are still not notarized.
+- Charts are not available on macOS in either edition; only the message changed.
+- Tested on Linux; not run on a real Mac for this release.
+
+---
+
 ## [0.1.134] — 2026-11-13
 
 **macOS fixes for the REST Client and the menu bar, and a status bar that describes the tab you are on.**

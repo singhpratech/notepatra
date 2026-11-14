@@ -978,7 +978,9 @@ impl EditorTransport for MockEditor {
             "edition": "Lite",
             "platform": std::env::consts::OS,
             "version": "0.1.119",
-            "features": { "duckdb": false, "webengine": false, "noter": true },
+            "features": { "duckdb": false, "webengine": false, "noter": true, "charts": false },
+            "charts_unavailable_reason":
+                "charts require the Full edition (Linux or Windows); this build is Lite",
             "diagram_export_formats": MOCK_DIAGRAM_FORMATS,
         }))
     }
@@ -1224,7 +1226,7 @@ impl EditorTransport for MockEditor {
         _title: Option<&str>,
     ) -> Result<Value, TransportError> {
         // The mock pretends the charts pack is present even though its
-        // capability flag reports webengine:false — capabilities describe the
+        // capability flags report webengine:false / charts:false — capabilities describe the
         // editor, while the mock is a demo surface that answers every verb.
         Ok(json!({ "chart_id": "mock-chart-1", "rendered": true }))
     }

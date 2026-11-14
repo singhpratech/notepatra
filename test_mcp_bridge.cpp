@@ -3114,6 +3114,37 @@ private slots:
         QVERIFY(!e0.value(QLatin1String("message")).toString().isEmpty());
     }
 
+    // Reported from v0.1.134: `(a) -> [b` came back valid:true. The error must
+    // carry the line AND the column of the unclosed '[' (the tool description
+    // promises both), and older line-only errors keep column 0.
+    void validate_npd_unclosed_bracket_has_line_and_column() {
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        QJsonObject a;
+        a[QStringLiteral("source")] = QStringLiteral("diagram flow\n(a) -> [b");
+        QJsonObject r = call(s, 126, QStringLiteral("validate_npd"), a);
+        QVERIFY(r.value(QLatin1String("ok")).toBool());
+        QJsonObject res = r.value(QLatin1String("result")).toObject();
+        QCOMPARE(res.value(QLatin1String("valid")).toBool(), false);
+        QJsonArray errs = res.value(QLatin1String("errors")).toArray();
+        QCOMPARE(errs.size(), 1);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("line")).toInt(), 2);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("column")).toInt(), 8);
+        QVERIFY(errs.at(0).toObject().value(QLatin1String("message")).toString()
+                    .startsWith(QLatin1String("unclosed '['")));
+        // A line-level error has no column to point at: 0, never a guess.
+        a[QStringLiteral("source")] = QStringLiteral("diagram blob\n");
+        r = call(s, 127, QStringLiteral("validate_npd"), a);
+        errs = r.value(QLatin1String("result")).toObject()
+                   .value(QLatin1String("errors")).toArray();
+        QCOMPARE(errs.size(), 1);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("line")).toInt(), 1);
+        QCOMPARE(errs.at(0).toObject().value(QLatin1String("column")).toInt(), 0);
+        QVERIFY(errs.at(0).toObject().value(QLatin1String("message")).toString()
+                    .startsWith(QLatin1String("unknown diagram type")));
+    }
+
     void validate_npd_by_tab_and_bad_args() {
         m_fakeTabs.append({QStringLiteral("chart.npd"), QString(),
                            QStringLiteral("node a (Start)\n"), false,
@@ -4108,9 +4139,22 @@ private slots:
         QVERIFY(!findCard());
     }
 
+    // This target is compiled with no flavor defines: a Lite build.
+    static QString expectedLiteChartGate() {
+#if defined(Q_OS_MACOS)
+        return QStringLiteral(
+            "chart rendering is not available in the macOS build of Notepatra "
+            "(it has no WebEngine, which charts need); run_sql and run_query "
+            "still return the data");
+#else
+        return QStringLiteral(
+            "charts require the Full edition (Linux or Windows); this build is Lite");
+#endif
+    }
+
     void chart_verbs_webengine_gated() {
         // Default host: renderChart/exportChart fields unset ⇒ the bridge
-        // answers the friendly Full/WebEngine gate PRE-CARD, no card ever.
+        // answers the build's chart gate PRE-CARD, no card ever.
         QLocalSocket s;
         QVERIFY(connectClient(s));
         readGreeting(s);
@@ -4120,18 +4164,69 @@ private slots:
         rc[QStringLiteral("spec")] = spec;
         QJsonObject r = call(s, 360, QStringLiteral("render_chart"), rc);
         QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
-        QCOMPARE(r.value(QLatin1String("error")).toString(),
-                 QStringLiteral("charts require the Full edition (WebEngine)"));
+        QCOMPARE(r.value(QLatin1String("error")).toString(), expectedLiteChartGate());
         QJsonObject ec;
         ec[QStringLiteral("spec")] = spec;
         ec[QStringLiteral("path")] = QStringLiteral("/tmp/np-chart.png");
         ec[QStringLiteral("format")] = QStringLiteral("png");
         r = call(s, 361, QStringLiteral("export_chart"), ec);
         QCOMPARE(r.value(QLatin1String("ok")).toBool(), false);
-        QCOMPARE(r.value(QLatin1String("error")).toString(),
-                 QStringLiteral("charts require the Full edition (WebEngine)"));
+        QCOMPARE(r.value(QLatin1String("error")).toString(), expectedLiteChartGate());
         QTest::qWait(80);
         QVERIFY(!findCard());
+    }
+
+    // Reported from v0.1.134 on macOS Full (DuckDB, no WebEngine): render_chart
+    // said "charts require the Full edition (WebEngine)" while app_info said
+    // edition Full. Every edition x platform pair, through the pure reason.
+    void chart_gate_reason_every_flavor() {
+        const QString lite = QStringLiteral(
+            "charts require the Full edition (Linux or Windows); this build is Lite");
+        const QString mac = QStringLiteral(
+            "chart rendering is not available in the macOS build of Notepatra "
+            "(it has no WebEngine, which charts need); run_sql and run_query "
+            "still return the data");
+        const QString fullNoWe = QStringLiteral(
+            "chart rendering is not available in this build: it is the Full "
+            "edition but was built without WebEngine, which charts need");
+        QCOMPARE(McpBridge::chartsUnavailableReason(false, false, QStringLiteral("linux")), lite);
+        QCOMPARE(McpBridge::chartsUnavailableReason(false, false, QStringLiteral("windows")), lite);
+        QCOMPARE(McpBridge::chartsUnavailableReason(false, false, QStringLiteral("macos")), mac);
+        QCOMPARE(McpBridge::chartsUnavailableReason(true, false, QStringLiteral("macos")), mac);
+        QCOMPARE(McpBridge::chartsUnavailableReason(true, false, QStringLiteral("linux")), fullNoWe);
+        QCOMPARE(McpBridge::chartsUnavailableReason(true, false, QStringLiteral("windows")), fullNoWe);
+        for (const char *p : {"linux", "windows", "macos"}) {
+            QVERIFY(McpBridge::chartsUnavailableReason(true, true, QLatin1String(p)).isEmpty());
+            // A Full build is never told to get the Full edition.
+            QVERIFY(!McpBridge::chartsUnavailableReason(true, false, QLatin1String(p))
+                         .contains(QLatin1String("require")));
+        }
+        QCOMPARE(McpBridge::chartsUnavailableReasonForThisBuild(), expectedLiteChartGate());
+    }
+
+    // get_capabilities says whether charts work, separately from the edition.
+    void get_capabilities_reports_charts() {
+        {
+            QLocalSocket s;
+            QVERIFY(connectClient(s));
+            readGreeting(s);
+            const QJsonObject r = call(s, 362, QStringLiteral("get_capabilities"))
+                                      .value(QLatin1String("result")).toObject();
+            const QJsonObject f = r.value(QLatin1String("features")).toObject();
+            QVERIFY(f.value(QLatin1String("charts")).isBool());
+            QCOMPARE(f.value(QLatin1String("charts")).toBool(), false);
+            QCOMPARE(r.value(QLatin1String("charts_unavailable_reason")).toString(),
+                     expectedLiteChartGate());
+        }
+        useWebEngineHost();
+        QLocalSocket s;
+        QVERIFY(connectClient(s));
+        readGreeting(s);
+        const QJsonObject r = call(s, 363, QStringLiteral("get_capabilities"))
+                                  .value(QLatin1String("result")).toObject();
+        QCOMPARE(r.value(QLatin1String("features")).toObject()
+                     .value(QLatin1String("charts")).toBool(), true);
+        QVERIFY(!r.contains(QLatin1String("charts_unavailable_reason")));
     }
 
     void render_chart_happy_path_stubbed() {

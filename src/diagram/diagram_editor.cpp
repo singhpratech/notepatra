@@ -6,9 +6,11 @@
 #include "diagram_view.h"
 #include "mermaid_import.h"
 #include "npd_parser.h"
+#include "npd_templates.h"
 
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -20,6 +22,7 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QPlainTextEdit>
+#include <QSaveFile>
 #include <QSplitter>
 #include <QStyle>
 #include <QTextBrowser>
@@ -27,91 +30,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-namespace {
-
-// ── starter templates (every one parses clean + showcases the grammar) ──
-const char *kFlowTemplate =
-    "diagram flow\n"
-    "title \"Order checkout\"\n"
-    "palette auto\n"
-    "direction LR\n"
-    "\n"
-    "# Shapes: (pill) [box] {decision} ([database]) and icon nodes.\n"
-    "node start (Customer) green :: \"Signed-in shopper on the web or mobile app\"\n"
-    "icon gw :gateway \"API gateway\" #1565c0 :: \"Auth, rate limiting, request routing\"\n"
-    "node cart [Cart service] #1565c0 :: \"Owns the basket; idempotent on retry\"\n"
-    "node stock {In stock?} orange\n"
-    "icon pay :card \"Payments\" #c62828 :: \"Third-party PSP — card capture and 3-D Secure\"\n"
-    "node order [Order service] #1565c0 :: \"Writes the order, emits OrderPlaced\"\n"
-    "icon bus :queue \"Event bus\" #6a1b9a :: \"Kafka — at-least-once delivery\"\n"
-    "icon mail :email \"Receipt mailer\" :: \"Fire-and-forget consumer\"\n"
-    "node oos [Back-order] :: \"Customer is told the ETA and may wait or cancel\"\n"
-    "node db ([Orders DB]) #6a1b9a :: \"Postgres — source of truth\"\n"
-    "icon cache :cache \"Cache\" #6a1b9a :: \"Redis — hot order rows, 5-minute TTL\"\n"
-    "\n"
-    "# Groups draw a container around their members.\n"
-    "group \"Edge\" : start gw\n"
-    "group \"Core services\" : cart stock order\n"
-    "group \"Data\" : db cache\n"
-    "\n"
-    "# Edges: chains, labels, a decision with two branches, a dashed async hop,\n"
-    "# and a bidirectional edge.\n"
-    "start <-> gw : HTTPS\n"
-    "gw -> cart : add item\n"
-    "cart -> stock\n"
-    "stock -> order : yes\n"
-    "stock -> oos : no\n"
-    "order -> pay : capture\n"
-    "order -> db : insert\n"
-    "order -> cache : write-through\n"
-    "order -.-> bus -.-> mail : receipt\n"
-    "\n"
-    "# Notes sit beside a node; legend explains any encoding you reuse.\n"
-    "note pay \"Card capture is retried three times with exponential backoff.\"\n"
-    "note bus \"Consumers must be idempotent.\"\n"
-    "legend dashed \"async / best effort\"\n"
-    "legend #c62828 \"third-party call\"\n"
-    "\n"
-    "textbox \"Solid arrows are synchronous; the mailer is fire-and-forget. Hover a node for detail.\"\n";
-
-const char *kErTemplate =
-    "diagram er\n"
-    "title \"Orders schema\"\n"
-    "palette auto\n"
-    "\n"
-    "node customers ([Customers]) #2e7d32 :: \"id, name, email, created_at\"\n"
-    "node products ([Products]) #2e7d32 :: \"id, sku, name, unit_price\"\n"
-    "node orders ([Orders]) #1565c0 :: \"id, customer_id, total, placed_at\"\n"
-    "node items ([Order items]) #1565c0 :: \"id, order_id, product_id, qty, unit_price\"\n"
-    "\n"
-    "customers -> orders : places\n"
-    "orders -> items : contains\n"
-    "products -> items : referenced by\n"
-    "\n"
-    "textbox \"Colour groups the entities — green = master data, blue = transactional. Colour is optional.\"\n";
-
-const char *kSystemTemplate =
-    "diagram system\n"
-    "title \"Web app architecture\"\n"
-    "palette auto\n"
-    "\n"
-    "icon user :user \"Browser\" #00838f :: \"End-user web client\"\n"
-    "icon cdn :cloud \"CDN\" #00838f :: \"Static assets + edge cache\"\n"
-    "node api [API gateway] #1565c0 :: \"Auth, rate-limiting, routing\"\n"
-    "icon svc :server \"App service\" #1565c0 :: \"Stateless; horizontally autoscaled\"\n"
-    "icon cache :database \"Cache\" #6a1b9a :: \"Redis — sessions + hot rows\"\n"
-    "icon db :database \"Primary DB\" #6a1b9a :: \"Source of truth\"\n"
-    "\n"
-    "user -> cdn\n"
-    "user -> api\n"
-    "api -> svc\n"
-    "svc -> cache\n"
-    "svc -> db\n"
-    "cache <-> db : warm\n"
-    "\n"
-    "textbox \"Colour marks the tier — teal = edge, blue = app, purple = data. Colour is optional.\"\n";
-
-}  // namespace
+using namespace NpdTemplates;
 
 DiagramEditor::DiagramEditor(QWidget *parent) : QWidget(parent) {
     auto *root = new QVBoxLayout(this);
@@ -250,6 +169,19 @@ void DiagramEditor::setNpdText(const QString &text) {
 
 QString DiagramEditor::npdText() const { return m_edit->toPlainText(); }
 
+void DiagramEditor::restoreDocument(const QString &text, const QString &path, bool modified) {
+    setNpdText(text);
+    m_path = path;
+    m_dirty = modified;
+    emitTitle();
+}
+
+void DiagramEditor::setModified(bool modified) {
+    if (m_dirty == modified) return;
+    m_dirty = modified;
+    emitTitle();
+}
+
 void DiagramEditor::scheduleRender() { m_debounce->start(); }
 
 void DiagramEditor::renderNow() {
@@ -301,13 +233,23 @@ bool DiagramEditor::saveFile() {
         if (path.isEmpty()) return false;
         if (!path.endsWith(".npd", Qt::CaseInsensitive)) path += ".npd";
     }
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, "Save diagram", "Could not write:\n" + path);
+    // QSaveFile writes a temporary file and renames it over the target only
+    // once every byte is written, so a failed write (disk full, permissions,
+    // a vanished folder) leaves the previous file intact. The plain QFile it
+    // replaces truncated in place and reported success whatever write() did.
+    QSaveFile f(path);
+    const QByteArray bytes = m_edit->toPlainText().toUtf8();
+    const bool written = f.open(QIODevice::WriteOnly | QIODevice::Text) &&
+                         f.write(bytes) == bytes.size() && f.commit();
+    if (!written) {
+        const QString why = f.errorString();
+        f.cancelWriting();
+        // The edits stay in the tab, still marked modified.
+        QMessageBox::warning(this, "Save diagram",
+                             "Could not write:\n" + QDir::toNativeSeparators(path) +
+                                 (why.isEmpty() ? QString() : "\n\n" + why));
         return false;
     }
-    f.write(m_edit->toPlainText().toUtf8());
-    f.close();
     m_path = path;
     m_dirty = false;
     emitTitle();
@@ -356,19 +298,37 @@ void DiagramEditor::importMermaid() {
                              "  B -->|yes| C[Done]\n"
                              "  B -->|no| A");
     lay->addWidget(edit, 1);
+    // Why the text could not be imported (another Mermaid type, nothing
+    // found). Shown in the dialog, which stays open so the text can be fixed;
+    // the diagram is left untouched rather than replaced by an empty one.
+    auto *error = new QLabel(&dlg);
+    error->setObjectName(QStringLiteral("mermaidImportError"));
+    error->setWordWrap(true);
+    error->setTextFormat(Qt::PlainText);
+    error->setStyleSheet("color:#b35900;");
+    error->hide();
+    lay->addWidget(error);
     auto *bb = new QDialogButtonBox(QDialogButtonBox::Cancel, &dlg);
     bb->addButton("Import", QDialogButtonBox::AcceptRole);
-    connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    lay->addWidget(bb);
-    if (dlg.exec() == QDialog::Accepted) {
-        const QString npd = Npd::mermaidToNpd(edit->toPlainText());
-        if (!npd.trimmed().isEmpty()) {
-            setNpdText(npd);
-            m_path.clear();
-            m_dirty = true;
-            emitTitle();
+    QString npd;
+    connect(bb, &QDialogButtonBox::accepted, &dlg, [&] {
+        QString why;
+        npd = Npd::mermaidToNpd(edit->toPlainText(), &why);
+        if (npd.trimmed().isEmpty()) {
+            error->setText(why.isEmpty() ? QStringLiteral("Nothing to import.") : why);
+            error->show();
+            return;
         }
+        dlg.accept();
+    });
+    connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(edit, &QPlainTextEdit::textChanged, error, &QLabel::hide);
+    lay->addWidget(bb);
+    if (dlg.exec() == QDialog::Accepted && !npd.trimmed().isEmpty()) {
+        setNpdText(npd);
+        m_path.clear();
+        m_dirty = true;
+        emitTitle();
     }
 }
 

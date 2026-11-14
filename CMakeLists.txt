@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Notepatra VERSION 0.1.134 LANGUAGES CXX)
+project(Notepatra VERSION 0.1.135 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -716,6 +716,49 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mermaid_import.cpp
     target_link_libraries(test_mermaid_import PRIVATE Qt5::Core)
     notepatra_add_qt_test(test_mermaid_import)
     set_tests_properties(test_mermaid_import PROPERTIES LABELS "unit;diagram")
+endif()
+
+# ── .npd validation table: unclosed brackets / quotes (pure; reads the shipped
+#    sample and the built-in templates) ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_npd_validation.cpp")
+    add_executable(test_npd_validation test_npd_validation.cpp
+        src/diagram/npd_parser.cpp src/diagram/mermaid_import.cpp)
+    target_include_directories(test_npd_validation PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_compile_definitions(test_npd_validation PRIVATE
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(test_npd_validation PRIVATE Qt5::Core)
+    notepatra_add_qt_test(test_npd_validation)
+    set_tests_properties(test_npd_validation PROPERTIES LABELS "unit;diagram" TIMEOUT 60)
+endif()
+
+# ── Diagram tab "Import Mermaid" dialog, driven offscreen: an unsupported
+#    Mermaid type shows its reason and leaves the diagram alone ──
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mermaid_import_dialog.cpp")
+    add_executable(test_mermaid_import_dialog
+        test_mermaid_import_dialog.cpp
+        src/diagram/diagram_editor.cpp
+        src/diagram/diagram_ai_dialog.cpp
+        src/diagram/diagram_view.cpp
+        src/diagram/diagram_render.cpp
+        src/diagram/npd_parser.cpp
+        src/diagram/mermaid_import.cpp
+        src/ollama.cpp
+        src/ai_interaction_log.cpp
+        src/credscrub.cpp
+        src/network_policy.cpp
+    )
+    target_include_directories(test_mermaid_import_dialog PRIVATE
+        ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/diagram)
+    target_link_libraries(test_mermaid_import_dialog PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Sql Qt5::PrintSupport)
+    if(Qt5Svg_FOUND)
+        target_link_libraries(test_mermaid_import_dialog PRIVATE Qt5::Svg)
+        target_compile_definitions(test_mermaid_import_dialog PRIVATE NOTEPATRA_WITH_SVG)
+    endif()
+    notepatra_add_qt_test(test_mermaid_import_dialog)
+    set_tests_properties(test_mermaid_import_dialog PROPERTIES
+        LABELS "integration;diagram" TIMEOUT 60)
 endif()
 
 # v0.1.78 — wire rust-core's cargo unit tests into ctest so the encoding /
@@ -2661,6 +2704,60 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_control.c
     message(STATUS "Regression test enabled — target: test_mcp_host_control")
 endif()
 
+# Diagram tabs survive every quit path (session save/restore, session-less
+# close prompt, the aboutToQuit hook, a quit during a close prompt), a failed
+# diagram save keeps the tab, and the Welcome tab keeps its MCP tab_id across
+# set_theme.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_diagram_session.cpp")
+    set(DIAGRAM_SESSION_SOURCES ${SOURCES})
+    list(FILTER DIAGRAM_SESSION_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
+    add_executable(test_diagram_session
+        test_diagram_session.cpp
+        ${DIAGRAM_SESSION_SOURCES}
+        ${HEADERS}
+    )
+    add_dependencies(test_diagram_session rust_core)
+    target_compile_definitions(test_diagram_session PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_include_directories(test_diagram_session PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/charts
+        ${CMAKE_SOURCE_DIR}/rust-core/include
+        ${QSCINTILLA_INCLUDE}
+    )
+    target_link_libraries(test_diagram_session PRIVATE
+        Qt5::Widgets Qt5::PrintSupport Qt5::Network Qt5::Concurrent Qt5::Sql Qt5::Charts
+        ${QSCINTILLA_LIB} ${RUST_LIB}
+    )
+    if(NOTEPATRA_WITH_WEBENGINE)
+        target_compile_definitions(test_diagram_session PRIVATE NOTEPATRA_WITH_WEBENGINE=1)
+        target_link_libraries(test_diagram_session PRIVATE Qt5::WebEngineWidgets)
+    endif()
+    if(WIN32)
+        target_compile_definitions(test_diagram_session PRIVATE QSCINTILLA_DLL)
+        target_link_libraries(test_diagram_session PRIVATE
+            ws2_32 userenv bcrypt ntdll synchronization advapi32 ole32 shell32 dbghelp
+            kernel32 user32 gdi32 winspool comdlg32)
+    elseif(APPLE)
+        target_link_libraries(test_diagram_session PRIVATE pthread dl m
+            "-framework Security" "-framework CoreFoundation")
+    else()
+        target_link_libraries(test_diagram_session PRIVATE pthread dl m xcb)
+    endif()
+    if(NOTEPATRA_USE_DUCKDB AND DUCKDB_INCLUDE_DIR AND DUCKDB_LIBRARY)
+        target_compile_definitions(test_diagram_session PRIVATE NOTEPATRA_HAVE_DUCKDB=1)
+        target_include_directories(test_diagram_session PRIVATE ${DUCKDB_INCLUDE_DIR})
+        target_link_libraries(test_diagram_session PRIVATE ${DUCKDB_LIBRARY})
+    endif()
+    add_test(NAME test_diagram_session COMMAND $<TARGET_FILE:test_diagram_session>)
+    set_tests_properties(test_diagram_session PROPERTIES
+        LABELS "integration;mainwindow;session;mcp"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 180)
+    message(STATUS "Regression test enabled — target: test_diagram_session")
+endif()
+
 # D8 (win-open-ghost) — double-click occurrence highlight: doc-size
 # gate + match cap so a popular word can't hang the GUI thread.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_occurrence_highlight_cap.cpp")
@@ -3284,6 +3381,32 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_bridge.cpp")
     notepatra_add_qt_test(test_mcp_bridge)
     set_tests_properties(test_mcp_bridge PROPERTIES LABELS "unit;mcp;ipc")
     message(STATUS "Regression test enabled — target: test_mcp_bridge")
+endif()
+
+# The real mcp_bridge.cpp compiled as a Full flavor WITHOUT WebEngine (the
+# macOS Full configuration) on every OS: the chart gate must not tell a Full
+# build to get the Full edition. Only the bridge sees NOTEPATRA_HAVE_DUCKDB
+# here; nothing that needs libduckdb is linked.
+if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_chart_gate.cpp")
+    add_executable(test_mcp_chart_gate
+        test_mcp_chart_gate.cpp
+        src/mcp_bridge.cpp
+        src/path_denylist.cpp
+        src/singleinstance.cpp
+        src/notes_storage.cpp
+        src/atomic_write.cpp
+        src/notes_template.cpp
+        src/diagram/npd_parser.cpp
+    )
+    target_include_directories(test_mcp_chart_gate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_compile_definitions(test_mcp_chart_gate PRIVATE
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_HAVE_DUCKDB=1)
+    target_link_libraries(test_mcp_chart_gate PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Concurrent Qt5::Test)
+    notepatra_add_qt_test(test_mcp_chart_gate)
+    set_tests_properties(test_mcp_chart_gate PROPERTIES LABELS "unit;mcp" TIMEOUT 60)
+    message(STATUS "Regression test enabled — target: test_mcp_chart_gate")
 endif()
 
 # v0.2 Coding-mode revamp — smoke test for EditPlanList + DiffView. Builds

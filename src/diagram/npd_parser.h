@@ -102,6 +102,9 @@ struct LegendItem {
     QString text;
 };
 
+// Errors kept per parse; the rest are counted in one final entry.
+constexpr int kMaxErrors = 100;
+
 struct Diagram {
     QString       type    = QStringLiteral("flow");     // flow | er | system
     QString       title;
@@ -115,13 +118,20 @@ struct Diagram {
     QVector<Note>       notes;
     QVector<LegendItem> legend;
     QStringList   textboxes;
-    QStringList   errors;     // "line N: message" — empty ⇒ clean parse
+    // "line N: message", or "line N, column M: message" when the parser can
+    // point at the character (an unclosed '(' '[' '{' or '"'). Empty ⇒ clean.
+    // At most kMaxErrors of those, then one "…and N more errors" entry (no
+    // line number) when the parser found more.
+    QStringList   errors;
     bool ok() const { return errors.isEmpty(); }
 };
 
 // Parse .npd source into a Diagram model. Never throws; malformed lines are
 // reported in `errors` (with 1-based line numbers) while still parsing the
-// rest, so the live preview can show as much as it can.
+// rest, so the live preview can show as much as it can. A delimiter left open
+// (a node shape like `[Label`, an edge endpoint like `[b`, a quoted value
+// like `"text`) is reported with its 1-based column; that check only adds an
+// error and never changes the parsed model.
 Diagram parse(const QString &src);
 
 // Serialize the model to the JSON graph the JS renderer consumes. This is the

@@ -292,7 +292,7 @@
   <div class="topbar-left">
     <img src="/icon-192.png" alt="Notepatra" width="192" height="192">
     <a href="/" class="brand">Notepatra</a>
-    <span class="tag">MCP · v0.1.134 · 119 tools</span>
+    <span class="tag">MCP · v0.1.135 · 119 tools</span>
   </div>
   <nav class="topbar-right">
     <a href="/">Home</a>
@@ -310,7 +310,7 @@
   <p class="lead">From v0.1.118, Notepatra ships <code>notepatra-mcp</code> — a Model Context Protocol server that lets Claude Desktop, Claude Code, OpenAI Codex, the OpenAI Agents SDK, and any spec-compliant MCP client see what you have open, search your workspace, run read-only SQL (over data files in the Full edition), read your Git status and Noter notes, and — only with your explicit per-action approval — edit, save, and create notes. The server talks to your client over stdio and to the editor over a local socket, and opens no network connections of its own. Tools that use a saved database connection talk to that database, and the REST and git network tools run only after you approve them; see <a href="#faq">Is my data sent anywhere?</a></p>
 
   <div class="callout info">
-    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.134. The server provides <strong>119 tools</strong> (46 read, 22 act, 51 write; v0.1.133 added 70 of them: tab, line, case, comment, encoding and view control, pure text tools, Git writes, Noter management, preferences, data and REST) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.134.
+    <strong>Release status.</strong> MCP first shipped in v0.1.118; the current release is v0.1.135. The server provides <strong>119 tools</strong> (46 read, 22 act, 51 write; v0.1.133 added 70 of them: tab, line, case, comment, encoding and view control, pure text tools, Git writes, Noter management, preferences, data and REST) and supports Windows named-pipe transport, and v0.1.120 adds a prebuilt, cosign-signed Windows sidecar (<code>notepatra-mcp-windows-x64.zip</code>) plus a one-click <code>notepatra-mcp.mcpb</code> Claude Desktop bundle as release assets. Everything on this page describes v0.1.135.
     <br><br>
     <strong>v0.1.125, v0.1.126 and v0.1.127 were all MCP-only releases</strong>, driven by testing this server against a real editor rather than by new features. v0.1.125 fixed a credential leak in <code>search_project</code>, a <code>goto_line</code> that reported success from the wrong line, and a sidecar that hung on every mistyped argument. A retest then found that the credential fix covered only one of four read paths — see <a href="#v127">what changed in v0.1.127</a> below.
   </div>
@@ -365,10 +365,10 @@
       <tr><td><code>git_log</code></td><td>Read-only <code>git log</code> (recent commits; default 20, capped at 100).</td></tr>
       <tr><td><code>git_show</code></td><td>Read-only <code>git show</code> for a commit or ref.</td></tr>
       <tr><td><code>git_branch</code></td><td>Read-only list of branches in the workspace repository.</td></tr>
-      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers.</td></tr>
+      <tr><td><code>validate_npd</code></td><td>Validate a Notepatra diagram (<code>.npd</code>) — a tab or supplied source; returns parse errors with line numbers, and the column of an unclosed bracket or quote.</td></tr>
       <tr><td><code>run_sql</code></td><td>Run a read-only <code>SELECT</code> and return columns + rows — over a file in your open workspace folder (<code>csv_path</code>, as table <code>data</code>: CSV / Parquet / JSON in Full, CSV in Lite), or, with no <code>csv_path</code>, an empty in-memory SQLite scratch database. SELECT-only and sandboxed — see the note below.</td></tr>
       <tr><td><code>list_languages</code></td><td>List the canonical language names <code>set_language</code> accepts (as shown in the Language menu).</td></tr>
-      <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter).</td></tr>
+      <tr><td><code>get_capabilities</code></td><td>Editor capability profile: edition, platform, version, tool count and tiers, and feature flags (DuckDB, WebEngine, Noter, charts — with the reason when charts are unavailable, since macOS Full has none).</td></tr>
       <tr><td><code>get_diagram_source</code></td><td>Read the <code>.npd</code> source of an open Diagram tab, by <code>tab_id</code> or <code>tab_index</code>.</td></tr>
       <tr><td><code>list_connections</code></td><td>List your saved database connections (name, driver, database) — never passwords.</td></tr>
       <tr><td><code>run_query</code></td><td>Run a read-only <code>SELECT</code> against a saved named connection (PostgreSQL / MySQL / SQL Server / SQLite / DuckDB) — what <code>run_sql</code> cannot reach; mutations rejected. Full edition (DuckDB) for DuckDB-driver connections.</td></tr>
@@ -383,7 +383,7 @@
       <tr><td><code>diff_text</code></td><td>Line diff of two texts or tabs with the Compare view's engine; returns hunks with 1-based line numbers.</td></tr>
       <tr><td><code>repair_json</code></td><td>Explicit, opt-in JSON repair (JSON Tools &gt; Fix): <code>{fixed, repaired, report}</code>. Repairs only unambiguous faults; anything ambiguous, such as a truncated document, is declined with a positioned report and <code>repaired:false</code>. <code>format_json</code> still refuses invalid JSON.</td></tr>
       <tr><td><code>markdown_convert</code></td><td>Tools &gt; Markdown Converter as data: table, list, code block, bold, italic, link, heading, HTML to Markdown.</td></tr>
-      <tr><td><code>mermaid_to_npd</code></td><td>Translate Mermaid diagram text to Notepatra Diagram (<code>.npd</code>) source with the Diagram tab's importer.</td></tr>
+      <tr><td><code>mermaid_to_npd</code></td><td>Translate Mermaid diagram text to Notepatra Diagram (<code>.npd</code>) source with the Diagram tab's importer. Flowcharts only: other Mermaid types return an error naming the type.</td></tr>
       <tr><td><code>list_symbols</code></td><td>Classes and functions in a tab, from the Function List parser: <code>{name, kind, line}</code>.</td></tr>
       <tr><td><code>list_hunks</code></td><td>The changed hunks of one file versus <code>HEAD</code> (the change gutter), numbered for <code>git_hunk</code>. Credential files refused.</td></tr>
       <tr><td><code>list_conflicts</code></td><td>Conflicted files, or one file's <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> regions with both sides, numbered for <code>resolve_conflict</code>.</td></tr>
@@ -690,7 +690,7 @@ async with MCPServerStdio(
   <h3>Is this the same as Notepatra's built-in AI Assistant?</h3>
   <p>No — they're complementary. The AI Assistant dock (Ctrl+Shift+A) is Notepatra talking to a model you configure. MCP is the reverse direction: an external assistant you already use (Claude, Codex, ...) talking to Notepatra. Neither requires the other.</p>
   <h3>Does it work with the Lite build?</h3>
-  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running. On Lite, <code>run_sql</code> over a non-CSV file, DuckDB connections in <code>run_query</code>, PDF export of notes, and the chart tools (<code>render_chart</code>, <code>export_chart</code>) return an error saying they need the Full edition.</p>
+  <p>Yes. The MCP bridge is part of the editor from v0.1.118 on both editions, and <code>app_info</code> reports which edition is running. On Lite, <code>run_sql</code> over a non-CSV file, DuckDB connections in <code>run_query</code> and PDF export of notes return an error saying they need the Full edition. The chart tools (<code>render_chart</code>, <code>export_chart</code>) return an error on Lite for Linux and Windows saying they need the Full edition, and on macOS, where neither edition renders charts, saying charts are not available in the macOS build.</p>
   <h3>Which tab is index 0?</h3>
   <p>Tab indices are zero-based, exactly as shown in the tab bar — including the Welcome tab when it's open. Use <code>list_open_tabs</code> first rather than guessing indices. Better still, use the <code>id</code> it returns: an index is positional and moves the moment a tab closes, while an id belongs to the document for as long as it is open.</p>
 
@@ -700,7 +700,7 @@ async with MCPServerStdio(
 </main>
 
 <footer class="doc-footer">
-  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.134.</p>
+  <p>Notepatra is free software under GPL-3.0. The MCP features described on this page ship in v0.1.135.</p>
   <p><a href="/">Home</a> · <a href="/docs.html">Docs</a> · <a href="/mcp.html" aria-current="page">MCP</a> · <a href="/enterprise.html">Enterprise</a> · <a href="https://github.com/singhpratech/notepatra">GitHub</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/singhpratech/notepatra/blob/main/LICENSE">License</a></p>
 </footer>
 
