@@ -20,6 +20,16 @@ QString unquote(QString s) {
 
 bool isIdChar(QChar c) { return c.isLetterOrNumber() || c == '_' || c == '-'; }
 
+// The statement keywords Npd::parse reads from the first word of a line.
+bool isNpdKeyword(const QString &w) {
+    static const QStringList kws = {
+        QStringLiteral("diagram"), QStringLiteral("title"),     QStringLiteral("palette"),
+        QStringLiteral("textbox"), QStringLiteral("node"),      QStringLiteral("icon"),
+        QStringLiteral("direction"), QStringLiteral("layout"),  QStringLiteral("group"),
+        QStringLiteral("note"),    QStringLiteral("legend")};
+    return kws.contains(w);
+}
+
 // Parse a Mermaid node token ("A", "A[Label]", "B([x])", "C{{q}}", "D[(db)]"…)
 // into its id and, if a shape was given, the matching .npd shape-wrapped label
 // (e.g. "[Label]", "(Label)", "{Label}", "([Label])"). Returns whether a shape
@@ -35,8 +45,15 @@ bool parseNodeToken(const QString &tokIn, QString &id, QString &npdShape) {
     const QString rest = tok.mid(i).trimmed();
     if (rest.isEmpty()) return false;  // bare reference, no declaration
 
+    // In .npd the first "::" on a node line starts its hover text, even inside
+    // the brackets, and the grammar has no escape for it. A Mermaid label like
+    // "std::vector" or "IPv6 ::1" would be cut there and leave the shape
+    // unclosed, so each "::" becomes U+2237 PROPORTION, a single character
+    // that reads as a double colon.
     auto wrap = [](const QString &label, const QString &o, const QString &c) {
-        return o + unquote(label).simplified() + c;
+        QString text = unquote(label).simplified();
+        text.replace(QLatin1String("::"), QString(QChar(0x2237)));
+        return o + text + c;
     };
     struct Rule { const char *open; const char *close; const char *no; const char *nc; };
     // Most-specific (2-char) delimiters first so "[(" isn't eaten by "[".
@@ -112,11 +129,29 @@ bool isOtherMermaidType(const QString &kw) {
         QStringLiteral("radar"), QStringLiteral("radar-beta"), QStringLiteral("treemap"),
         QStringLiteral("treemap-beta")};
     if (kw.isEmpty()) return false;
-    for (const QString &t : types)
-        if (kw.compare(t, Qt::CaseInsensitive) == 0) return true;
-    // Types Mermaid adds later follow the same naming.
-    return kw.endsWith(QLatin1String("Diagram"), Qt::CaseInsensitive) ||
-           kw.endsWith(QLatin1String("-beta"), Qt::CaseInsensitive);
+    // Mermaid matches its type keywords case-sensitively, so a headerless
+    // flowchart whose first line is a bare word ("Diagram", "Journey") is
+    // content, not a header.
+    if (types.contains(kw)) return true;
+    // Types Mermaid adds later follow the same naming: a camelCase word
+    // ending in "Diagram" (requirementDiagram) or a lowercase word plus
+    // "-beta" (sankey-beta). Both start with a lowercase ASCII letter.
+    const QChar c0 = kw.at(0);
+    if (c0 < QLatin1Char('a') || c0 > QLatin1Char('z')) return false;
+    auto asciiAlnum = [](const QString &s) {
+        for (const QChar c : s)
+            if (!((c >= QLatin1Char('a') && c <= QLatin1Char('z')) ||
+                  (c >= QLatin1Char('A') && c <= QLatin1Char('Z')) ||
+                  (c >= QLatin1Char('0') && c <= QLatin1Char('9'))))
+                return false;
+        return true;
+    };
+    static const QString diagramSuffix = QStringLiteral("Diagram"), betaSuffix = QStringLiteral("-beta");
+    if (kw.size() > diagramSuffix.size() && kw.endsWith(diagramSuffix))
+        return asciiAlnum(kw.left(kw.size() - diagramSuffix.size()));
+    if (kw.size() > betaSuffix.size() && kw.endsWith(betaSuffix))
+        return asciiAlnum(kw.left(kw.size() - betaSuffix.size()));
+    return false;
 }
 
 }  // namespace
@@ -252,12 +287,29 @@ QString mermaidToNpd(const QString &mermaid, QString *error) {
         }
 
         if (isEdge) {
+            // Both ends must have an id before either joins a subgraph: a
+            // member with no node behind it is a .npd error.
+            QString ida, idb, ignored;
+            parseNodeToken(from, ida, ignored);
+            parseNodeToken(to, idb, ignored);
+            if (ida.isEmpty() || idb.isEmpty()) continue;
             const QString a = registerNode(from);
             const QString b = registerNode(to);
-            if (a.isEmpty() || b.isEmpty()) continue;
             const QString op = dashed ? (bidir ? "<.->" : "-.->") : (bidir ? "<->" : "->");
-            QString e = QStringLiteral("%1 %2 %3").arg(a, op, b);
-            if (!label.isEmpty()) e += " : " + label.simplified();
+            // A line starting with an .npd keyword (`title -> x`) is read as
+            // that statement; with the arrow attached the first word is no
+            // longer the keyword, and the edge parses the same.
+            QString e = isNpdKeyword(a) ? QStringLiteral("%1%2 %3").arg(a, op, b)
+                                        : QStringLiteral("%1 %2 %3").arg(a, op, b);
+            if (!label.isEmpty()) {
+                QString text = label.simplified();
+                // A leading quote would read as an unterminated quoted label
+                // and a leading ':' as part of a '::' separator; quoting the
+                // whole label keeps both as text.
+                if (text.startsWith(QLatin1Char('"')) || text.startsWith(QLatin1Char(':')))
+                    text = QLatin1Char('"') + text + QLatin1Char('"');
+                e += " : " + text;
+            }
             edgeLines.append(e);
             continue;
         }
