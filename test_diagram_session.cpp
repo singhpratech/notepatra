@@ -35,8 +35,11 @@
 //   G. a quit while a tab's Save / Discard / Cancel prompt is open keeps the
 //      tab (the prompt returns NoButton, which used to mean Discard) and the
 //      session written at quit still holds it, for an editor and a diagram.
+//   H. DiagramEditor::saveFile() returns false, keeps the tab modified and
+//      tells the user when the write fails; closing with Save then keeps the
+//      tab open.
 //
-// D and G are skipped on offscreen Windows (any QMessageBox segfaults).
+// D, G and H are skipped on offscreen Windows (any QMessageBox segfaults).
 
 #include "mainwindow.h"
 #include "config.h"
@@ -221,6 +224,12 @@ private:
     std::function<void(QMessageBox *)> m_onBox;
     QTimer m_timer;
 };
+
+// Click `which` when the box has it, else dismiss the box.
+void clickOr(QMessageBox *mb, QMessageBox::StandardButton which) {
+    if (QAbstractButton *b = mb->button(which)) b->click();
+    else mb->reject();
+}
 
 QAction *closeTabAction(MainWindow *w) {
     for (QAction *a : w->findChildren<QAction *>())
@@ -562,6 +571,72 @@ int main(int argc, char *argv[]) {
         }
     } else {
         std::printf("  [SKIP] G: modal-driven section (offscreen Windows)\n");
+    }
+
+    // ── H. a diagram save that cannot write fails, and the close stays open ──
+    // Reported on the v0.1.135 branch: saveFile() opened the target with a
+    // plain QFile, ignored what write() returned and said true, so a full
+    // disk truncated the file, cleared the modified flag and closed the tab.
+    std::printf("\n-- H: diagram save failure --\n");
+    if (!winOffscreenModalUnsafe()) {
+        QTemporaryDir work;
+        QStringList badPaths = {work.path() + "/no-such-folder/x.npd"};
+#ifdef Q_OS_LINUX
+        // Opens fine, every write fails: the shape that used to report success.
+        if (QFileInfo::exists(QStringLiteral("/dev/full"))) badPaths.prepend(QStringLiteral("/dev/full"));
+#endif
+        const QString src = QStringLiteral("diagram flow\nnode s [SAVE-FAIL-NODE]\n");
+        for (const QString &bad : badPaths) {
+            DiagramEditor de;
+            de.restoreDocument(src, bad, true);
+            ModalWatch warn([](QMessageBox *mb) { clickOr(mb, QMessageBox::Ok); });
+            const bool saved = de.saveFile();
+            const QString tag = QStringLiteral("H (%1)").arg(bad == QLatin1String("/dev/full")
+                                                                 ? QStringLiteral("/dev/full")
+                                                                 : QStringLiteral("missing folder"));
+            EXPECT(qPrintable(tag + ": saveFile() returns false"), !saved);
+            EXPECT(qPrintable(tag + ": the diagram stays modified"), de.isModified());
+            EXPECT(qPrintable(tag + ": the user is told"), warn.seen == 1);
+        }
+        {
+            const QString good = work.path() + "/ok.npd";
+            DiagramEditor de;
+            de.restoreDocument(src, good, true);
+            const bool saved = de.saveFile();
+            EXPECT("H: a writable path saves, clears modified and writes the source",
+                   saved && !de.isModified() && readFile(good) == src.toUtf8());
+        }
+
+        // closeTab: Save that fails must keep the tab (and its edits).
+        QFile::remove(sessionPath);
+        MainWindow *w = openWindow();
+        auto *tm = w->findChild<TabManager *>();
+        if (QAction *diagAct = diagramAction(w)) diagAct->trigger();
+        DiagramEditor *de = diagrams(tm).value(0);
+        if (de) {
+            de->restoreDocument(src, badPaths.first(), true);
+            tm->setCurrentWidget(de);
+        }
+        int questions = 0, warnings = 0;
+        {
+            ModalWatch answer([&](QMessageBox *mb) {
+                if (mb->button(QMessageBox::Save)) { ++questions; mb->button(QMessageBox::Save)->click(); }
+                else { ++warnings; clickOr(mb, QMessageBox::Ok); }
+            });
+            if (QAction *closeAct = closeTabAction(w)) closeAct->trigger();
+            pump(50);
+        }
+        EXPECT("H: closing asked Save / Discard / Cancel, then reported the failed save",
+               questions == 1 && warnings == 1);
+        DiagramEditor *still = diagramWithText(tm, "SAVE-FAIL-NODE");
+        EXPECT("H: the tab is still open after the failed Save", still != nullptr);
+        EXPECT("H: ...and still modified", still && still->isModified());
+        if (still) still->setModified(false);
+        w->close();
+        delete w;
+        pump(20);
+    } else {
+        std::printf("  [SKIP] H: modal-driven section (offscreen Windows)\n");
     }
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);

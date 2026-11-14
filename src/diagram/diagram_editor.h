@@ -59,7 +59,9 @@ public:
     void restoreDocument(const QString &text, const QString &path, bool modified);
     // An approved MCP discard clears the flag so closing does not prompt.
     void setModified(bool modified);
-    // Save to the current path, or ask for one. False on cancel/failure.
+    // Save to the current path, or ask for one. False on cancel/failure; a
+    // failed write shows a message, leaves the old file as it was and keeps
+    // the tab modified.
     bool saveFile();
 
 signals:

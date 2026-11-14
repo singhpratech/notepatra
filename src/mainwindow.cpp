@@ -4009,8 +4009,8 @@ void MainWindow::closeTab(int index) {
     }
 
     // A modified Diagram tab gets the same Save / Discard / Cancel; it used
-    // to close silently. Its own saveFile() asks for a path when untitled
-    // and reports a write failure itself.
+    // to close silently. Its saveFile() asks for a path when untitled and
+    // shows its own message when the write fails (and then returns false).
     auto *diagram = qobject_cast<DiagramEditor *>(widget);
     if (diagram && diagram->isModified()) {
         const bool prevGate = m_anyFileChangePromptOpen;

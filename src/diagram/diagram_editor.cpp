@@ -10,6 +10,7 @@
 
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -21,6 +22,7 @@
 #include <QMessageBox>
 #include <QPalette>
 #include <QPlainTextEdit>
+#include <QSaveFile>
 #include <QSplitter>
 #include <QStyle>
 #include <QTextBrowser>
@@ -231,13 +233,23 @@ bool DiagramEditor::saveFile() {
         if (path.isEmpty()) return false;
         if (!path.endsWith(".npd", Qt::CaseInsensitive)) path += ".npd";
     }
-    QFile f(path);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(this, "Save diagram", "Could not write:\n" + path);
+    // QSaveFile writes a temporary file and renames it over the target only
+    // once every byte is written, so a failed write (disk full, permissions,
+    // a vanished folder) leaves the previous file intact. The plain QFile it
+    // replaces truncated in place and reported success whatever write() did.
+    QSaveFile f(path);
+    const QByteArray bytes = m_edit->toPlainText().toUtf8();
+    const bool written = f.open(QIODevice::WriteOnly | QIODevice::Text) &&
+                         f.write(bytes) == bytes.size() && f.commit();
+    if (!written) {
+        const QString why = f.errorString();
+        f.cancelWriting();
+        // The edits stay in the tab, still marked modified.
+        QMessageBox::warning(this, "Save diagram",
+                             "Could not write:\n" + QDir::toNativeSeparators(path) +
+                                 (why.isEmpty() ? QString() : "\n\n" + why));
         return false;
     }
-    f.write(m_edit->toPlainText().toUtf8());
-    f.close();
     m_path = path;
     m_dirty = false;
     emitTitle();
