@@ -110,6 +110,10 @@ public:
 
     // Public so the session-autosave contract test can drive ticks directly.
     void saveSession();
+    // Connect QCoreApplication::aboutToQuit to saveSession(). main() calls it
+    // once; a function rather than an inline connect so a test can install
+    // the same hook and prove a quit with no close event keeps the edits.
+    void saveSessionOnAboutToQuit();
 
     // Rename the file behind tab `idx` in place; never overwrites an existing file.
     enum class RenameResult { Renamed, Unchanged, NoFile, InvalidName, TargetExists,

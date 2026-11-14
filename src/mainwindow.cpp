@@ -3999,7 +3999,11 @@ void MainWindow::closeTab(int index) {
                 }
                 Config::instance().noteLastDir(finalPath);
             }
-        } else if (result == QMessageBox::Cancel) {
+        } else if (result != QMessageBox::Discard) {
+            // Cancel, and anything that is not an explicit click: a quit()
+            // (SIGTERM) ends the prompt's event loop and it returns
+            // NoButton. Treating that as Discard dropped the tab just before
+            // the aboutToQuit saveSession() wrote session.json without it.
             return;
         }
     }
@@ -4020,7 +4024,9 @@ void MainWindow::closeTab(int index) {
         const auto result = QMessageBox::question(this, "Save",
             QString("Save changes to %1?").arg(name),
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
-        if (result == QMessageBox::Cancel || !alive) return;
+        // Only an explicit Save or Discard closes; NoButton (a quit() during
+        // the prompt) keeps the tab, like Cancel.
+        if ((result != QMessageBox::Save && result != QMessageBox::Discard) || !alive) return;
         if (result == QMessageBox::Save && !diagram->saveFile()) return;
     }
 
@@ -7056,6 +7062,11 @@ QString MainWindow::sessionFilePath() {
 
 QString MainWindow::recoveryDir() {
     return Config::appConfigDir() + QStringLiteral("/recovery");
+}
+
+void MainWindow::saveSessionOnAboutToQuit() {
+    if (QCoreApplication *app = QCoreApplication::instance())
+        connect(app, &QCoreApplication::aboutToQuit, this, [this]() { saveSession(); });
 }
 
 void MainWindow::saveSession() {

@@ -489,8 +489,7 @@ int main(int argc, char *argv[]) {
     // tick, losing up to autoSaveIntervalSec of edits. After a normal close
     // this is a no-op (nothing changed since closeEvent saved), and it no-ops
     // in session-less windows like every saveSession().
-    QObject::connect(&app, &QCoreApplication::aboutToQuit, &window,
-                     [&window]() { window.saveSession(); });
+    window.saveSessionOnAboutToQuit();
 
     // D1 — CLI files + --line are applied by the deferred startup slot,
     // after the window is visible.

@@ -2705,7 +2705,9 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_mcp_host_control.c
 endif()
 
 # Diagram tabs survive every quit path (session save/restore, session-less
-# close prompt) and the Welcome tab keeps its MCP tab_id across set_theme.
+# close prompt, the aboutToQuit hook, a quit during a close prompt), a failed
+# diagram save keeps the tab, and the Welcome tab keeps its MCP tab_id across
+# set_theme.
 if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_diagram_session.cpp")
     set(DIAGRAM_SESSION_SOURCES ${SOURCES})
     list(FILTER DIAGRAM_SESSION_SOURCES EXCLUDE REGEX "src/main\\.cpp$")
@@ -2716,7 +2718,8 @@ if(NOTEPATRA_BUILD_TESTS AND EXISTS "${CMAKE_SOURCE_DIR}/test_diagram_session.cp
     )
     add_dependencies(test_diagram_session rust_core)
     target_compile_definitions(test_diagram_session PRIVATE
-        NOTEPATRA_VERSION="${PROJECT_VERSION}")
+        NOTEPATRA_VERSION="${PROJECT_VERSION}"
+        NOTEPATRA_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     target_include_directories(test_diagram_session PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/charts

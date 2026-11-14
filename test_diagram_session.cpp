@@ -27,6 +27,16 @@
 //
 //   E. list_open_tabs id of the Welcome tab is the same before and after
 //      set_theme Dark / Light, and a tab_id selector still resolves it.
+//
+// Found reviewing the v0.1.135 branch:
+//
+//   F. the aboutToQuit hook main() installs writes edits made after the last
+//      autosave tick when the app quits with no close event.
+//   G. a quit while a tab's Save / Discard / Cancel prompt is open keeps the
+//      tab (the prompt returns NoButton, which used to mean Discard) and the
+//      session written at quit still holds it, for an editor and a diagram.
+//
+// D and G are skipped on offscreen Windows (any QMessageBox segfaults).
 
 #include "mainwindow.h"
 #include "config.h"
@@ -55,6 +65,7 @@
 #include <QTimer>
 
 #include <cstdio>
+#include <functional>
 
 static int g_pass = 0, g_fail = 0;
 #define EXPECT(label, cond) \
@@ -183,6 +194,42 @@ void scheduleModalClick(QMessageBox::StandardButton which, bool *seen, int tries
         }
         if (triesLeft > 0) scheduleModalClick(which, seen, triesLeft - 1);
     });
+}
+
+// Polls for a visible QMessageBox every 25 ms while alive and hands each one
+// to `onBox` (which must dismiss it or end the loop). Unlike
+// scheduleModalClick it stops when it goes out of scope, so it can never
+// click a box that a later section opens.
+class ModalWatch {
+public:
+    explicit ModalWatch(std::function<void(QMessageBox *)> onBox) : m_onBox(std::move(onBox)) {
+        m_timer.setInterval(25);
+        QObject::connect(&m_timer, &QTimer::timeout, &m_timer, [this]() {
+            for (QWidget *tw : QApplication::topLevelWidgets()) {
+                if (auto *mb = qobject_cast<QMessageBox *>(tw); mb && mb->isVisible()) {
+                    ++seen;
+                    m_onBox(mb);
+                    return;
+                }
+            }
+        });
+        m_timer.start();
+    }
+    int seen = 0;
+
+private:
+    std::function<void(QMessageBox *)> m_onBox;
+    QTimer m_timer;
+};
+
+QAction *closeTabAction(MainWindow *w) {
+    for (QAction *a : w->findChildren<QAction *>())
+        if (a->text() == QLatin1String("&Close")) return a;
+    return nullptr;
+}
+
+bool sessionContains(const QString &sessionPath, const char *needle) {
+    return readFile(sessionPath).contains(needle);
 }
 
 const char kSrcA[] = "diagram flow\ntitle \"Session A\"\nnode a (Start)\nnode b [SESSION-A-NODE]\na -> b\n";
@@ -420,6 +467,101 @@ int main(int argc, char *argv[]) {
         w->close();
         delete w;
         pump(20);
+    }
+
+    // ── F. the aboutToQuit hook saves what changed after the last tick ──
+    // main() installs saveSessionOnAboutToQuit(); a quit with no close event
+    // (SIGTERM -> quit()) then still writes the edits made since the last
+    // autosave tick. Removing the hook, or its call in main(), fails here.
+    std::printf("\n-- F: aboutToQuit saves edits made after the last tick --\n");
+    {
+#ifdef NOTEPATRA_SOURCE_DIR
+        EXPECT("F: main() installs the hook",
+               readFile(QStringLiteral(NOTEPATRA_SOURCE_DIR "/src/main.cpp"))
+                   .contains("window.saveSessionOnAboutToQuit();"));
+#endif
+        QFile::remove(sessionPath);
+        MainWindow *w = openWindow();
+        w->saveSessionOnAboutToQuit();
+        auto *tm = w->findChild<TabManager *>();
+        if (QAction *diagAct = diagramAction(w)) diagAct->trigger();
+        DiagramEditor *de = diagrams(tm).value(0);
+        Editor *e = tm->editorAt(0);
+        EXPECT("F: an editor tab and a diagram tab are open", e && de);
+        if (e) e->setText(QStringLiteral("HOOK-BEFORE-TICK\n"));
+        w->saveSession();   // the last autosave tick
+        if (e) e->setText(QStringLiteral("HOOK-AFTER-TICK-EDITOR\n"));
+        if (de)
+            if (auto *pe = de->findChild<QPlainTextEdit *>(QStringLiteral("diagramSource")))
+                pe->appendPlainText(QStringLiteral("node h [HOOK-AFTER-TICK-DIAGRAM]"));
+        EXPECT("F: the tick did not see the later edits (vacuity guard)",
+               sessionContains(sessionPath, "HOOK-BEFORE-TICK") &&
+                   !sessionContains(sessionPath, "HOOK-AFTER-TICK"));
+        QTimer::singleShot(0, &app, []() { QCoreApplication::quit(); });
+        app.exec();
+        EXPECT("F: quit saved the editor edit made after the tick",
+               sessionContains(sessionPath, "HOOK-AFTER-TICK-EDITOR"));
+        EXPECT("F: quit saved the diagram edit made after the tick",
+               sessionContains(sessionPath, "HOOK-AFTER-TICK-DIAGRAM"));
+        delete w;
+        pump(20);
+    }
+
+    // ── G. quit while a tab's Save / Discard / Cancel prompt is open ──
+    // Reported on the v0.1.135 branch: quit() ends the prompt's event loop,
+    // QMessageBox::question returns NoButton, closeTab took that as Discard
+    // and the aboutToQuit save then wrote session.json without the tab.
+    std::printf("\n-- G: quit during an open close prompt keeps the tab --\n");
+    if (!winOffscreenModalUnsafe()) {
+        for (const bool diagram : {false, true}) {
+            const char *marker = diagram ? "QUIT-PROMPT-DIAGRAM" : "QUIT-PROMPT-EDITOR";
+            const char *kind = diagram ? "diagram" : "editor";
+            QFile::remove(sessionPath);
+            MainWindow *w = openWindow();
+            w->saveSessionOnAboutToQuit();
+            auto *tm = w->findChild<TabManager *>();
+            QWidget *target = nullptr;
+            if (diagram) {
+                if (QAction *diagAct = diagramAction(w)) diagAct->trigger();
+                if (DiagramEditor *de = diagrams(tm).value(0)) {
+                    if (auto *pe = de->findChild<QPlainTextEdit *>(QStringLiteral("diagramSource")))
+                        pe->appendPlainText(QStringLiteral("node q [QUIT-PROMPT-DIAGRAM]"));
+                    target = de;
+                }
+            } else if (Editor *e = tm->editorAt(0)) {
+                e->setText(QStringLiteral("QUIT-PROMPT-EDITOR\n"));
+                target = e;
+            }
+            if (target) tm->setCurrentWidget(target);
+            w->saveSession();   // the autosave tick before the quit
+            QAction *closeAct = closeTabAction(w);
+            EXPECT(qPrintable(QStringLiteral("G/%1: modified tab and File > Close ready").arg(kind)),
+                   target && closeAct && sessionContains(sessionPath, marker));
+
+            bool prompted = false;
+            {
+                // SIGTERM while the prompt is up: quit(), no click.
+                ModalWatch sigterm([&prompted](QMessageBox *) {
+                    if (prompted) return;
+                    prompted = true;
+                    QCoreApplication::quit();
+                });
+                QTimer::singleShot(0, w, [closeAct]() { if (closeAct) closeAct->trigger(); });
+                app.exec();
+            }
+            EXPECT(qPrintable(QStringLiteral("G/%1: the close prompt was open at the quit").arg(kind)),
+                   prompted);
+            EXPECT(qPrintable(QStringLiteral("G/%1: the tab is still open").arg(kind)),
+                   diagram ? diagramWithText(tm, marker) != nullptr
+                           : anyEditorContains(tm, QString::fromLatin1(marker)));
+            EXPECT(qPrintable(QStringLiteral("G/%1: session.json written at quit still holds it")
+                                  .arg(kind)),
+                   sessionContains(sessionPath, marker));
+            delete w;
+            pump(20);
+        }
+    } else {
+        std::printf("  [SKIP] G: modal-driven section (offscreen Windows)\n");
     }
 
     std::printf("\n%d passed, %d failed\n", g_pass, g_fail);
